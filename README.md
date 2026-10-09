@@ -186,3 +186,31 @@ there is no invented completion percentage. Local text search normalizes Unicode
 and case and matches literal substrings across the saved archive. Results use
 server-side keyset pagination, maximum 100/API and 50/UI messages per page.
 Stop the running backend before compiling Kotlin, then start exactly one instance.
+
+## Online search, archive and subscriptions
+
+Use the central **Поиск в Telegram** tab for direct `SearchChatMessages` / public
+post API searches. Query, scope and action are in the same workspace. **Локальный
+архив** searches only imported SQLite records; it never substitutes an online
+query. Each mode labels its result source. Channel selection is retained when
+switching modes; saved sources can also switch the archive without a Telegram call.
+
+Save a public source, open **Шаблоны**, select its ID in a template and enable
+**Уведомлять**. Required/alternative/excluded phrases apply to new publications.
+**Пауза** temporarily disables the template; activation restores monitoring for
+new matches. **Отписаться** disables subscription without deleting the template
+or previous matches. Subscriptions, checkpoints and notifications persist in SQLite.
+
+TDLib updates are used when the account actually receives them. Resolving a public
+username does not join or subscribe the account. Non-member public sources rely
+on a bounded check every minute, up to four history pages per source with at least
+700 ms between recovery requests. Errors are isolated per source; Telegram account
+rate limits pause requests for the specified time. Recovery resumes saved cursors
+and deduplicates matches without copying a source's full history.
+
+SSE supplies connection/unread summaries every three seconds; EventSource reconnects
+automatically and the frontend refreshes durable notification records. After explicit
+browser permission, desktop notices show the source and a short fragment; clicking
+opens that publication in hradar, with its original Telegram link where available.
+OS delivery is browser-dependent and requires the page to remain open; backend
+monitoring can continue with the browser closed and matches remain in the app.

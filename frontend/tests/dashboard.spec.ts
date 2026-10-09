@@ -167,7 +167,7 @@ test('global free limit is explicit and never substitutes channel results', asyn
 test('real local archive paginates and searches through backend', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('status')).toHaveText('Telegram подключён');
-  await page.getByRole('button', { name: 'Сохранённая история', exact: true }).click();
+  await page.getByRole('button', { name: 'Локальный архив', exact: true }).click();
   await expect(page.getByText('Доступная история загружена', { exact: true })).toBeVisible();
   await expect(page.locator('.history-archive .message-card')).toHaveCount(50);
   await page.getByRole('button', { name: 'Следующая страница архива' }).click();
@@ -194,7 +194,7 @@ test('archive resumes a failed import and displays progress without percentages'
   await page.route('**/api/history/telegram/messages?**', route => route.fulfill({ json: { messages: [], total: 0, nextCursor: null, query: '' } }));
   await page.goto('/');
   await expect(page.getByRole('status')).toHaveText('Telegram подключён');
-  await page.getByRole('button', { name: 'Сохранённая история', exact: true }).click();
+  await page.getByRole('button', { name: 'Локальный архив', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Сетевая ошибка');
   await page.getByRole('button', { name: 'Продолжить загрузку' }).click();
   await expect(page.getByTestId('history-count')).toHaveText('110');
@@ -218,7 +218,7 @@ test('history stop preserves cursor and explicit limit controls resume', async (
   await page.route('**/api/history/telegram/messages?**', route => route.fulfill({ json: { messages: [{ id: 10, channelId: -1001, date: 1700000000, text: 'Synthetic saved message' }], total: 1000, nextCursor: null, query: '' } }));
   await page.goto('/');
   await expect(page.getByRole('status')).toHaveText('Telegram подключён');
-  await page.getByRole('button', { name: 'Сохранённая история', exact: true }).click();
+  await page.getByRole('button', { name: 'Локальный архив', exact: true }).click();
   await expect(page.getByLabel('Лимит сохранённых сообщений')).toBeDisabled();
   await page.getByRole('button', { name: 'Остановить загрузку' }).click();
   await expect(page.getByText('Загрузка приостановлена', { exact: true })).toBeVisible();
@@ -248,4 +248,104 @@ test('opening history settings never automatically requests unlimited import', a
   await expect(page.getByRole('button', { name: 'Начать загрузку' })).toBeEnabled();
   await expect(page.getByLabel('Лимит сохранённых сообщений')).toHaveValue('1000');
   expect(starts).toBe(0);
+});
+
+test('online and archive searches use separate APIs and retain channel switching', async ({ page }) => {
+  let onlineRequests = 0;
+  let archiveRequests = 0;
+  await page.route('**/api/search', route => { onlineRequests++; return route.fulfill({ json: { messages: [], cursor: '', state: 'ok', notice: null } }); });
+  await page.route('**/api/history/**/messages?**', route => { archiveRequests++; return route.fulfill({ json: { messages: [], total: 0, nextCursor: null, query: '' } }); });
+  await page.goto('/');
+  await expect(page.getByRole('status').first()).toHaveText('Telegram подключён');
+  await page.getByLabel('Поисковый запрос').fill('Java');
+  await page.getByRole('button', { name: 'Искать в Telegram' }).click();
+  expect(onlineRequests).toBe(1); expect(archiveRequests).toBe(0);
+  await expect(page.getByText('Источник результатов: Telegram API. Локальный архив не используется.')).toBeVisible();
+  await page.getByRole('button', { name: 'Локальный архив', exact: true }).click();
+  await expect(page.getByText('Источник результатов: локальный архив SQLite. Поиск не обращается к Telegram API.')).toBeVisible();
+  await expect(page.getByLabel('Поисковый запрос')).toHaveCount(0);
+  await page.getByLabel('Поиск по всей сохранённой истории').fill('Java');
+  await page.getByRole('button', { name: 'Найти в истории' }).click();
+  await expect(page.getByText('В сохранённой истории нет совпадений')).toBeVisible();
+  expect(onlineRequests).toBe(1); expect(archiveRequests).toBeGreaterThanOrEqual(2);
+  await page.getByLabel('Канал для истории').fill('@telegramtips');
+  await page.getByRole('button', { name: 'Открыть архив', exact: true }).click();
+  await expect(page.getByLabel('Канал для истории')).toHaveValue('@telegramtips');
+  await page.getByRole('button', { name: 'Поиск в Telegram', exact: true }).click();
+  await expect(page.getByLabel('Username канала')).toHaveValue('@telegramtips');
+  expect(onlineRequests).toBe(1);
+});
+
+test('SSE updates and reconnect deduplicate desktop notices and click opens the publication', async ({ page }) => {
+  const item = { id: 'sse-synthetic', templateId: 'test', templateName: 'Java rule', read: false, sequence: 1, message: { id: 42, channelId: -100123, date: 1700000000, title: 'Synthetic source', username: 'synthetic_source', text: 'Java Spring developer: synthetic new publication', link: 'https://t.me/synthetic_source/1' } };
+  let hasItem = false;
+  await page.route('**/api/notifications', route => route.fulfill({ json: { items: hasItem ? [item] : [], unread: hasItem ? 1 : 0, cursor: null } }));
+  await page.route('**/api/notifications/sse-synthetic/read', route => route.fulfill({ json: { deleted: true } }));
+  await page.addInitScript(() => {
+    const state = window as unknown as { testEvents: FakeEvents; testNotices: FakeNotice[] };
+    class FakeEvents {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      onerror: (() => void) | null = null;
+      onopen: (() => void) | null = null;
+      constructor() { state.testEvents = this; }
+      close() {}
+    }
+    class FakeNotice {
+      static permission = 'default';
+      static async requestPermission() { this.permission = 'granted'; return 'granted'; }
+      onclick: (() => void) | null = null;
+      constructor(public title: string, public options: NotificationOptions) { state.testNotices.push(this); }
+      close() {}
+    }
+    state.testNotices = [];
+    Object.defineProperty(window, 'EventSource', { value: FakeEvents });
+    Object.defineProperty(window, 'Notification', { value: FakeNotice });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Разрешить desktop-уведомления' }).click();
+  await expect(page.getByRole('button', { name: 'Desktop-уведомления разрешены' })).toBeDisabled();
+  async function emit(revision: number, unread: number) {
+    await page.evaluate(async ({ revision, unread }) => {
+      const events = (window as unknown as { testEvents: { onmessage: (event: MessageEvent) => void } }).testEvents;
+      await events.onmessage(new MessageEvent('message', { data: JSON.stringify({ revision, unread, byChannel: { '-100123': unread } }) }));
+    }, { revision, unread });
+  }
+  await emit(0, 0);
+  await expect(page.getByRole('button', { name: 'Уведомления 0', exact: true })).toBeVisible();
+  hasItem = true; await emit(1, 1);
+  await expect.poll(() => page.evaluate(() => (window as unknown as { testNotices: unknown[] }).testNotices.length)).toBe(1);
+  const notice = await page.evaluate(() => {
+    const n = (window as unknown as { testNotices: { title: string; options: NotificationOptions }[] }).testNotices[0];
+    return { title: n.title, body: n.options.body };
+  });
+  expect(notice.title).toContain('Synthetic source'); expect(notice.body).toContain('Java Spring developer');
+  await page.evaluate(() => (window as unknown as { testEvents: { onerror: () => void } }).testEvents.onerror());
+  await expect(page.getByText(/SSE переподключается/)).toBeVisible();
+  await page.evaluate(() => (window as unknown as { testEvents: { onopen: () => void } }).testEvents.onopen());
+  await expect(page.getByText('Обновления подключены (SSE)')).toBeVisible();
+  const refreshed = page.waitForResponse(response => response.url().endsWith('/api/notifications'));
+  await emit(2, 1); await refreshed;
+  expect(await page.evaluate(() => (window as unknown as { testNotices: unknown[] }).testNotices.length)).toBe(1);
+  await page.evaluate(() => (window as unknown as { testNotices: { onclick: () => void }[] }).testNotices[0].onclick());
+  await expect(page.getByRole('heading', { name: 'Детали публикации' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Открыть в Telegram' })).toHaveAttribute('href', item.message.link);
+});
+
+test('real SSE can disconnect and reconnect with a fresh summary', async ({ page }) => {
+  await page.goto('/');
+  const summaries = await page.evaluate(async () => {
+    const result: { unread: number; revision: number }[] = [];
+    for (let i = 0; i < 2; i++) {
+      const controller = new AbortController();
+      const response = await fetch('/api/events', { signal: controller.signal });
+      if (!response.ok || !response.headers.get('Content-Type')?.includes('text/event-stream')) throw new Error('SSE response invalid');
+      const reader = response.body!.getReader(); let text = '';
+      while (!text.includes('\n\n')) { const part = await reader.read(); if (part.done) throw new Error('SSE ended'); text += new TextDecoder().decode(part.value); }
+      result.push(JSON.parse(text.split('\n')[0].replace(/^data: /, '')));
+      controller.abort();
+    }
+    return result;
+  });
+  expect(summaries).toHaveLength(2);
+  for (const summary of summaries) { expect(summary.unread).toBeGreaterThanOrEqual(0); expect(summary.revision).toBeGreaterThanOrEqual(0); }
 });

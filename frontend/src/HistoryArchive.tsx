@@ -5,11 +5,11 @@ import type { HistoryPage, HistorySyncRecord, ResearchMessage } from './api';
 const labels = { IDLE: 'Импорт не запускался', RUNNING: 'Фоновый импорт выполняется', COMPLETED: 'Доступная история загружена', FAILED: 'Импорт остановлен с ошибкой', PAUSED: 'Загрузка приостановлена' };
 const emptyPage: HistoryPage = { messages: [], nextCursor: null, total: 0, query: '' };
 
-export function HistoryArchive({ username, autoStart, authorized, onSelect }: {
-  username: string; autoStart: boolean; authorized: boolean; onSelect: (message: ResearchMessage) => void;
+export function HistoryArchive({ username, autoStart, authorized, onSelect, onSourceChange }: {
+  username: string; autoStart: boolean; authorized: boolean; onSelect: (message: ResearchMessage) => void; onSourceChange?: (username: string) => void;
 }) {
   const [source, setSource] = useState(() => username.replace(/^@/, '').toLowerCase());
-  const [draft, setDraft] = useState(username);
+  const [draft, setDraft] = useState('@' + username.replace(/^@/, ''));
   const [sync, setSync] = useState<HistorySyncRecord | null>(null);
   const [archives, setArchives] = useState<HistorySyncRecord[]>([]);
   const [query, setQuery] = useState('');
@@ -98,11 +98,11 @@ export function HistoryArchive({ username, autoStart, authorized, onSelect }: {
     finally { if (currentGeneration === generation.current) setBusy(false); }
   }
   function selectSource(value: string) {
-    try { const name = normalizeUsername(value).toLowerCase(); setSource(name); setDraft('@' + name); }
+    try { const name = normalizeUsername(value).toLowerCase(); setSource(name); setDraft('@' + name); onSourceChange?.(name); }
     catch (e) { setError((e as Error).message); }
   }
   return <section className="history-archive" aria-label="Локальная история канала">
-    <div className="archive-heading"><h2>Загрузка истории канала</h2><p className="helper">Импорт работает в backend. Можно закрыть эту страницу; активный импорт продолжится после перезапуска, остановленный — по кнопке «Продолжить загрузку».</p></div>
+    <div className="archive-heading"><h2>Загрузка истории канала</h2><p className="helper">Источник результатов: локальный архив SQLite. Поиск не обращается к Telegram API.</p><p className="helper">Импорт работает в backend. Можно закрыть эту страницу; активный импорт продолжится после перезапуска, остановленный — по кнопке «Продолжить загрузку».</p></div>
     <form className="archive-source-form" onSubmit={e => { e.preventDefault(); selectSource(draft); }}><label htmlFor="archive-source">Канал для истории</label><div><input id="archive-source" value={draft} onChange={e => setDraft(e.target.value)} placeholder="@telegram" disabled={busy} required /><button className="secondary-button" disabled={busy}>Открыть архив</button></div></form>
     {archives.length > 0 && <label>Сохранённые архивы<select aria-label="Сохранённые архивы" value={archives.some(a => a.username === source) ? source : ''} onChange={e => selectSource(e.target.value)}><option value="" disabled>Выберите архив</option>{archives.map(a => <option value={a.username} key={a.channelId}>{a.title || '@' + a.username} · {a.messageCount}</option>)}</select></label>}
     <div className="import-status" aria-live="polite"><strong>{sync ? labels[sync.status] : 'Проверяем состояние…'}</strong><span>Загружено сообщений: <b data-testid="history-count">{sync?.messageCount ?? 0}</b></span>{sync?.status === 'RUNNING' && <small>Общее количество заранее неизвестно. Порции — до 100 сообщений.</small>}{sync?.nextRetryAt && sync.nextRetryAt > Date.now() ? <small>Следующая попытка: {new Date(sync.nextRetryAt).toLocaleTimeString('ru-RU')}</small> : null}</div>

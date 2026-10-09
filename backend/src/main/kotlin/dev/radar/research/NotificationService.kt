@@ -38,6 +38,11 @@ class NotificationService(private val repo: Repositories, private val matching: 
 class MonitoringService(
     private val telegram: TdlibGateway, private val repo: Repositories,
     private val search: SearchService, private val notifications: NotificationService,
+    private val history: suspend (Long, Long, Int) -> TdApi.Messages = { id, cursor, limit ->
+        telegram.executeRead(TdApi.GetChatHistory(id, cursor, 0, limit, false)) as TdApi.Messages
+    },
+    private val ready: () -> Boolean = { telegram.getStatus().let { it.authorized && it.connectionState == "Ready" } },
+    private val requestIntervalMs: Long = 700,
 ) : AutoCloseable {
     private val job = SupervisorJob()
     private val scope = CoroutineScope(job + Dispatchers.IO)
@@ -45,7 +50,9 @@ class MonitoringService(
     private val serial = Mutex()
     @Volatile private var knownIds: Set<Long> = emptySet()
     private var cooldownUntil = 0L
+    private var lastRequestNanos = 0L
     fun start() {
+        knownIds = repo.channels().map { it.id }.toSet()
         telegram.messageListener = { message -> if (message.chatId in knownIds) updates.trySend(message) }
         scope.launch {
             for (message in updates) serial.withLock {
@@ -58,44 +65,54 @@ class MonitoringService(
         }
         scope.launch {
             while (isActive) {
-                if (!telegram.getStatus().authorized) { delay(2000); continue }
-                cooldownUntil = maxOf(cooldownUntil, repo.channels().maxOfOrNull { repo.state(it.id)?.retryAt ?: 0L } ?: 0L)
-                if (telegram.getStatus().authorized && System.currentTimeMillis() >= cooldownUntil) serial.withLock {
-                    knownIds = repo.channels().map { it.id }.toSet()
-                    val templates = repo.templates().filter { it.active && it.subscribed && it.sourceMode != "global" }
-                    for (channel in repo.channels().filter { c -> templates.any { it.sourceMode == "all" || c.id in it.sources } }) {
-                        if (System.currentTimeMillis() < cooldownUntil) break
-                        try { recover(channel) }
-                        catch (ex: CancellationException) { throw ex }
-                        catch (ex: Exception) {
-                            val state = repo.state(channel.id) ?: MonitoringState(channel.id)
-                            if (ex is TelegramRequestException && (ex.code == 429 || ex.reason.startsWith("FLOOD_WAIT"))) {
-                                val seconds = Regex("(?:FLOOD_WAIT_|retry after )(\\d+)", RegexOption.IGNORE_CASE).find(ex.reason)?.groupValues?.get(1)?.toLongOrNull() ?: 120L
-                                cooldownUntil = System.currentTimeMillis() + seconds.coerceAtLeast(1L) * 1000
-                            }
-                            repo.saveState(state.copy(error = if (ex is TelegramRequestException) "Telegram ${ex.code}: источник временно недоступен" else "Не удалось восстановить историю; повторим позже", retryAt = cooldownUntil))
-                        }
-                    }
-                }
+                if (!ready()) { delay(2000); continue }
+                pollOnce()
                 delay(60_000)
             }
         }
+    }
+    internal suspend fun pollOnce() {
+        if (!ready()) return
+        cooldownUntil = maxOf(cooldownUntil, repo.channels().maxOfOrNull { repo.state(it.id)?.retryAt ?: 0L } ?: 0L)
+        if (System.currentTimeMillis() >= cooldownUntil) serial.withLock {
+            knownIds = repo.channels().map { it.id }.toSet()
+            val templates = repo.templates().filter { it.active && it.subscribed && it.sourceMode != "global" }
+            for (channel in repo.channels().filter { c -> templates.any { it.sourceMode == "all" || c.id in it.sources } }) {
+                if (System.currentTimeMillis() < cooldownUntil) break
+                try { recover(channel) }
+                catch (ex: CancellationException) { throw ex }
+                catch (ex: Exception) {
+                    val state = repo.state(channel.id) ?: MonitoringState(channel.id)
+                    if (ex is TelegramRequestException && (ex.code == 429 || ex.reason.startsWith("FLOOD_WAIT"))) {
+                        val seconds = Regex("(?:FLOOD_WAIT_|retry after )(\\d+)", RegexOption.IGNORE_CASE).find(ex.reason)?.groupValues?.get(1)?.toLongOrNull() ?: 120L
+                        cooldownUntil = System.currentTimeMillis() + seconds.coerceAtLeast(1L) * 1000
+                    }
+                    repo.saveState(state.copy(error = if (ex is TelegramRequestException) "Telegram ${ex.code}: источник временно недоступен" else "Не удалось восстановить историю; повторим позже", retryAt = cooldownUntil))
+                }
+            }
+        }
+    }
+    private suspend fun readHistory(id: Long, cursor: Long, limit: Int): TdApi.Messages {
+        val wait = requestIntervalMs - (System.nanoTime() - lastRequestNanos) / 1_000_000
+        if (wait > 0) delay(wait)
+        lastRequestNanos = System.nanoTime()
+        return history(id, cursor, limit)
     }
     internal suspend fun processUpdate(message: TdApi.Message) {
         val channel = repo.channels().find { it.id == message.chatId } ?: return
         val state = repo.state(channel.id) ?: return
         if (message.id > state.lastMessageId) notifications.process(channel, search.enrich(message, channel, withLink = false))
     }
-    private suspend fun recover(channel: MonitoredChannel) {
+    internal suspend fun recover(channel: MonitoredChannel) {
         var state = repo.state(channel.id)
         if (state == null) {
             // New sources start now. Never notify about their entire old history.
-            val latest = telegram.executeRead(TdApi.GetChatHistory(channel.id, 0L, 0, 1, false)) as TdApi.Messages
+            val latest = readHistory(channel.id, 0L, 1)
             repo.saveState(MonitoringState(channel.id, latest.messages.firstOrNull()?.id ?: 0L))
             return
         }
         repeat(4) {
-            val page = telegram.executeRead(TdApi.GetChatHistory(channel.id, state!!.recoveryCursor, 0, 100, false)) as TdApi.Messages
+            val page = readHistory(channel.id, state!!.recoveryCursor, 100)
             val head = state!!.recoveryHead.takeIf { it != 0L } ?: page.messages.firstOrNull()?.id ?: state!!.lastMessageId
             for (message in page.messages.filter { it.id > state!!.lastMessageId }.asReversed()) {
                 // Store only matching publications; no full history copy.
