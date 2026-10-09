@@ -1,0 +1,100 @@
+name: hradar - macOS ARM64 TDLib
+
+# First iteration: expensive native build runs manually, or when this workflow/build script changes.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/macos-arm64.yml'
+      - 'scripts/build-tdlib-macos.sh'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hradar-arm64-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-arm64:
+    name: TDLib JNI + Kotlin backend (Apple Silicon)
+    runs-on: macos-15
+    timeout-minutes: 100
+    env:
+      # Pin official TDLib source to the version successfully used by hradar locally.
+      TDLIB_COMMIT: bc9c263e2bfee06aaab41e82db51a103376030bc
+
+    steps:
+      - name: Checkout hradar
+        uses: actions/checkout@v4
+
+      - name: Verify Apple Silicon runner
+        shell: bash
+        run: |
+          uname -a
+          arch="$(uname -m)"
+          echo "Architecture: $arch"
+          test "$arch" = arm64
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+
+      - name: Install TDLib build dependencies
+        shell: bash
+        run: |
+          brew install cmake gperf openssl@3
+          java -version
+          cmake --version
+
+      - name: Checkout pinned official TDLib sources
+        shell: bash
+        run: |
+          mkdir -p .tdlib-build/td
+          git -C .tdlib-build/td init -q
+          git -C .tdlib-build/td remote add origin https://github.com/tdlib/td.git
+          git -C .tdlib-build/td fetch --depth 1 origin "$TDLIB_COMMIT"
+          git -C .tdlib-build/td checkout --detach FETCH_HEAD
+          git -C .tdlib-build/td rev-parse HEAD
+
+      - name: Compile TDLib and Java JNI bindings
+        shell: bash
+        run: |
+          export JAVA_HOME="$JAVA_HOME"
+          bash scripts/build-tdlib-macos.sh
+
+      - name: Verify generated ARM64 JNI artifacts
+        shell: bash
+        run: |
+          test -s backend/libs/tdlib-java.jar
+          test -s backend/native/libtdjni.dylib
+          file backend/native/libtdjni.dylib
+          lipo -archs backend/native/libtdjni.dylib
+          lipo -verify_arch arm64 backend/native/libtdjni.dylib
+          otool -L backend/native/libtdjni.dylib
+
+      - name: Build and test Kotlin backend
+        shell: bash
+        run: |
+          if [[ -f ./gradlew ]]; then
+            bash ./gradlew :backend:build --no-daemon --console=plain
+          else
+            gradle :backend:build --no-daemon --console=plain
+          fi
+
+      - name: Upload compiled ARM64 TDLib artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hradar-tdlib-macos-arm64
+          path: |
+            backend/libs/tdlib-java.jar
+            backend/native/libtdjni.dylib
+          if-no-files-found: error
+          retention-days: 14

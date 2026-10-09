@@ -1,0 +1,14 @@
+.DS_Store
+.gradle/
+**/build/
+.tdlib-build/
+.env
+.env.*
+!.env.example
+.idea/
+*.iml
+backend/libs/*
+!backend/libs/.gitkeep
+backend/native/*
+!backend/native/.gitkeep
+.recruitment-radar/
