@@ -1,7 +1,7 @@
 # Recruitment Radar
 
 Local Telegram recruitment research prototype: **Kotlin/JVM 21 + Ktor 3.6.0 + official TDLib Java/JNI**.
-No frontend yet. Milestone 1: authorize a Telegram user locally and fetch recent messages from a public Telegram channel accessible to that account.
+Local MVP: authorize a Telegram user locally and browse recent public-channel messages in a React + TypeScript web interface.
 
 ## Requirements (macOS)
 
@@ -35,6 +35,40 @@ The terminal will request your phone number, Telegram login code, and if applica
 
 TDLib native binaries and generated bindings are intentionally excluded from Git. Never commit `.env`, account sessions or candidate personal information.
 
+## Web interface
+
+Requires Node.js 22.12+ (or 24+) and npm. Keep the backend running in its terminal;
+do not start another backend against the same TDLib session.
+
+In a second terminal:
+
+```bash
+cd frontend
+npm ci
+npm run dev
+```
+
+Open **http://127.0.0.1:5173**. The interface shows Telegram connection status,
+lets you enter a public channel username and a limit from 1 to 100, and displays
+message text/media captions and dates. Search filters the currently loaded messages.
+History is fetched only when you press the load button. This history view stays in
+browser memory; templates and notification matches are persisted locally in SQLite.
+
+The frontend serves only on localhost and proxies `/api` to the existing Ktor
+backend on port 8080 (see [Vite proxy documentation](https://vite.dev/config/server-options#server-proxy)).
+Authentication remains in the backend terminal. No API keys are passed to the browser.
+
+```bash
+cd frontend
+npm run build                 # TypeScript check and production bundle
+npx playwright install chromium  # once, for browser tests
+npm test                      # backend must be running and Telegram authorized
+npm run preview               # serve the built bundle locally, with API proxy
+```
+
+Browser tests include real read-only requests to `@telegram`, a nonexistent
+username, mocked error/empty responses, safe rendering, and mobile layout.
+
 ## API
 
 The HTTP server binds **only to `127.0.0.1:8080`**.
@@ -62,12 +96,48 @@ The channel endpoint resolves public usernames. It can still fail for channels w
 Ktor REST API --> TdlibGateway --> generated Java TdApi + Client --> JNI --> Telegram
 ```
 
-## Next milestones
+## Research workspace
 
-1. Add `UpdateNewMessage` listener and per-channel monitoring.
-2. Persist monitored channel IDs and latest processed message IDs in SQLite.
-3. Add deterministic, explainable rules for candidate matching.
-4. Add a React+TypeScript dashboard and CSV export.
+The interface has sources, Telegram-style message cards, filters, publication details,
+light/dark themes, and a notification center. Save a source after opening its history.
+Up to 10 explicit public sources are supported; saving a source never joins it.
+
+Templates support required words/phrases (AND), alternatives (OR), exclusions (NOT),
+activation, editing, deletion and subscriptions. Each template has a separate Telegram
+query. Local matching normalizes Unicode, case, whitespace and ё/е, respects word
+boundaries, and explains matched conditions. Template searches apply these conditions
+to the candidates returned by that query; they do not claim to search every Telegram
+post satisfying the local rules.
+
+Search uses `SearchChatMessages` in one channel or selected saved sources, with
+cursor pagination, source metadata and `GetMessageLink` where available. Global
+`SearchPublicPosts` checks `GetPublicPostSearchLimits` and always uses `starCount=0`.
+Unsupported/free-limit states are explicit. Global templates are manual only; no
+continuous global notification stream is promised.
+
+Subscriptions monitor `UpdateNewMessage` and recover gaps with bounded history scans
+(maximum four 100-message pages per source per minute). New subscriptions start now;
+only matching publications are persisted. Recovery cursors, templates, read state and
+notifications survive restarts; unique constraints prevent duplicate notifications.
+Rate-limit recovery waits are persisted. Public non-member channels may rely on the
+periodic recovery scan rather than live updates. Keep the backend running to monitor.
+
+Local SQLite: `~/.hradar/research.sqlite` (schema migration version 1). Account credentials
+stay in `.env` and the separate TDLib session; they are not stored in research tables.
+`/api/events` streams updates with SSE. Browser desktop notifications need explicit
+permission and an open page; no external push server or Telegram sends are used.
+
+Useful local API endpoints:
+
+- `GET/POST /api/channels`, `DELETE /api/channels/{id}`
+- `GET/POST /api/templates`, `PUT/DELETE /api/templates/{id}`
+- `POST /api/search` (mode: channel/tracked/global, query, usernames, templateId, limit, cursor)
+- `GET /api/notifications?limit=50&before=<sequence>`
+- `POST /api/notifications/{id}/read`, `POST /api/notifications/read-all`
+- `GET /api/monitoring`, `GET /api/events`
+
+Stop the backend before recompiling its classes; then run `./scripts/run-local.sh`
+once with the existing session. Never run two instances against the same TDLib database.
 
 ## References
 

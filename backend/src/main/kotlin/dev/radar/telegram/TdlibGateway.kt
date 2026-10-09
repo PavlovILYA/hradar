@@ -3,6 +3,7 @@ package dev.radar.telegram
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.Serializable
+import dev.radar.research.MonitoredChannel
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
 import java.nio.file.Path
@@ -11,7 +12,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 @Serializable
-data class TelegramStatus(val authorizationState: String, val authorized: Boolean)
+data class TelegramStatus(val authorizationState: String, val authorized: Boolean, val connectionState: String = "Initializing")
 
 @Serializable
 data class TelegramUser(val id: Long, val firstName: String, val lastName: String)
@@ -67,7 +68,9 @@ class TdlibGateway(
 ) {
     @Volatile private var authState = "INITIALIZING"
     @Volatile private var authorized = false
+    @Volatile private var connectionState = "Initializing"
     private lateinit var client: Client
+    @Volatile var messageListener: ((TdApi.Message) -> Unit)? = null
 
     // Never block TDLib's update thread by reading the terminal from callbacks.
     private val authExecutor = Executors.newSingleThreadExecutor { task ->
@@ -75,6 +78,8 @@ class TdlibGateway(
     }
 
     fun start() {
+        // Native debug logs can contain account data; keep normal operation quiet.
+        Client.execute(TdApi.SetLogVerbosityLevel(0))
         client = Client.create(
             { update -> onUpdate(update) },
             { ex -> System.err.println("TDLib update handler failed: ${ex.message}") },
@@ -82,7 +87,19 @@ class TdlibGateway(
         )
     }
 
-    fun getStatus() = TelegramStatus(authState, authorized)
+    fun getStatus() = TelegramStatus(authState, authorized, connectionState)
+
+    internal suspend fun executeRead(query: TdApi.Function<*>): TdApi.Object {
+        ensureAuthorized()
+        return request(query)
+    }
+
+    suspend fun resolveChannel(username: String): MonitoredChannel {
+        ensureAuthorized()
+        val chat = request(TdApi.SearchPublicChat(username)) as TdApi.Chat
+        require((chat.type as? TdApi.ChatTypeSupergroup)?.isChannel == true) { "Username должен принадлежать каналу" }
+        return MonitoredChannel(chat.id, username.lowercase(), chat.title)
+    }
 
     suspend fun getMe(): TelegramUser {
         ensureAuthorized()
@@ -114,6 +131,8 @@ class TdlibGateway(
     }
 
     private fun onUpdate(update: TdApi.Object) {
+        if (update is TdApi.UpdateConnectionState) connectionState = update.state.javaClass.simpleName.removePrefix("ConnectionState")
+        if (update is TdApi.UpdateNewMessage) messageListener?.invoke(update.message)
         if (update is TdApi.UpdateAuthorizationState) {
             val state = update.authorizationState
             authState = state.javaClass.simpleName.removePrefix("AuthorizationState")

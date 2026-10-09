@@ -1,6 +1,15 @@
 .DS_Store
 .gradle/
+.kotlin/
 **/build/
+backend/bin/
+.hradar/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.binlog
+*.log
 .tdlib-build/
 .env
 .env.*
@@ -12,3 +21,7 @@ backend/libs/*
 backend/native/*
 !backend/native/.gitkeep
 .recruitment-radar/
+**/node_modules/
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/

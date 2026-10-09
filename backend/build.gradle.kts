@@ -18,6 +18,7 @@ dependencies {
     implementation("io.ktor:ktor-serialization-kotlinx-json-jvm:$ktorVersion")
     implementation("io.ktor:ktor-server-status-pages-jvm:$ktorVersion")
     implementation("ch.qos.logback:logback-classic:1.5.18")
+    implementation("org.xerial:sqlite-jdbc:3.53.4.0")
     implementation(files("libs/tdlib-java.jar"))
     testImplementation(kotlin("test"))
 }
