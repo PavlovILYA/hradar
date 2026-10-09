@@ -122,7 +122,7 @@ notifications survive restarts; unique constraints prevent duplicate notificatio
 Rate-limit recovery waits are persisted. Public non-member channels may rely on the
 periodic recovery scan rather than live updates. Keep the backend running to monitor.
 
-Local SQLite: `~/.hradar/research.sqlite` (schema migration version 2). Account credentials
+Local SQLite: `~/.hradar/research.sqlite` (schema migration version 3). Account credentials
 stay in `.env` and the separate TDLib session; they are not stored in research tables.
 `/api/events` streams updates with SSE. Browser desktop notifications need explicit
 permission and an open page; no external push server or Telegram sends are used.
@@ -147,22 +147,32 @@ once with the existing session. Never run two instances against the same TDLib d
 
 ## Full channel-history archive
 
-Choose a public channel and press **Загрузить всю историю**, or open
-**Сохранённая история**. The backend imports available history in pages of up to
+Choose a public channel and open **Настроить загрузку истории** or
+**Сохранённая история**. Select 1000 (default), 5000, 10000 messages, or explicitly
+choose **Вся доступная история** for unlimited loading, then start the import. The backend imports available history in pages of up to
 100 messages, stores unique `(channelId, messageId)` records in SQLite, and commits
 messages and the oldest-message cursor together. Short pages do not end the import.
 Only an empty TDLib response marks completion; repeated nonadvancing cursors fail
-with a resumable error. Two channels can import concurrently, with bounded retries
-and persisted Telegram rate-limit waits. No channels are joined.
+with a resumable error. Two channels can import concurrently; start/stop operations serialize and prevent
+multiple workers for one channel. A shared archive request gate spaces requests by
+at least 700 ms and respects persisted retry waits. FLOOD_WAIT/retry-after waits
+use Telegram’s requested duration; retries are bounded and cancellable. No channels are joined.
 
-`RUNNING` imports resume automatically after backend restart. `FAILED` imports
-continue from their saved cursor when started again. Starting a completed archive
+`RUNNING` imports resume automatically after backend restart. **Остановить загрузку**
+cancels the background coroutine, preserves records and cursor, and persists `PAUSED`.
+User-paused imports stay paused across restarts. **Продолжить загрузку** resumes
+`PAUSED` or `FAILED` imports. Reaching the selected total archive size also pauses
+the import; increase the limit to continue without skipping any page remainder. Starting a completed archive
 is a no-op: this is a historical snapshot, not continuous ingestion of newer posts
 or synchronization of edits/deletions. Existing source monitoring is independent.
 The archive is not automatically passed through recruitment templates yet.
 
 ```bash
-curl -X POST http://127.0.0.1:8080/api/history/telegram/sync
+curl -X POST http://127.0.0.1:8080/api/history/telegram/sync \
+  -H 'Content-Type: application/json' -d '{"maxMessages":1000}'
+curl -X POST http://127.0.0.1:8080/api/history/telegram/stop
+# Resume via the same POST /sync, optionally raising maxMessages to 5000/10000.
+# Explicit unlimited choice: JSON {"maxMessages":null}. An empty body defaults to 1000.
 curl http://127.0.0.1:8080/api/history/telegram/sync
 curl http://127.0.0.1:8080/api/history/syncs
 curl 'http://127.0.0.1:8080/api/history/telegram/messages?limit=50&query=telegram'
@@ -170,7 +180,8 @@ curl 'http://127.0.0.1:8080/api/history/telegram/messages?limit=50&query=telegra
 ```
 
 POST returns 202 after channel resolution; importing runs in the background.
-Status includes `IDLE`, `RUNNING`, `COMPLETED`, or `FAILED`, count, cursor and errors;
+Status includes `IDLE`, `RUNNING`, `PAUSED`, `COMPLETED`, or `FAILED`, count, cursor,
+maxMessages, pauseReason (USER/LIMIT), nextRetryAt and errors;
 there is no invented completion percentage. Local text search normalizes Unicode
 and case and matches literal substrings across the saved archive. Results use
 server-side keyset pagination, maximum 100/API and 50/UI messages per page.

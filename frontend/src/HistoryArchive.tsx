@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { mutate, normalizeUsername, request } from './api';
 import type { HistoryPage, HistorySyncRecord, ResearchMessage } from './api';
 
-const labels = { IDLE: 'Импорт не запускался', RUNNING: 'Фоновый импорт выполняется', COMPLETED: 'Доступная история загружена', FAILED: 'Импорт остановлен с ошибкой' };
+const labels = { IDLE: 'Импорт не запускался', RUNNING: 'Фоновый импорт выполняется', COMPLETED: 'Доступная история загружена', FAILED: 'Импорт остановлен с ошибкой', PAUSED: 'Загрузка приостановлена' };
 const emptyPage: HistoryPage = { messages: [], nextCursor: null, total: 0, query: '' };
 
 export function HistoryArchive({ username, autoStart, authorized, onSelect }: {
@@ -17,6 +17,7 @@ export function HistoryArchive({ username, autoStart, authorized, onSelect }: {
   const [page, setPage] = useState<HistoryPage>(emptyPage);
   const [cursors, setCursors] = useState<(number | null)[]>([null]);
   const [error, setError] = useState('');
+  const [maxMessages, setMaxMessages] = useState('1000');
   const [busy, setBusy] = useState(false);
   const generation = useRef(0);
   const busyRef = useRef(false);
@@ -41,10 +42,20 @@ export function HistoryArchive({ username, autoStart, authorized, onSelect }: {
     const currentGeneration = generation.current;
     busyRef.current = true; setBusy(true); setError('');
     try {
-      const state = await mutate<HistorySyncRecord>(`/api/history/${encodeURIComponent(normalizeUsername(source))}/sync`, 'POST');
+      const state = await mutate<HistorySyncRecord>(`/api/history/${encodeURIComponent(normalizeUsername(source))}/sync`, 'POST', { maxMessages: maxMessages === 'all' ? null : Number(maxMessages) });
       if (currentGeneration !== generation.current) return;
       setSync(state);
       setPage(await loadPage(cursors[cursors.length - 1]));
+    } catch (e) { if (currentGeneration === generation.current) setError((e as Error).message); }
+    finally { busyRef.current = false; if (currentGeneration === generation.current) setBusy(false); }
+  }
+  async function stop() {
+    if (busyRef.current) return;
+    busyRef.current = true; setBusy(true); setError('');
+    const currentGeneration = generation.current;
+    try {
+      const state = await mutate<HistorySyncRecord>(`/api/history/${encodeURIComponent(source)}/stop`, 'POST');
+      if (currentGeneration === generation.current) { setSync(state); setPage(await loadPage(cursors[cursors.length - 1])); }
     } catch (e) { if (currentGeneration === generation.current) setError((e as Error).message); }
     finally { busyRef.current = false; if (currentGeneration === generation.current) setBusy(false); }
   }
@@ -52,9 +63,10 @@ export function HistoryArchive({ username, autoStart, authorized, onSelect }: {
     const controller = new AbortController();
     generation.current++;
     setSync(null); setPage(emptyPage); setCursors([null]); setAppliedQuery(''); setQuery(''); setError('');
-    void Promise.all([refresh(controller.signal), loadPage(null, '', controller.signal)]).then(([, data]) => {
+    void Promise.all([refresh(controller.signal), loadPage(null, '', controller.signal)]).then(([state, data]) => {
       if (!controller.signal.aborted) {
         setPage(data);
+        setMaxMessages(state?.maxMessages === null ? 'all' : String(state?.maxMessages ?? 1000));
         if (initialStart.current) { initialStart.current = false; void start(); }
       }
     }).catch(e => { if (!controller.signal.aborted) setError((e as Error).message); });
@@ -90,12 +102,15 @@ export function HistoryArchive({ username, autoStart, authorized, onSelect }: {
     catch (e) { setError((e as Error).message); }
   }
   return <section className="history-archive" aria-label="Локальная история канала">
-    <div className="archive-heading"><h2>Вся история канала</h2><p className="helper">Импорт работает в backend. Можно закрыть эту страницу; после перезапуска незавершённый импорт продолжится.</p></div>
+    <div className="archive-heading"><h2>Загрузка истории канала</h2><p className="helper">Импорт работает в backend. Можно закрыть эту страницу; активный импорт продолжится после перезапуска, остановленный — по кнопке «Продолжить загрузку».</p></div>
     <form className="archive-source-form" onSubmit={e => { e.preventDefault(); selectSource(draft); }}><label htmlFor="archive-source">Канал для истории</label><div><input id="archive-source" value={draft} onChange={e => setDraft(e.target.value)} placeholder="@telegram" disabled={busy} required /><button className="secondary-button" disabled={busy}>Открыть архив</button></div></form>
     {archives.length > 0 && <label>Сохранённые архивы<select aria-label="Сохранённые архивы" value={archives.some(a => a.username === source) ? source : ''} onChange={e => selectSource(e.target.value)}><option value="" disabled>Выберите архив</option>{archives.map(a => <option value={a.username} key={a.channelId}>{a.title || '@' + a.username} · {a.messageCount}</option>)}</select></label>}
     <div className="import-status" aria-live="polite"><strong>{sync ? labels[sync.status] : 'Проверяем состояние…'}</strong><span>Загружено сообщений: <b data-testid="history-count">{sync?.messageCount ?? 0}</b></span>{sync?.status === 'RUNNING' && <small>Общее количество заранее неизвестно. Порции — до 100 сообщений.</small>}{sync?.nextRetryAt && sync.nextRetryAt > Date.now() ? <small>Следующая попытка: {new Date(sync.nextRetryAt).toLocaleTimeString('ru-RU')}</small> : null}</div>
     {sync?.error && <p className="error" role="alert">{sync.error}</p>}{error && <p className="error" role="alert">{error}</p>}
-    <div className="archive-actions"><button className="primary-button" disabled={busy || !authorized || !sync || sync.status === 'RUNNING' || sync.status === 'COMPLETED'} onClick={() => void start()}>{sync?.status === 'FAILED' ? 'Продолжить импорт' : sync?.status === 'RUNNING' ? 'Импорт выполняется' : sync?.status === 'COMPLETED' ? 'История загружена' : 'Загрузить всю историю'}</button><button className="secondary-button" disabled={busy} onClick={async () => { try { await refresh(); await show(cursors[cursors.length - 1], appliedQuery, cursors); } catch (e) { setError((e as Error).message); } }}>Обновить архив</button></div>
+    <label>Лимит сохранённых сообщений<select aria-label="Лимит сохранённых сообщений" value={maxMessages} disabled={busy || sync?.status === 'RUNNING'} onChange={e => setMaxMessages(e.target.value)}><option value="1000">1000 сообщений</option><option value="5000">5000 сообщений</option><option value="10000">10000 сообщений</option><option value="all">Вся доступная история · без ограничения</option></select></label>
+    <p className="helper">Лимит — общее число сообщений в архиве канала. Безлимитная загрузка запускается только после явного выбора «Вся доступная история».</p>
+    {sync?.pauseReason === 'LIMIT' && <p className="helper">Достигнут выбранный лимит. Увеличьте его, чтобы продолжить загрузку с сохранённого курсора.</p>}
+    <div className="archive-actions"><button className="primary-button" disabled={busy || !authorized || !sync || sync.status === 'RUNNING' || sync.status === 'COMPLETED' || (maxMessages !== 'all' && Number(maxMessages) <= (sync?.messageCount ?? 0))} onClick={() => void start()}>{sync?.status === 'FAILED' || sync?.status === 'PAUSED' ? 'Продолжить загрузку' : sync?.status === 'RUNNING' ? 'Импорт выполняется' : sync?.status === 'COMPLETED' ? 'История загружена' : 'Начать загрузку'}</button>{sync?.status === 'RUNNING' && <button className="secondary-button" disabled={busy} onClick={() => void stop()}>Остановить загрузку</button>}<button className="secondary-button" disabled={busy} onClick={async () => { try { await refresh(); await show(cursors[cursors.length - 1], appliedQuery, cursors); } catch (e) { setError((e as Error).message); } }}>Обновить архив</button></div>
     <form className="archive-search" onSubmit={e => { e.preventDefault(); void show(null, query.trim(), [null]); }}><label htmlFor="archive-query">Поиск по всей сохранённой истории</label><div><input id="archive-query" type="search" value={query} onChange={e => setQuery(e.target.value)} maxLength={256} placeholder="Слово или фраза во всех загруженных сообщениях" /><button className="secondary-button" disabled={busy}>Найти в истории</button></div></form>
     <div className="archive-page-info"><span>Найдено: {page.total} · Страница {cursors.length}</span><span>До 50 сообщений на странице</span></div>
     {page.messages.length ? page.messages.map(message => <article className="message-card" key={message.id}><div className="message-meta"><strong>{sync?.title || '@' + source}</strong><time>{new Date(message.date * 1000).toLocaleString('ru-RU')}</time></div><p className="message-text">{message.text || 'Медиа или служебное сообщение без текста'}</p><div className="message-footer"><span>ID сообщения: {message.id}</span><button className="text-button" onClick={() => onSelect({ ...message, title: sync?.title, username: source })}>Детали ↗</button></div></article>) : <div className="empty-state"><h3>{appliedQuery ? 'В сохранённой истории нет совпадений' : 'В архиве пока нет сообщений'}</h3><p>{appliedQuery ? 'Измените запрос. Проверяется вся уже импортированная история.' : 'Запустите импорт выбранного канала.'}</p></div>}

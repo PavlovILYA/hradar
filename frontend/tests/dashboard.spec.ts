@@ -196,8 +196,56 @@ test('archive resumes a failed import and displays progress without percentages'
   await expect(page.getByRole('status')).toHaveText('Telegram подключён');
   await page.getByRole('button', { name: 'Сохранённая история', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Сетевая ошибка');
-  await page.getByRole('button', { name: 'Продолжить импорт' }).click();
+  await page.getByRole('button', { name: 'Продолжить загрузку' }).click();
   await expect(page.getByTestId('history-count')).toHaveText('110');
   await expect(page.getByRole('button', { name: 'Импорт выполняется' })).toBeDisabled();
   await expect(page.locator('.import-status')).not.toContainText('%');
+});
+
+test('history stop preserves cursor and explicit limit controls resume', async ({ page }) => {
+  let status = 'RUNNING';
+  let selectedLimit: number | null = 1000;
+  const state = () => ({ channelId: -1001, username: 'telegram', title: 'Synthetic', status, cursor: 10, messageCount: 1000, maxMessages: selectedLimit, pauseReason: status === 'PAUSED' ? 'USER' : null, retryCount: 0, nextRetryAt: 0, error: null, updatedAt: 0 });
+  await page.route('**/api/history/telegram/sync', route => {
+    if (route.request().method() === 'POST') {
+      selectedLimit = route.request().postDataJSON().maxMessages;
+      status = 'RUNNING';
+    }
+    return route.fulfill({ json: state() });
+  });
+  await page.route('**/api/history/telegram/stop', route => { status = 'PAUSED'; return route.fulfill({ json: state() }); });
+  await page.route('**/api/history/syncs', route => route.fulfill({ json: [state()] }));
+  await page.route('**/api/history/telegram/messages?**', route => route.fulfill({ json: { messages: [{ id: 10, channelId: -1001, date: 1700000000, text: 'Synthetic saved message' }], total: 1000, nextCursor: null, query: '' } }));
+  await page.goto('/');
+  await expect(page.getByRole('status')).toHaveText('Telegram подключён');
+  await page.getByRole('button', { name: 'Сохранённая история', exact: true }).click();
+  await expect(page.getByLabel('Лимит сохранённых сообщений')).toBeDisabled();
+  await page.getByRole('button', { name: 'Остановить загрузку' }).click();
+  await expect(page.getByText('Загрузка приостановлена', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('history-count')).toHaveText('1000');
+  await expect(page.getByText('Synthetic saved message')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Продолжить загрузку' })).toBeDisabled();
+  await page.getByLabel('Лимит сохранённых сообщений').selectOption('5000');
+  await page.getByRole('button', { name: 'Продолжить загрузку' }).click();
+  expect(selectedLimit).toBe(5000);
+  await page.getByRole('button', { name: 'Остановить загрузку' }).click();
+  await page.getByLabel('Лимит сохранённых сообщений').selectOption('all');
+  await page.getByRole('button', { name: 'Продолжить загрузку' }).click();
+  expect(selectedLimit).toBeNull();
+});
+
+test('opening history settings never automatically requests unlimited import', async ({ page }) => {
+  let starts = 0;
+  await page.route('**/api/history/telegram/sync', route => {
+    if (route.request().method() === 'POST') starts++;
+    return route.fulfill({ json: { channelId: 0, username: 'telegram', title: '', status: 'IDLE', cursor: 0, messageCount: 0, maxMessages: 1000, pauseReason: null, retryCount: 0, nextRetryAt: 0, error: null, updatedAt: 0 } });
+  });
+  await page.route('**/api/history/syncs', route => route.fulfill({ json: [] }));
+  await page.route('**/api/history/telegram/messages?**', route => route.fulfill({ json: { messages: [], total: 0, nextCursor: null, query: '' } }));
+  await page.goto('/');
+  await expect(page.getByRole('status')).toHaveText('Telegram подключён');
+  await page.getByRole('button', { name: 'Настроить загрузку истории' }).click();
+  await expect(page.getByRole('button', { name: 'Начать загрузку' })).toBeEnabled();
+  await expect(page.getByLabel('Лимит сохранённых сообщений')).toHaveValue('1000');
+  expect(starts).toBe(0);
 });

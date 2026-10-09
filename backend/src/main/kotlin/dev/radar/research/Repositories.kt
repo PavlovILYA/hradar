@@ -22,7 +22,7 @@ class Repositories(path: Path) : AutoCloseable {
             s.execute("PRAGMA busy_timeout=5000")
             s.execute("PRAGMA journal_mode=WAL")
             val version = s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) }
-            check(version <= 2) { "Database schema is newer than this application" }
+            check(version <= 3) { "Database schema is newer than this application" }
             if (version == 0) transaction {
                 s.execute("CREATE TABLE monitored_channels(id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, data TEXT NOT NULL)")
                 s.execute("CREATE TABLE search_templates(id TEXT PRIMARY KEY, data TEXT NOT NULL)")
@@ -36,6 +36,13 @@ class Repositories(path: Path) : AutoCloseable {
                 s.execute("CREATE TABLE history_sync(channel_id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, status TEXT NOT NULL CHECK(status IN ('IDLE','RUNNING','COMPLETED','FAILED')), data TEXT NOT NULL)")
                 s.execute("CREATE TABLE imported_messages(channel_id INTEGER NOT NULL, message_id INTEGER NOT NULL, date INTEGER NOT NULL, text TEXT, normalized_text TEXT NOT NULL, PRIMARY KEY(channel_id,message_id))")
                 s.execute("PRAGMA user_version=2")
+            }
+            if (version < 3) transaction {
+                s.execute("ALTER TABLE history_sync RENAME TO history_sync_v2")
+                s.execute("CREATE TABLE history_sync(channel_id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, status TEXT NOT NULL CHECK(status IN ('IDLE','RUNNING','COMPLETED','FAILED','PAUSED')), data TEXT NOT NULL)")
+                s.execute("INSERT INTO history_sync SELECT * FROM history_sync_v2")
+                s.execute("DROP TABLE history_sync_v2")
+                s.execute("PRAGMA user_version=3")
             }
         }
     }
@@ -106,10 +113,11 @@ class Repositories(path: Path) : AutoCloseable {
     private fun writeHistoryState(state: HistorySyncRecord) {
         update("INSERT INTO history_sync VALUES(?,?,?,?) ON CONFLICT(channel_id) DO UPDATE SET username=excluded.username,status=excluded.status,data=excluded.data", state.channelId, state.username, state.status.name, json.encodeToString(state))
     }
-    @Synchronized fun beginHistorySync(channel: MonitoredChannel): HistorySyncRecord {
+    @Synchronized fun beginHistorySync(channel: MonitoredChannel, maxMessages: Int? = 1000): HistorySyncRecord {
+        require(maxMessages == null || maxMessages in setOf(1000, 5000, 10000)) { "Лимит: 1000, 5000, 10000 или null для всей истории" }
         val old = historySync(channel.id)
         if (old?.status in setOf(SyncStatus.RUNNING, SyncStatus.COMPLETED)) return old!!
-        val state = (old ?: HistorySyncRecord(channel.id, channel.username, channel.title)).copy(status = SyncStatus.RUNNING, retryCount = 0, error = null, updatedAt = System.currentTimeMillis())
+        val state = (old ?: HistorySyncRecord(channel.id, channel.username, channel.title)).copy(status = SyncStatus.RUNNING, retryCount = 0, error = null, maxMessages = maxMessages, pauseReason = null, updatedAt = System.currentTimeMillis())
         writeHistoryState(state)
         return state
     }

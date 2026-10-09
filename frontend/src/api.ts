@@ -52,7 +52,8 @@ export interface NotificationPage { items: NotificationRecord[]; unread: number;
 export interface NotificationSummary { unread: number; revision: number; byChannel: Record<string, number>; telegram?: TelegramStatus }
 export interface HistorySyncRecord {
   channelId: number; username: string; title: string;
-  status: 'IDLE' | 'RUNNING' | 'COMPLETED' | 'FAILED'; cursor: number;
+  status: 'IDLE' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'PAUSED'; cursor: number;
+  maxMessages: number | null; pauseReason: 'USER' | 'LIMIT' | null;
   messageCount: number; retryCount: number; nextRetryAt: number; error: string | null; updatedAt: number;
 }
 export interface HistoryPage { messages: TelegramMessage[]; nextCursor: number | null; total: number; query: string }

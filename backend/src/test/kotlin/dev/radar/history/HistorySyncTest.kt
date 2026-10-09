@@ -22,7 +22,7 @@ class HistorySyncTest {
             val service = HistorySyncService(repo, { _, cursor ->
                 cursors.add(cursor)
                 when (cursor) { 0L -> listOf(message(30)); 30L -> listOf(message(30), message(20)); 20L -> listOf(message(20), message(10)); else -> emptyList() }
-            }, { true }, 0, 0)
+            }, { true }, 0, 0, 0)
             service.runImport(channel.id)
             assertEquals(listOf(0L, 30L, 20L, 10L), cursors)
             assertEquals(SyncStatus.COMPLETED, repo.historySync(channel.id)!!.status)
@@ -39,7 +39,7 @@ class HistorySyncTest {
         val path = database()
         Repositories(path).use { repo ->
             repo.beginHistorySync(channel)
-            val service = HistorySyncService(repo, { _, cursor -> if (cursor == 0L) listOf(message(30), message(20)) else throw CancellationException("simulated shutdown") }, { true }, 0, 0)
+            val service = HistorySyncService(repo, { _, cursor -> if (cursor == 0L) listOf(message(30), message(20)) else throw CancellationException("simulated shutdown") }, { true }, 0, 0, 0)
             assertFailsWith<CancellationException> { service.runImport(channel.id) }
             assertEquals(20L, repo.historySync(channel.id)!!.cursor)
             assertEquals(2, repo.historySync(channel.id)!!.messageCount)
@@ -48,7 +48,7 @@ class HistorySyncTest {
         }
         Repositories(path).use { repo ->
             val cursors = mutableListOf<Long>()
-            val service = HistorySyncService(repo, { _, cursor -> cursors.add(cursor); if (cursor == 20L) listOf(message(20), message(10)) else emptyList() }, { true }, 0, 0)
+            val service = HistorySyncService(repo, { _, cursor -> cursors.add(cursor); if (cursor == 20L) listOf(message(20), message(10)) else emptyList() }, { true }, 0, 0, 0)
             service.resumePending()
             withTimeout(5000) { while (repo.historySync(channel.id)!!.status != SyncStatus.COMPLETED) delay(10) }
             assertEquals(listOf(20L, 10L), cursors)
@@ -61,7 +61,7 @@ class HistorySyncTest {
             repo.beginHistorySync(channel)
             repo.saveHistoryPage(repo.historySync(channel.id)!!.copy(cursor = 10), listOf(message(10)))
             var requests = 0
-            val stalled = HistorySyncService(repo, { _, _ -> requests++; listOf(message(10)) }, { true }, 0, 0)
+            val stalled = HistorySyncService(repo, { _, _ -> requests++; listOf(message(10)) }, { true }, 0, 0, 0)
             stalled.runImport(channel.id)
             assertEquals(3, requests)
             assertEquals(SyncStatus.FAILED, repo.historySync(channel.id)!!.status)
@@ -70,7 +70,7 @@ class HistorySyncTest {
             stalled.close()
             val retry = repo.beginHistorySync(channel)
             assertEquals(10L, retry.cursor)
-            val service = HistorySyncService(repo, { _, cursor -> if (cursor == 10L) listOf(message(5)) else emptyList() }, { true }, 0, 0)
+            val service = HistorySyncService(repo, { _, cursor -> if (cursor == 10L) listOf(message(5)) else emptyList() }, { true }, 0, 0, 0)
             service.runImport(channel.id)
             assertEquals(SyncStatus.COMPLETED, repo.historySync(channel.id)!!.status)
             assertEquals(2, repo.historySync(channel.id)!!.messageCount)
@@ -84,7 +84,7 @@ class HistorySyncTest {
             val service = HistorySyncService(repo, { _, cursor ->
                 if (++requests < 3) throw IOException("synthetic outage")
                 if (cursor == 0L) listOf(message(10)) else emptyList()
-            }, { true }, 0, 0)
+            }, { true }, 0, 0, 0)
             service.runImport(channel.id)
             assertEquals(4, requests)
             assertEquals(1, repo.historySync(channel.id)!!.messageCount)
