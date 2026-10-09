@@ -7,6 +7,8 @@ import java.nio.file.Path
 import java.sql.Connection
 import java.sql.DriverManager
 import java.util.UUID
+import dev.radar.history.*
+import dev.radar.telegram.TelegramMessage
 
 /** All JDBC work is serialized, and invoked on Dispatchers.IO by services/routes. */
 class Repositories(path: Path) : AutoCloseable {
@@ -20,7 +22,7 @@ class Repositories(path: Path) : AutoCloseable {
             s.execute("PRAGMA busy_timeout=5000")
             s.execute("PRAGMA journal_mode=WAL")
             val version = s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) }
-            check(version <= 1) { "Database schema is newer than this application" }
+            check(version <= 2) { "Database schema is newer than this application" }
             if (version == 0) transaction {
                 s.execute("CREATE TABLE monitored_channels(id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, data TEXT NOT NULL)")
                 s.execute("CREATE TABLE search_templates(id TEXT PRIMARY KEY, data TEXT NOT NULL)")
@@ -29,6 +31,11 @@ class Repositories(path: Path) : AutoCloseable {
                 s.execute("CREATE TABLE notifications(id TEXT PRIMARY KEY REFERENCES matched_messages(id) ON DELETE CASCADE, is_read INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)")
                 s.execute("CREATE TABLE monitoring_state(channel_id INTEGER PRIMARY KEY REFERENCES monitored_channels(id) ON DELETE CASCADE, data TEXT NOT NULL)")
                 s.execute("PRAGMA user_version=1")
+            }
+            if (version < 2) transaction {
+                s.execute("CREATE TABLE history_sync(channel_id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, status TEXT NOT NULL CHECK(status IN ('IDLE','RUNNING','COMPLETED','FAILED')), data TEXT NOT NULL)")
+                s.execute("CREATE TABLE imported_messages(channel_id INTEGER NOT NULL, message_id INTEGER NOT NULL, date INTEGER NOT NULL, text TEXT, normalized_text TEXT NOT NULL, PRIMARY KEY(channel_id,message_id))")
+                s.execute("PRAGMA user_version=2")
             }
         }
     }
@@ -92,5 +99,39 @@ class Repositories(path: Path) : AutoCloseable {
     @Synchronized fun markAllRead() { update("UPDATE notifications SET is_read=1") }
     @Synchronized fun state(channelId: Long): MonitoringState? = rows("SELECT data FROM monitoring_state WHERE channel_id=?", listOf(channelId)) { json.decodeFromString<MonitoringState>(it.getString(1)) }.firstOrNull()
     @Synchronized fun saveState(state: MonitoringState) { update("INSERT INTO monitoring_state VALUES(?,?) ON CONFLICT(channel_id) DO UPDATE SET data=excluded.data", state.channelId, json.encodeToString(state)) }
+
+    @Synchronized fun historySyncs(): List<HistorySyncRecord> = rows("SELECT data FROM history_sync ORDER BY username") { json.decodeFromString<HistorySyncRecord>(it.getString(1)) }
+    @Synchronized fun historySync(channelId: Long): HistorySyncRecord? = rows("SELECT data FROM history_sync WHERE channel_id=?", listOf(channelId)) { json.decodeFromString<HistorySyncRecord>(it.getString(1)) }.firstOrNull()
+    @Synchronized fun historySyncByUsername(username: String): HistorySyncRecord? = rows("SELECT data FROM history_sync WHERE username=?", listOf(username)) { json.decodeFromString<HistorySyncRecord>(it.getString(1)) }.firstOrNull()
+    private fun writeHistoryState(state: HistorySyncRecord) {
+        update("INSERT INTO history_sync VALUES(?,?,?,?) ON CONFLICT(channel_id) DO UPDATE SET username=excluded.username,status=excluded.status,data=excluded.data", state.channelId, state.username, state.status.name, json.encodeToString(state))
+    }
+    @Synchronized fun beginHistorySync(channel: MonitoredChannel): HistorySyncRecord {
+        val old = historySync(channel.id)
+        if (old?.status in setOf(SyncStatus.RUNNING, SyncStatus.COMPLETED)) return old!!
+        val state = (old ?: HistorySyncRecord(channel.id, channel.username, channel.title)).copy(status = SyncStatus.RUNNING, retryCount = 0, error = null, updatedAt = System.currentTimeMillis())
+        writeHistoryState(state)
+        return state
+    }
+    @Synchronized fun saveHistoryPage(state: HistorySyncRecord, messages: List<TelegramMessage>): HistorySyncRecord = transaction {
+        val normalize = MatchingService()
+        db.prepareStatement("INSERT INTO imported_messages VALUES(?,?,?,?,?) ON CONFLICT(channel_id,message_id) DO UPDATE SET date=excluded.date,text=excluded.text,normalized_text=excluded.normalized_text").use { s ->
+            messages.forEach { message ->
+                require(message.channelId == state.channelId) { "History channel mismatch" }
+                s.setLong(1, message.channelId); s.setLong(2, message.id); s.setInt(3, message.date); s.setString(4, message.text); s.setString(5, normalize.normalize(message.text.orEmpty())); s.addBatch()
+            }
+            s.executeBatch()
+        }
+        val count = rows("SELECT COUNT(*) FROM imported_messages WHERE channel_id=?", listOf(state.channelId)) { it.getInt(1) }.single()
+        state.copy(messageCount = count, updatedAt = System.currentTimeMillis()).also(::writeHistoryState)
+    }
+    @Synchronized fun historyMessages(channelId: Long, limit: Int, before: Long?, query: String): HistoryPage {
+        require(limit in 1..100)
+        val normalized = MatchingService().normalize(query)
+        val total = rows("SELECT COUNT(*) FROM imported_messages WHERE channel_id=? AND instr(normalized_text,?)>0", listOf(channelId, normalized)) { it.getInt(1) }.single()
+        val page = rows("SELECT message_id,date,text FROM imported_messages WHERE channel_id=? AND message_id<? AND instr(normalized_text,?)>0 ORDER BY message_id DESC LIMIT ?", listOf(channelId, before ?: Long.MAX_VALUE, normalized, limit + 1)) { TelegramMessage(it.getLong(1), it.getInt(2), it.getString(3), channelId) }
+        val messages = page.take(limit)
+        return HistoryPage(messages, messages.lastOrNull()?.id?.takeIf { page.size > limit }, total, query)
+    }
     @Synchronized override fun close() { db.close() }
 }

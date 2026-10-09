@@ -4,6 +4,7 @@ import dev.radar.api.configureRoutes
 import dev.radar.telegram.TdlibGateway
 import dev.radar.telegram.TelegramRequestException
 import dev.radar.research.*
+import dev.radar.history.*
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.install
 import io.ktor.server.engine.embeddedServer
@@ -35,9 +36,11 @@ fun main() {
     val search = SearchService(telegram, repositories, matching)
     val notifications = NotificationService(repositories, matching)
     val monitoring = MonitoringService(telegram, repositories, search, notifications)
+    val historySync = HistorySyncService(repositories, telegram::getHistoryPage, { telegram.getStatus().let { it.authorized && it.connectionState == "Ready" } })
     telegram.start()
     monitoring.start()
-    Runtime.getRuntime().addShutdownHook(Thread { monitoring.close(); telegram.close(); repositories.close() })
+    historySync.resumePending()
+    Runtime.getRuntime().addShutdownHook(Thread { historySync.close(); monitoring.close(); telegram.close(); repositories.close() })
 
     embeddedServer(Netty, host = "127.0.0.1", port = 8080) {
         install(ContentNegotiation) {
@@ -72,5 +75,6 @@ fun main() {
         }
         configureRoutes(telegram)
         configureResearchRoutes(telegram, repositories, matching, search, notifications)
+        configureHistoryRoutes(telegram, repositories, historySync)
     }.start(wait = true)
 }

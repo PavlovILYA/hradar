@@ -122,7 +122,7 @@ notifications survive restarts; unique constraints prevent duplicate notificatio
 Rate-limit recovery waits are persisted. Public non-member channels may rely on the
 periodic recovery scan rather than live updates. Keep the backend running to monitor.
 
-Local SQLite: `~/.hradar/research.sqlite` (schema migration version 1). Account credentials
+Local SQLite: `~/.hradar/research.sqlite` (schema migration version 2). Account credentials
 stay in `.env` and the separate TDLib session; they are not stored in research tables.
 `/api/events` streams updates with SSE. Browser desktop notifications need explicit
 permission and an open page; no external push server or Telegram sends are used.
@@ -144,3 +144,34 @@ once with the existing session. Never run two instances against the same TDLib d
 - Official TDLib: https://github.com/tdlib/td
 - Official Java sample/build: https://github.com/tdlib/td/tree/master/example/java
 - Ktor: https://ktor.io/docs/
+
+## Full channel-history archive
+
+Choose a public channel and press **Загрузить всю историю**, or open
+**Сохранённая история**. The backend imports available history in pages of up to
+100 messages, stores unique `(channelId, messageId)` records in SQLite, and commits
+messages and the oldest-message cursor together. Short pages do not end the import.
+Only an empty TDLib response marks completion; repeated nonadvancing cursors fail
+with a resumable error. Two channels can import concurrently, with bounded retries
+and persisted Telegram rate-limit waits. No channels are joined.
+
+`RUNNING` imports resume automatically after backend restart. `FAILED` imports
+continue from their saved cursor when started again. Starting a completed archive
+is a no-op: this is a historical snapshot, not continuous ingestion of newer posts
+or synchronization of edits/deletions. Existing source monitoring is independent.
+The archive is not automatically passed through recruitment templates yet.
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/history/telegram/sync
+curl http://127.0.0.1:8080/api/history/telegram/sync
+curl http://127.0.0.1:8080/api/history/syncs
+curl 'http://127.0.0.1:8080/api/history/telegram/messages?limit=50&query=telegram'
+# For the next page, pass the returned nextCursor as &before=<messageId>.
+```
+
+POST returns 202 after channel resolution; importing runs in the background.
+Status includes `IDLE`, `RUNNING`, `COMPLETED`, or `FAILED`, count, cursor and errors;
+there is no invented completion percentage. Local text search normalizes Unicode
+and case and matches literal substrings across the saved archive. Results use
+server-side keyset pagination, maximum 100/API and 50/UI messages per page.
+Stop the running backend before compiling Kotlin, then start exactly one instance.

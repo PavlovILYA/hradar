@@ -163,3 +163,41 @@ test('global free limit is explicit and never substitutes channel results', asyn
   await expect(page.getByRole('heading', { name: 'Глобальный поиск недоступен' })).toBeVisible();
   await expect(page.locator('.message-card')).toHaveCount(0);
 });
+
+test('real local archive paginates and searches through backend', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('status')).toHaveText('Telegram подключён');
+  await page.getByRole('button', { name: 'Сохранённая история', exact: true }).click();
+  await expect(page.getByText('Доступная история загружена', { exact: true })).toBeVisible();
+  await expect(page.locator('.history-archive .message-card')).toHaveCount(50);
+  await page.getByRole('button', { name: 'Следующая страница архива' }).click();
+  await expect(page.getByText(/Найдено: .*Страница 2/)).toBeVisible();
+  await expect(page.locator('.history-archive .message-card')).toHaveCount(50);
+  await page.getByLabel('Поиск по всей сохранённой истории').fill('telegram');
+  await page.getByRole('button', { name: 'Найти в истории' }).click();
+  await expect(page.getByText(/Найдено: .*Страница 1/)).toBeVisible();
+  await expect(page.locator('.history-archive .message-card').first()).toBeVisible();
+  expect(await page.locator('.history-archive .message-card').count()).toBeLessThanOrEqual(50);
+  await page.getByLabel('Поиск по всей сохранённой истории').fill('hradar-no-match-zzxx');
+  await page.getByRole('button', { name: 'Найти в истории' }).click();
+  await expect(page.getByText('В сохранённой истории нет совпадений')).toBeVisible();
+});
+
+test('archive resumes a failed import and displays progress without percentages', async ({ page }) => {
+  let started = false;
+  const state = () => ({ channelId: -1001, username: 'telegram', title: 'Test archive', status: started ? 'RUNNING' : 'FAILED', cursor: 10, messageCount: started ? 110 : 100, retryCount: 0, nextRetryAt: 0, error: started ? null : 'Сетевая ошибка', updatedAt: 0 });
+  await page.route('**/api/history/telegram/sync', route => {
+    if (route.request().method() === 'POST') started = true;
+    return route.fulfill({ json: state() });
+  });
+  await page.route('**/api/history/syncs', route => route.fulfill({ json: [state()] }));
+  await page.route('**/api/history/telegram/messages?**', route => route.fulfill({ json: { messages: [], total: 0, nextCursor: null, query: '' } }));
+  await page.goto('/');
+  await expect(page.getByRole('status')).toHaveText('Telegram подключён');
+  await page.getByRole('button', { name: 'Сохранённая история', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Сетевая ошибка');
+  await page.getByRole('button', { name: 'Продолжить импорт' }).click();
+  await expect(page.getByTestId('history-count')).toHaveText('110');
+  await expect(page.getByRole('button', { name: 'Импорт выполняется' })).toBeDisabled();
+  await expect(page.locator('.import-status')).not.toContainText('%');
+});

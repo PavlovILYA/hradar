@@ -112,6 +112,11 @@ class TdlibGateway(
         return readChannelHistory(username, limit, ::request)
     }
 
+    suspend fun getHistoryPage(channelId: Long, cursor: Long): List<TelegramMessage> {
+        val page = executeRead(TdApi.GetChatHistory(channelId, cursor, 0, 100, false)) as TdApi.Messages
+        return page.messages.map { TelegramMessage(it.id, it.date, dev.radar.research.messageText(it.content), it.chatId) }
+    }
+
     private fun ensureAuthorized() {
         check(authorized) { "Telegram isn't authorized yet. Check the server terminal." }
     }
