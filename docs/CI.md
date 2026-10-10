@@ -23,6 +23,15 @@ and distribution checksum remain in the project's wrapper; no system-Gradle fall
 
 ## Latest verified runs (2026-10-11)
 
+[Fast CI 38095719750, attempt 2](https://github.com/PavlovILYA/hradar/actions/runs/38095719750/attempts/2)
+at bootstrap commit `20d646d2c053e43a21e3a26288acd6bd0a2a7f8a` completed successfully
+after Release publication. Both independent jobs passed: permanent JAR download,
+SHA256/provenance verification, seven Python safeguard tests, Kotlin build/tests,
+frontend TypeScript/production build and all 14 offline Playwright tests.
+Logs show `BUILD SUCCESSFUL in 1m 15s`. No checks were disabled or bypassed.
+This verifies the bootstrap branch; master still needs the reviewed PR merged by
+the maintainer. The agent did not merge or modify master.
+
 [Native run 38045478478](https://github.com/PavlovILYA/hradar/actions/runs/38045478478)
 completed successfully on master at `ce6363e9da5d1d7bf2069241f8738ad4303b18ce`.
 GitHub job steps confirm ARM64 architecture, JNI smoke verification, Kotlin build,
@@ -35,8 +44,11 @@ at `ae7b3227cf82aeb870c09f3041b3d29b093a5474` passed frontend build and offline 
 Backend exited 1 at the bootstrap guard, before Gradle compilation or tests.
 The bootstrap branch run [38093744547](https://github.com/PavlovILYA/hradar/actions/runs/38093744547)
 also passed frontend and stopped backend at the same guard before pinning.
-The GitHub Releases API returned no releases and the proposed v1 tag is absent.
-Publication requires explicit maintainer confirmation.
+These historical runs preceded Release publication. With explicit maintainer
+approval, the [first TDLib Release](https://github.com/PavlovILYA/hradar/releases/tag/tdlib-bc9c263e2bfee06aaab41e82db51a103376030bc-v1)
+was published from the four original files, targeting the verified native build
+commit. The tag resolves to that exact commit. All four uploaded asset digests
+match the downloaded originals; nothing was rebuilt or overwritten.
 
 The successful run's downloaded binaries were independently verified locally:
 `SHA256SUMS` and metadata match both files; `gh attestation verify` exited 0 for
@@ -52,9 +64,10 @@ and Homebrew OpenSSL dependencies; the dylib was not loaded on the Intel host.
 | `tdlib-java.jar` | `f94f26b5ff60d254c51ce728079b600aa6c76b80cca009aa2969f81c6972adad` |
 | `libtdjni.dylib` | `d2a124be93e6a9e5000a8e8ca6a2826991cbe68145d2a21db9f2e4d3dbd19dfa` |
 
-`config/tdlib.json` now pins the verified JAR hash and build commit. The Release
-download/fetch path and green backend Fast CI remain pending publication and
-push of the pinning commit. No TDLib rebuild is needed.
+`config/tdlib.json` pins the verified JAR hash and build commit (commit `20d646d`).
+Local `fetch-tdlib-java.py` exited 0 using the permanent Release URL: it verified
+SHA256, provenance and Java classes before installing the identical JAR.
+No TDLib rebuild was needed.
 Local JDK 21 `./gradlew :backend:build --no-daemon --console=plain` with this
 verified JAR exited 0: 56 tests, zero failures/errors/skips, no JNI or Telegram
 credentials/session. This local result does not establish green GitHub Fast CI.
@@ -101,8 +114,8 @@ with explicit host architecture and separate commit/architecture build directori
 
 ## Fast CI dependency and initial bootstrap
 
-**Backend Fast CI remains blocked until the verified native build is published.**
-The bootstrap branch now has reviewed `jarSha256` and `buildSourceDigest` values
+**The permanent TDLib Release and reviewed binary pins are available.**
+The bootstrap branch has reviewed `jarSha256` and `buildSourceDigest` values
 in `config/tdlib.json`; previous commits have null values and fail with explicit
 bootstrap instructions. The new configuration requires the permanent Release.
 No dummy JAR, skipped Kotlin tests or expired-run artifact fallback is used. The
@@ -171,8 +184,8 @@ First publication is a **manual maintainer action**, not automatic tag/release o
    into the corresponding config field. Review and commit those public checksums
    separately, then push the bootstrap configuration. Backend Fast CI can now build.
    Run `python3 -B scripts/fetch-tdlib-java.py` with authenticated `gh` to check the
-   exact download/provenance path. Release publication and this fetch have not yet
-   been verified against a real successful ARM64 run.
+   exact download/provenance path. The first Release publication and local fetch
+   have both been verified against successful ARM64 run 38045478478.
 
 Do not rerun the original failing run expecting new code: GitHub reruns use the old
 commit. After fixing/pushing code, dispatch a **new** run on master. For a clean retry:
@@ -183,7 +196,7 @@ gh workflow run macos-arm64.yml --repo PavlovILYA/hradar --ref master -f use_cac
 
 ## Tests and local builds
 
-Frontend `npm run test:ci --prefix frontend` runs 13 synthetic browser tests. Every
+Frontend `npm run test:ci --prefix frontend` runs 14 synthetic browser tests. Every
 API request is intercepted; unexpected requests fail the test. No backend, SQLite,
 credentials or Telegram session is needed. Six tests tagged `@telegram` cover real
 history, missing-channel handling, template CRUD, Telegram search, local archive and
