@@ -46,17 +46,22 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
-      - name: Install CMake 3.31.8 and native dependencies
+      - name: Install CMake 3.31.10 and native dependencies
         run: |
           brew install gperf openssl@3
           python3 -m venv .tdlib-build/cmake-tools
-          .tdlib-build/cmake-tools/bin/pip install cmake==3.31.8
+          .tdlib-build/cmake-tools/bin/python -m pip install --only-binary=:all: cmake==3.31.10
           echo "$PWD/.tdlib-build/cmake-tools/bin" >> "$GITHUB_PATH"
+      - name: Verify effective CMake executable and version
+        run: |
+          command -v cmake
+          cmake --version
+          test "$(cmake --version | head -n 1)" = "cmake version 3.31.10"
       - name: Read pinned source and identify toolchain cache
         id: toolchain
         run: |
           python3 -c 'import json,os; c=json.load(open("config/tdlib.json")); f=open(os.environ["GITHUB_OUTPUT"],"a"); print("tdlib="+c["commit"],file=f)'
-          identity="$( { clang --version; xcrun --show-sdk-version; brew list --versions openssl@3; java -version 2>&1; echo "$JAVA_HOME ${ImageVersion:-unknown}"; } | shasum -a 256 | cut -d ' ' -f 1)"
+          identity="$( { cmake --version; clang --version; xcrun --show-sdk-version; brew list --versions openssl@3; java -version 2>&1; echo "$JAVA_HOME ${ImageVersion:-unknown}"; } | shasum -a 256 | cut -d ' ' -f 1)"
           echo "identity=$identity" >> "$GITHUB_OUTPUT"
       - name: Cache pinned CMake intermediates (not a dependency source)
         if: github.event_name != 'workflow_dispatch' || inputs.use_cache

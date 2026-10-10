@@ -9,13 +9,29 @@
 - **Native ARM64** (`.github/workflows/macos-arm64.yml`): manual dispatch, or a push
   to master changing its workflow, TDLib configuration or listed native build scripts.
   React/Kotlin-only changes do not start this expensive workflow. macos-15 must
-  report arm64; its source build uses CMake 3.31.8 and JDK 21. Toolchain-specific
-  CMake/source caches are optional; a clean run checks out the same official SHA.
+  report arm64; its source build uses CMake 3.31.10 and JDK 21.
+  The CMake wheel is pinned to 3.31.10; the effective PATH executable and exact
+  version are checked before building and included in the toolchain cache identity.
+  Toolchain-specific CMake/source caches are optional; a clean run checks out the same official SHA.
   Manual `use_cache=false` disables intermediate restoration. Job timeout is 100
   minutes; native compilation timeout is 80. Fast jobs have 15/20-minute timeouts.
 
 Official actions are pinned to reviewed release commit SHAs. The Gradle version
 and distribution checksum remain in the project's wrapper; no system-Gradle fallback.
+
+## Latest run diagnosis
+
+Commit `4aabd8249`: [native run 38045009513](https://github.com/PavlovILYA/hradar/actions/runs/38045009513)
+failed before TDLib compilation: pip could not find cmake==3.31.8; its index listed
+3.31.10. The replacement uses the available pinned binary wheel, without changing
+the TDLib SHA. PyPI provides a macOS universal2 wheel; a local temporary-venv
+installation returned `cmake version 3.31.10`. An old local pip 19.2.3 did not
+recognize that wheel; upgrading pip inside the verification venv resolved it.
+The workflow uses setup-python 3.12 and checks the installed executable explicitly.
+[Fast run 38045009526](https://github.com/PavlovILYA/hradar/actions/runs/38045009526)
+passed the frontend job; backend stopped at the intentional bootstrap guard.
+No checksum/provenance checks are bypassed and no placeholder hashes are acceptable.
+The corrected native workflow still requires a new successful GitHub-hosted run.
 
 ## Failure and compatibility fix
 
@@ -83,14 +99,17 @@ First publication is a **manual maintainer action**, not automatic tag/release o
    ```
 
 3. In that download directory, inspect metadata (arm64, expected TDLib SHA, master,
-   correct run/build commit) and run `shasum -a 256 -c SHA256SUMS`. Verify provenance
+   correct run/build commit). Run `cd /tmp/hradar-tdlib-release` before all following
+   checksum, attestation and publication commands, then run `shasum -a 256 -c SHA256SUMS`. Verify provenance
    for both files, replacing `<BUILD_SHA>` with metadata `buildSourceDigest`:
 
    ```bash
    gh attestation verify tdlib-java.jar --repo PavlovILYA/hradar \
      --signer-workflow PavlovILYA/hradar/.github/workflows/macos-arm64.yml \
      --source-ref refs/heads/master --source-digest <BUILD_SHA> --deny-self-hosted-runners
-   # Repeat the same verification for libtdjni.dylib.
+   gh attestation verify libtdjni.dylib --repo PavlovILYA/hradar \
+     --signer-workflow PavlovILYA/hradar/.github/workflows/macos-arm64.yml \
+     --source-ref refs/heads/master --source-digest <BUILD_SHA> --deny-self-hosted-runners
    ```
 
 4. Ensure the chosen tag/release does not exist. Publish a new release targeted at

@@ -1,10 +1,14 @@
 # hradar — Development status / session handoff
 
-Verified 2026-10-10. Current milestone: TDLib build correction and independent CI workflows.
+Verified 2026-10-10. Current milestone: CMake package pin correction after GitHub CI runs.
+Previous CI commit: `4aabd8249`.
 Previous completed MCP commit: `0303568`; its detailed handoff remains in Git history and [MCP.md](MCP.md).
 Working tree was clean at task start; no checkpoint needed. No git push.
 
 ## VERIFIED
+- Inspected GitHub job logs for native run 38045009513 and Fast run 38045009526 at the previous CI commit. Native failed installing unavailable pip package cmake==3.31.8 before any TDLib compilation. Fast frontend passed; backend failed at the expected missing-release/hash bootstrap guard.
+- Native workflow now pins the available cmake==3.31.10 binary wheel, checks the effective PATH executable and exact version before compilation, and includes CMake version in its cache identity. PyPI supplies a macOS universal2 wheel (Intel/ARM64). Actual temporary-venv install and cmake --version returned 3.31.10 on local Intel macOS; old local pip required upgrading inside that temporary venv only. No native compilation was started.
+- Targeted checks passed: actionlint for both workflows, bash -n for native scripts, seven Python safeguard tests, git diff --check. config/tdlib.json remains unchanged, with real bootstrap values still absent; no fake hashes or integrity bypass. Earlier backend/frontend build results below belong to the previous milestone and were not repeated for this dependency-pin-only change.
 - Pinned official TDLib SHA remains `bc9c263e2bfee06aaab41e82db51a103376030bc`. Its Example.java calls the one-argument inline-keyboard constructor, while its schema generates the additional `forceReply` boolean. Upstream CMake has no switch to exclude the demonstration. A minimal exact-hash-checked, idempotent checkout patch removes only Example.java from javac inputs; Client.java, generated TdApi.java, JNI targets and checks remain enabled. Applied to the actual pinned CMake in a temporary fixture.
 - Fast CI (`ci.yml`): independent frontend/backend jobs on push/PR to master. Native ARM64 CI: manual or changes to its workflow, native build configuration/scripts and TDLib pin. Actions are SHA-pinned; Gradle wrapper, dependency caches and timeouts are configured. Native outputs include manifest source identity, checksums and GitHub attestations; Release publication is manual.
 - Fast CI fetches only the Java JAR from a permanent, versioned project Release, verifying SHA256, signer workflow, master source commit, hosted-runner provenance and manifest TDLib SHA. It never downloads JNI. Bootstrap deliberately fails before network access until reviewed release hashes are pinned; frontend remains independent.
@@ -15,7 +19,7 @@ Working tree was clean at task start; no checkpoint needed. No git push.
 - Original backend restored as a single localhost instance: /health and /api/telegram/me returned 200, authorization and connection Ready. Existing MCP/read/search/import/monitoring implementations were not rewritten.
 
 ## NOT VERIFIED / bootstrap limitations
-- Corrected GitHub-hosted ARM64 workflow has NOT run: changes are local and push was not authorized. Native fix is not declared successful on ARM64. Rerunning the old failed run would use old code.
+- Previous GitHub-hosted ARM64 run failed before compilation. The new CMake-pin correction has NOT run on GitHub: changes are local and push was not authorized. ARM64 native success remains unverified; rerunning the old run would reuse its unavailable package pin.
 - A successful ARM64 artifact/Release does not yet exist. config/tdlib.json intentionally has null jarSha256/buildSourceDigest; Fast backend CI will clearly fail until bootstrap publication and reviewed hash pinning. Real Release download/attestation verification remains unverified; safeguards are unit-tested.
 - Existing local TDLib checkout/JAR use SHA `42e6a5259551178d1dab54a22ad96d14bd906e20`, not the CI pin. They were preserved. Local Kotlin checks do not establish compatibility with a freshly generated pinned CI JAR; the native workflow must prove that.
 - Six live frontend scenarios were not rerun for this CI task. Earlier MCP milestone tested all 19 and actual MCP client discovery/calls; no new Telegram publications, rate limits or browser OS delivery were exercised here.
@@ -27,4 +31,4 @@ Live frontend checks: `npm run test:telegram --prefix frontend`, with an authori
 Detailed CI bootstrap, artifact publication, source updates and clean retries: [CI.md](CI.md). Secrets, local databases, sessions, binaries and build outputs remain excluded from Git.
 
 ## Single next action
-After reviewing and manually pushing this commit, dispatch the updated macos-arm64.yml on master; follow [CI.md](CI.md) to verify the successful run, manually publish its versioned Release and pin the reviewed JAR checksum/source digest for Fast CI.
+After reviewing and manually pushing the CMake correction commit, dispatch the updated macos-arm64.yml on master; follow [CI.md](CI.md) to verify the successful run, manually publish its versioned Release and pin the reviewed JAR checksum/source digest for Fast CI.
