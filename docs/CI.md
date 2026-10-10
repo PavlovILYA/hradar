@@ -2,7 +2,9 @@
 
 ## Two independent workflows
 
-- **Fast CI** (`.github/workflows/ci.yml`): every push and pull request to master.
+- **Fast CI** (`.github/workflows/ci.yml`): pushes to master and
+  ci/tdlib-bootstrap, pull requests to master, and manual dispatch.
+  The bootstrap branch can be verified without merging or modifying master.
   Frontend and backend are separate jobs without `needs`; one failure does not skip
   the other. Ubuntu 24.04, Node 24, JDK 21 and the checked-in Gradle wrapper are used.
   npm/Gradle caches accelerate checks but are not dependency sources.
@@ -19,7 +21,23 @@
 Official actions are pinned to reviewed release commit SHAs. The Gradle version
 and distribution checksum remain in the project's wrapper; no system-Gradle fallback.
 
-## Latest run diagnosis
+## Latest verified runs (2026-10-11)
+
+[Native run 38045478478](https://github.com/PavlovILYA/hradar/actions/runs/38045478478)
+completed successfully on master at `ce6363e9da5d1d7bf2069241f8738ad4303b18ce`.
+GitHub job steps confirm ARM64 architecture, JNI smoke verification, Kotlin build,
+build provenance attestation and artifact upload all passed. Artifact
+`11667860623` is not expired (retained until 2027-01-08). Do not rebuild TDLib
+to complete this bootstrap; download and independently verify these outputs.
+
+[Fast run 38050957209](https://github.com/PavlovILYA/hradar/actions/runs/38050957209)
+at `ae7b3227cf82aeb870c09f3041b3d29b093a5474` passed frontend build and offline tests.
+Backend exited 1 at the bootstrap guard, before Gradle compilation or tests.
+The GitHub Releases API returned no releases. Binary checksums and independent
+provenance verification are still pending; a successful job alone does not
+authorize promotion. Publication requires explicit maintainer confirmation.
+
+## Previous failure diagnosis
 
 Commit `4aabd8249`: [native run 38045009513](https://github.com/PavlovILYA/hradar/actions/runs/38045009513)
 failed before TDLib compilation: pip could not find cmake==3.31.8; its index listed
@@ -31,7 +49,7 @@ The workflow uses setup-python 3.12 and checks the installed executable explicit
 [Fast run 38045009526](https://github.com/PavlovILYA/hradar/actions/runs/38045009526)
 passed the frontend job; backend stopped at the intentional bootstrap guard.
 No checksum/provenance checks are bypassed and no placeholder hashes are acceptable.
-The corrected native workflow still requires a new successful GitHub-hosted run.
+The corrected native workflow succeeded in run 38045478478 above.
 
 ## Failure and compatibility fix
 

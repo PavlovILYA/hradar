@@ -1,5 +1,32 @@
 # hradar — Development status / session handoff
 
+## CI bootstrap checkpoint — 2026-10-11
+
+Worktree `/Users/pavlov/Projects/hradar-ci`, branch `ci/tdlib-bootstrap` only.
+
+- **VERIFIED:** GitHub native run [38045478478](https://github.com/PavlovILYA/hradar/actions/runs/38045478478)
+  succeeded at `ce6363e9da5d1d7bf2069241f8738ad4303b18ce` on master, including
+  ARM64/JNI checks, Kotlin tests, provenance creation and artifact upload.
+  Artifact `11667860623` is available until 2027-01-08. Latest Fast run
+  [38050957209](https://github.com/PavlovILYA/hradar/actions/runs/38050957209)
+  passed frontend; backend log shows bootstrap guard exit 1 before Kotlin build.
+  Releases API returned an empty list. Seven Python safeguard tests and shell
+  syntax checks passed locally. Fast CI now supports bootstrap branch pushes
+  and manual dispatch; no native workflow or product code changed.
+- **NOT VERIFIED:** downloaded binary SHA256, independent provenance validation,
+  Release publication, release fetcher and green backend Fast CI. Artifact
+  connector supplied an expired signed download URL (HTTP 403). Temporary CLI
+  `/private/tmp/hradar-gh/gh_2.102.0_macOS_amd64/bin/gh` is installed but not logged in.
+  No TDLib rebuild, backend startup, push, master modification or merge occurred.
+  Existing backend listener PID 68501 was left untouched.
+- **NEXT ACTION:** authenticate the temporary CLI with `gh auth login --web`,
+  download the successful run's artifact, verify both hashes and attestations,
+  prepare release assets and pin verified metadata. Obtain explicit permission
+  before Release publication and branch push, then verify Fast CI on this branch.
+
+The product runtime handoff below is preserved; its previous native-CI blocker
+is superseded by the evidence above.
+
 Verified 2026-10-10. Milestone: optional Telegram Bot API notifications and controls.
 Existing documentation changes preserved separately in checkpoint `b3440d0`.
 Previous CI fix: `ce6363e`; CI files, TDLib build scripts and config/tdlib.json were not changed. No git push.
