@@ -91,6 +91,29 @@ class CapabilityService(private val telegram: TelegramReadPort, private val repo
                         val page = all.drop(input.cursor).take(input.limit).map { RuleDto(it.id, it.name, it.required, it.any, it.excluded, it.active, it.subscribed, if (it.sourceMode == "all") ids else it.sources.filter { id -> id in ids }) }
                         objectOf(RulePage(page, (input.cursor + page.size).takeIf { it < all.size }))
                     }
+                    "list_recent_matches" -> {
+                        val input = decode<RecentMatchesInput>(arguments); checkLimit(input.limit); require(input.before == null || input.before > 0)
+                        val allowed = repo.mcpSources().map { it.id }.toSet()
+                        val page = repo.recentMatches(input.limit, input.before ?: Long.MAX_VALUE, allowed).map(::safeMatch)
+                        objectOf(MatchPage(page, page.lastOrNull()?.sequence))
+                    }
+                    "get_match_details" -> {
+                        val input = decode<MatchInput>(arguments); require(input.matchId.matches(Regex("[a-f0-9-]{36}")))
+                        val record = repo.match(input.matchId) ?: throw AccessDenied()
+                        channel(record.message.channelId.toString())
+                        objectOf(safeMatch(record))
+                    }
+                    "bot_publish_matches" -> {
+                        val input = decode<PublishMatchesInput>(arguments)
+                        require(input.recipientUserId > 0 && input.matchIds.size in 1..10 && input.matchIds.distinct().size == input.matchIds.size)
+                        input.matchIds.forEach { id ->
+                            require(id.matches(Regex("[a-f0-9-]{36}")))
+                            val record = repo.match(id) ?: throw AccessDenied()
+                            channel(record.message.channelId.toString())
+                        }
+                        if (!repo.botPublishPermitted(input.recipientUserId)) throw AccessDenied()
+                        objectOf(PublishRequestDto(repo.requestBotPublish(input.recipientUserId, input.matchIds, System.currentTimeMillis())))
+                    }
                     "prepare_message" -> {
                         val input = decode<DraftInput>(arguments); require(input.text.isNotBlank() && input.text.length <= 4096)
                         objectOf(DraftDto(dto(channel(input.chat)), input.text))
@@ -113,6 +136,13 @@ class CapabilityService(private val telegram: TelegramReadPort, private val repo
         runCatching { repo.auditMcp(name.take(64), result.error?.code ?: "OK", (System.nanoTime() - started) / 1_000_000) }
             .onFailure { org.slf4j.LoggerFactory.getLogger(CapabilityService::class.java).warn("MCP audit storage unavailable") }
         result
+    }
+    private fun safeMatch(record: NotificationRecord): NotificationRecord {
+        val allowed = channel(record.message.channelId.toString())
+        val rule = repo.template(record.templateId)
+        val sources = repo.mcpSources().map { it.id }.toSet()
+        val name = if (rule != null && rule.sourceMode != "global" && (rule.sourceMode == "all" || rule.sources.all { it in sources })) record.templateName.take(100) else "Matching rule"
+        return record.copy(templateName = name, message = record.message.copy(text = record.message.text?.take(2000), title = allowed.title, username = allowed.username, link = dev.radar.bot.verifiedTelegramLink(record.message.link)))
     }
     private fun failure(code: String, message: String, retry: Long? = null) = CapabilityResult(false, error = CapabilityError(code, message, retry))
 }

@@ -23,3 +23,9 @@ import kotlinx.serialization.json.JsonObject
 @Serializable data class DraftDto(val recipient: ChatDto, val text: String, val sent: Boolean = false, val sendingSupported: Boolean = false, val userConfirmationRequired: Boolean = true)
 @Serializable data class RuleDto(val id: String, val name: String, val required: List<String>, val any: List<String>, val excluded: List<String>, val active: Boolean, val subscribed: Boolean, val sourceIds: List<Long>)
 @Serializable data class RulePage(val rules: List<RuleDto>, val nextCursor: Int?)
+
+@Serializable data class RecentMatchesInput(val limit: Int = 25, val before: Long? = null)
+@Serializable data class MatchInput(val matchId: String)
+@Serializable data class PublishMatchesInput(val recipientUserId: Long, val matchIds: List<String>)
+@Serializable data class MatchPage(val matches: List<dev.radar.research.NotificationRecord>, val nextCursor: Long?)
+@Serializable data class PublishRequestDto(val requestId: String, val state: String = "AWAITING_USER_CONFIRMATION", val sent: Boolean = false)

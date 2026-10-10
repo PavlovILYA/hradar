@@ -1,6 +1,6 @@
 # hradar MCP
 
-Local read-only Telegram capabilities over Streamable HTTP:
+Local source-scoped Telegram capabilities over Streamable HTTP:
 `http://127.0.0.1:8080/mcp`. REST and MCP use the same typed
 `CapabilityService`, narrow `TelegramReadPort`, existing SearchService and SQLite
 repositories. They reuse the app's single authorized TDLib client. The original
@@ -36,6 +36,9 @@ result. A new installation starts disabled with an empty allowlist.
 | get_message_context | `chat`, `messageId`, `neighbors=3` | Selected message and up to twice that many neighbors |
 | search_local_archive | `chat`, `query=""`, `limit=25`, `before` | Only saved SQLite history; total and keyset `nextCursor` |
 | list_monitoring_rules | `limit=25`, `cursor=0` | Templates/subscriptions scoped to permitted sources |
+| list_recent_matches | `limit=25`, `before` | Saved SQLite matches from allowed sources, newest first; sequence `nextCursor` |
+| get_match_details | `matchId` | One saved match from an allowed source; text clipped to 2000 characters |
+| bot_publish_matches | `recipientUserId`, `matchIds` (1–10 unique IDs) | Awaiting-confirmation request, only for a separately consenting bot operator |
 | prepare_message | `chat`, `text` | Ephemeral structured draft; never saved or sent to Telegram |
 
 All list limits are 1–50. Context neighbors are 0–10; context may be incomplete
@@ -51,14 +54,14 @@ Text is clipped at 2000 characters with `truncated=true`. Drafts are limited to
 and capability responses to 256 KiB (MCP also includes a text representation).
 Up to four simultaneous capability calls are allowed; each has a 30-second timeout.
 Rate limits return `RATE_LIMITED` and `retryAfterSeconds`; never retry in a tight loop.
-No Stars, joins, outgoing messages or private-chat lookups are performed.
+No Stars, joins, TDLib outgoing messages or private-chat lookups are performed. Bot publication follows the separate consent flow below.
 
 Results use `{ok,data,error,contentTrust}` in MCP `structuredContent` and TextContent.
 Errors set `isError=true`: `DISABLED`, `ACCESS_DENIED`, `ACCESS_CHANGED`,
 `INVALID_ARGUMENTS`, `TIMEOUT`, `RATE_LIMITED`, `TELEGRAM_ERROR`, `NOT_READY`,
 `UNSUPPORTED`, or `UNAVAILABLE`. No raw TDLib objects/exceptions are exposed.
 Unknown tools return the official SDK’s tool-not-found error result. Arguments reject unknown
-fields. Tool annotations mark the registered operations read-only.
+fields. Tool annotations mark reads read-only. `bot_publish_matches` is non-read-only and non-idempotent: it creates a bounded confirmation request, not an immediate publication.
 
 Shared REST: `POST /api/capabilities/<tool-name>` with the same argument JSON and
 result envelope. For example, after manually enabling/granting @telegram:
@@ -94,7 +97,7 @@ Future write operations must be distinct typed use cases and require an out-of-b
 human approval in hradar. Approval must not be available through the MCP client.
 The current draft's `userConfirmationRequired=true` does not authorize any send.
 Safe next additions include allowlisted source metadata and bounded media metadata;
-account mutations/sending are not implemented.
+TDLib account mutations/sending are not implemented.
 
 ## SDK and checks
 
@@ -123,3 +126,26 @@ error sanitization, allowlist policy, persistence, draft safety and shared REST/
 results; a Ktor test host performs real SDK initialize/tools/list/tools/call requests.
 Browser tests cover integration controls and retain existing workflow regression tests.
 Native TDLib/JNI is not rebuilt by these commands.
+
+## Saved matches and safe bot publication
+
+Read operations use saved matches only; they never trigger history imports or online
+Telegram search. Unlisted match IDs are denied without exposing source metadata.
+Recent-match pagination filters sources in SQL before LIMIT; pass the last sequence
+as `before`. `nextCursor` may lead to an empty final page. Text is clipped at 2000
+characters; the original saved message remains unchanged.
+
+`bot_publish_matches` accepts only existing match IDs and a positive operator user ID.
+The operator must have opted in via `/start` and separately enabled `/agent_publish on`.
+The tool cannot grant permission or confirm its own request. It creates a concrete
+review message in that operator's private bot chat; a human confirmation there within
+10 minutes is required before any results enter the delivery queue. The result is
+`{requestId,state:"AWAITING_USER_CONFIRMATION",sent:false}`. It is not evidence of
+Telegram delivery. No arbitrary text, chat, recipient discovery or BotGateway tool.
+A maximum of three requests per recipient in ten minutes bounds repeated calls.
+Permission absence returns ACCESS_DENIED; malformed input/request-budget exhaustion
+returns INVALID_ARGUMENTS. Source revocation, disabling MCP or `/agent_publish off`
+cancels pending publications; permissions are rechecked on confirmation and delivery.
+Bot operator source access and MCP grants remain separate; an agent cannot inherit
+an operator's broader source access. See [BOT.md](BOT.md) for retention/recovery and
+manual phone verification. [AGENT_BRIDGE.md](AGENT_BRIDGE.md) is a proposal only.

@@ -51,7 +51,7 @@ The UI, MCP, and bot are **adapters**, not separate implementations of search or
 | Shared subscriptions | `research/SubscriptionService.kt` | Validation and shared REST/bot template and pause/resume operations |
 | Historical import | `history/HistorySyncService.kt`, `HistoryRoutes.kt` | Explicit channel archive import with pause/resume, limits, cursors, retries |
 | Persistence | `research/Repositories.kt` | SQLite schema and migrations, sources, templates, matches, notifications, archive, MCP policy, bot registration/cursors/outbox |
-| MCP / shared capabilities | `capabilities/CapabilityService.kt`, `TelegramReadPort.kt`, `McpTools.kt`, `McpRoutes.kt` | Typed read-only operations, source allowlist, REST/MCP exposure, local security checks |
+| MCP / shared capabilities | `capabilities/CapabilityService.kt`, `TelegramReadPort.kt`, `McpTools.kt`, `McpRoutes.kt` | Typed source-scoped reads and confirmation requests, REST/MCP exposure, local security checks |
 | Web | `frontend/src/` | React workspace; online search, local archive, templates, notifications, MCP settings and bot status |
 | Tests | `backend/src/test/`, `frontend/tests/`, `tests/` | Kotlin unit/MCP tests, Playwright browser tests, CI safeguards |
 | Delivery | `.github/workflows/ci.yml`, `macos-arm64.yml` | Fast frontend/backend checks and separate costly ARM64 TDLib build |
@@ -95,13 +95,13 @@ For sources not joined by the Telegram user, monitoring may depend on bounded hi
 
 ### MCP and application capabilities
 
-`POST /mcp` exposes Streamable HTTP using the official Kotlin MCP SDK. Nine read-only tools share `CapabilityService` with `POST /api/capabilities/{tool}`. Agents can query status, allowed sources, history, search, message context, local archives, rules, and unsent drafts. They cannot call arbitrary TDLib methods, grant themselves sources, access personal chats, or send messages. Local UI controls the allowlist and enabled state; docs: [`docs/MCP.md`](docs/MCP.md).
+`POST /mcp` exposes Streamable HTTP using the official Kotlin MCP SDK. Eleven read-only tools and one constrained publication-request tool share `CapabilityService` with `POST /api/capabilities/{tool}`. Agents can query status, allowed sources, history, search, message context, local archives, rules, and unsent drafts. They cannot call arbitrary TDLib methods, grant themselves sources, access personal chats, or send from the TDLib user account. Bot publication requests require a separate opted-in recipient permission and confirmation in that private bot chat. Local UI controls the allowlist and enabled state; docs: [`docs/MCP.md`](docs/MCP.md).
 
-MCP is **a tool protocol, not an agent runtime**. The bot calls shared services for deterministic operator commands; it does not call localhost REST or MCP. A future Agent Bridge must retain separate operator authorization, source-scoped agent permissions and out-of-band approval. No natural-language executor exists.
+MCP is **a tool protocol, not an agent runtime**. The bot calls shared services for deterministic operator commands; it does not call localhost REST or MCP. A future Agent Bridge must retain separate operator authorization, source-scoped agent permissions and out-of-band approval. No natural-language executor exists. The separate proposal is [AGENT_BRIDGE.md](docs/AGENT_BRIDGE.md). BotInboxService reads saved matches with inline navigation and shared read state; MCP reads apply source filters before pagination. Confirmation and result outbox inserts commit atomically. Revoking MCP access cancels pending agent publications, while normal operator Inbox access retains its existing bot allowlist boundary.
 
 ## Local storage and security boundaries
 
-- SQLite: `~/.hradar/research.sqlite` (schema tracked via migrations; currently v5 in the repository, including bot recipients, polling cursors/cooldowns and outbox).
+- SQLite: `~/.hradar/research.sqlite` (schema tracked via migrations; currently v6 in the repository, including bot recipients, polling cursors/cooldowns and outbox, plus separate publication permission and expiring confirmation requests).
 - TDLib account session: `~/.recruitment-radar/tdlib/`. It is sensitive and never belongs in Git, logs, or MCP results.
 - Credentials: local `.env`/environment (`TG_API_ID`, `TG_API_HASH`, optional `TG_BOT_TOKEN` and `TG_BOT_ALLOWED_USER_IDS`); do not send to UI, AI tools, or repositories.
 - Ktor binds to **127.0.0.1 only**. Localhost is not user authentication and is not protection against malicious local processes. Do not expose `/api` or `/mcp` through ngrok, public tunnels, LAN, or reverse proxies in the current architecture.

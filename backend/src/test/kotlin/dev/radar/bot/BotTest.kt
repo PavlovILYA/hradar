@@ -65,6 +65,123 @@ class BotTest {
         }
         override fun close() { bot.close(); repo.close() }
     }
+    @Test fun inboxCommandsNavigationReadAndOriginalUseSavedMatches() = runBlocking {
+        Fixture().use { f ->
+            f.repo.saveChannel(channel); val rule = f.rule()
+            repeat(12) { f.repo.recordMatch(rule, f.publication(it.toLong() + 1)) }
+            f.optIn()
+            val inbox = BotInboxService(f.repo)
+            val first = inbox.matches()
+            assertEquals(11, first.buttons.size)
+            val recent = f.repo.recentMatches(12)
+            val olderPage = inbox.matches(recent[9].sequence)
+            assertEquals(3, olderPage.buttons.size)
+            val selected = recent.first()
+            assertContains(inbox.details(selected.id).text, "Не прочитано")
+            assertContains(inbox.details(selected.id, true).text, "Прочитано")
+            assertEquals(11, f.repo.unreadCount())
+            assertContains(inbox.sources().text, channel.username)
+            assertContains(inbox.digest().text, "11")
+            val handler = BotUpdateHandler(config(), f.repo, f.subscriptions, { "ready" }, { f.time })
+            handler.handle(messageUpdate(2, "/help@synthetic_bot"), "synthetic_bot")
+            handler.handle(callback(3, "read:${selected.id}").let { it.copy(callback = it.callback!!.copy(messageId = 17)) }, "synthetic_bot")
+            handler.handle(callback(3, "read:${selected.id}").let { it.copy(callback = it.callback!!.copy(messageId = 17)) }, "synthetic_bot")
+            assertEquals(2, f.bot.status().delivery.pending)
+            f.bot.deliverOnce(); assertContains(f.fake.sent.single().second.text, "/matches")
+            f.time += 2000; f.bot.deliverOnce()
+            assertTrue(f.fake.sent.last().second.buttons.flatten().any { it.url == f.returnedLink })
+            assertEquals(1, f.linkCalls)
+            assertEquals(17L, f.fake.sent.last().second.editMessageId)
+        }
+    }
+    @Test fun agentPublishRequiresSeparatePermissionAndRecipientConfirmationWithDurableReplayProtection() = runBlocking {
+        val path = database(); var request = ""; var matchId = ""
+        Fixture(path).use { f ->
+            val rule = f.rule(); f.repo.recordMatch(rule, f.publication()); f.optIn()
+            f.repo.setMcpEnabled(true); f.repo.allowMcpSource(channel)
+            matchId = f.repo.recentMatches(1).single().id
+            assertFailsWith<IllegalArgumentException> { f.repo.requestBotPublish(7, listOf(matchId), f.time) }
+            val handler = BotUpdateHandler(config(), f.repo, f.subscriptions, { "ready" }, { f.time })
+            handler.handle(messageUpdate(2, "/agent_publish on"), "synthetic_bot")
+            assertTrue(f.repo.botPublishPermitted(7))
+            assertFailsWith<IllegalArgumentException> { f.repo.requestBotPublish(8, listOf(matchId), f.time) }
+            request = f.repo.requestBotPublish(7, listOf(matchId), f.time)
+            assertEquals(2, f.bot.status().delivery.pending) // permission reply and metadata-only preview
+            f.bot.deliverOnce(); f.time += 2000; f.bot.deliverOnce()
+            assertContains(f.fake.sent.last().second.text, "Подтверждение")
+            handler.handle(callback(3, "publish:$request", 8), "synthetic_bot")
+            assertEquals(0, f.bot.status().delivery.pending)
+        }
+        Fixture(path).use { f ->
+            val handler = BotUpdateHandler(config(), f.repo, f.subscriptions, { "ready" }, { f.time })
+            handler.handle(callback(4, "publish:$request"), "synthetic_bot")
+            assertEquals(2, f.bot.status().delivery.pending)
+            handler.handle(callback(4, "publish:$request"), "synthetic_bot")
+            assertEquals(2, f.bot.status().delivery.pending)
+            assertFalse(f.repo.confirmBotPublish(123, 7, request, true, f.time))
+            f.time += 10_000; f.bot.deliverOnce(); assertContains(f.fake.sent.single().second.text, "Synthetic Java")
+            val next = f.repo.requestBotPublish(7, listOf(matchId), f.time)
+            f.repo.revokeMcpSource(channel.id); f.repo.allowMcpSource(channel)
+            assertFalse(f.repo.confirmBotPublish(123, 7, next, true, f.time))
+        }
+    }
+    @Test fun publishExpirationRejectionDisableAndPermissionRevocationCancelRequestsAndResults() = runBlocking {
+        Fixture().use { f ->
+            val rule = f.rule(); f.repo.recordMatch(rule, f.publication()); f.optIn()
+            f.repo.setMcpEnabled(true); f.repo.allowMcpSource(channel); f.repo.allowBotPublish(123, 7, true)
+            val ids = listOf(f.repo.recentMatches(1).single().id)
+            val expired = f.repo.requestBotPublish(7, ids, f.time)
+            assertFalse(f.repo.confirmBotPublish(123, 7, expired, true, f.time + 600_001))
+            val rejected = f.repo.requestBotPublish(7, ids, f.time + 600_002)
+            assertFalse(f.repo.confirmBotPublish(123, 7, rejected, false, f.time + 600_003))
+            assertFalse(f.repo.confirmBotPublish(123, 7, rejected, true, f.time + 600_004))
+            val confirmed = f.repo.requestBotPublish(7, ids, f.time + 600_005)
+            assertTrue(f.repo.confirmBotPublish(123, 7, confirmed, true, f.time + 600_006))
+            f.repo.allowBotPublish(123, 7, false)
+            assertEquals(0, f.bot.status().delivery.pending)
+            f.repo.allowBotPublish(123, 7, true)
+            val disabled = f.repo.requestBotPublish(7, ids, f.time + 600_007)
+            f.repo.setMcpEnabled(false); f.repo.setMcpEnabled(true)
+            assertFalse(f.repo.confirmBotPublish(123, 7, disabled, true, f.time + 600_008))
+            f.bot.deliverOnce(); assertTrue(f.fake.sent.isEmpty())
+        }
+    }
+    @Test fun confirmedPublicationAndOutboxRollbackTogetherAndExpiredPreviewNeverSends() = runBlocking {
+        val path = database()
+        Fixture(path).use { f ->
+            val rule = f.rule(); f.repo.recordMatch(rule, f.publication()); f.optIn()
+            f.repo.setMcpEnabled(true); f.repo.allowMcpSource(channel); f.repo.allowBotPublish(123, 7, true)
+            val request = f.repo.requestBotPublish(7, listOf(f.repo.recentMatches(1).single().id), f.time)
+            DriverManager.getConnection("jdbc:sqlite:$path").use { db -> db.createStatement().use { s ->
+                s.execute("CREATE TRIGGER reject_publish BEFORE INSERT ON bot_outbox BEGIN SELECT RAISE(ABORT,'synthetic test'); END")
+            } }
+            assertFailsWith<java.sql.SQLException> { f.repo.confirmBotPublish(123, 7, request, true, f.time) }
+            assertEquals(1, f.bot.status().delivery.pending)
+            DriverManager.getConnection("jdbc:sqlite:$path").use { db -> db.createStatement().use { it.execute("DROP TRIGGER reject_publish") } }
+            assertTrue(f.repo.confirmBotPublish(123, 7, request, true, f.time))
+            f.time += 600_001
+            f.bot.deliverOnce() // confirmed request's now-stale preview is suppressed
+            assertTrue(f.fake.sent.isEmpty())
+            f.bot.deliverOnce() // human-confirmed result remains deliverable after expiry
+            assertContains(f.fake.sent.single().second.text, "Synthetic Java")
+        }
+    }
+    @Test fun versionFiveMigrationPreservesRecipientsCursorAndQueuedPayloads() = runBlocking {
+        val path = database()
+        Fixture(path).use { f ->
+            f.repo.saveChannel(channel); val rule = f.rule(); f.optIn()
+            f.repo.recordMatch(rule, f.publication())
+        }
+        DriverManager.getConnection("jdbc:sqlite:$path").use { db -> db.createStatement().use { s ->
+            s.execute("DROP TABLE bot_publish_request"); s.execute("DROP TABLE bot_publish_permission"); s.execute("PRAGMA user_version=5")
+        } }
+        Fixture(path).use { f ->
+            assertEquals(2L, f.repo.botOffset(123)); assertTrue(f.repo.botRegistered(123, 7))
+            assertEquals(1, f.bot.status().delivery.pending); assertEquals(1, f.repo.unreadCount())
+            assertFalse(f.repo.botPublishPermitted(7)); assertEquals(channel, f.repo.channels().single())
+            f.time += 10_000; f.bot.deliverOnce(); assertContains(f.fake.sent.single().second.text, "Synthetic Java")
+        }
+    }
     @Test fun disabledOrMissingInvalidAllowlistNeverStartsGateway() = runBlocking {
         for (cfg in listOf(config(null), config(allowed = null), config(allowed = ""), config(allowed = "7,invalid"), config(allowed = "-7"))) {
             Repositories(database()).use { repo ->
@@ -210,7 +327,7 @@ class BotTest {
             repo.saveHistoryPage(state, listOf(TelegramMessage(1, 1700000000, "Synthetic Java", channel.id)))
         }
         DriverManager.getConnection("jdbc:sqlite:$path").use { db -> db.createStatement().use { s ->
-            listOf("bot_outbox", "bot_recipients", "bot_state").forEach { s.execute("DROP TABLE $it") }; s.execute("PRAGMA user_version=4")
+            listOf("bot_publish_request", "bot_publish_permission", "bot_outbox", "bot_recipients", "bot_state").forEach { s.execute("DROP TABLE $it") }; s.execute("PRAGMA user_version=4")
         } }
         Fixture(path).use { f ->
             assertEquals(channel, f.repo.channels().single()); assertEquals(1, f.repo.unreadCount())

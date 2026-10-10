@@ -7,6 +7,7 @@ class BotUpdateHandler(
     private val config: BotConfig, private val repo: Repositories, private val subscriptions: SubscriptionService,
     private val statusText: () -> String, private val now: () -> Long = System::currentTimeMillis,
 ) {
+    private val inbox = BotInboxService(repo)
     fun handle(update: BotUpdate, botUsername: String): String? {
         val botId = config.botId ?: return null
         var callbackId: String? = null
@@ -21,7 +22,14 @@ class BotUpdateHandler(
                 if (!repo.botRegistered(botId, user)) return@handleBotUpdate
                 callbackId = callback.id
                 val parts = callback.data.orEmpty().split(':')
-                if (parts.size == 2 && parts[0] in setOf("pause", "resume") && parts[1].matches(Regex("[a-f0-9-]{36}"))) {
+                if (parts.size == 2 && parts[0] in setOf("matches", "sources")) {
+                    val cursor = parts[1].toLongOrNull() ?: return@handleBotUpdate
+                    if (parts[0] == "matches" && cursor > 0) reply(inbox.matches(cursor).copy(editMessageId = callback.messageId))
+                    if (parts[0] == "sources" && cursor in 0..10000) reply(inbox.sources(cursor.toInt()).copy(editMessageId = callback.messageId))
+                } else if (parts.size == 2 && parts[0] in setOf("match", "read", "review", "publish", "reject") && parts[1].matches(Regex("[a-f0-9-]{36}"))) {
+                    if (parts[0] in setOf("match", "read", "review")) reply(inbox.details(parts[1], parts[0] == "read").copy(editMessageId = callback.messageId.takeUnless { parts[0] == "review" }))
+                    else reply(BotPayload(if (repo.confirmBotPublish(botId, user, parts[1], parts[0] == "publish", now())) "Публикация подтверждена и поставлена в очередь" else "Публикация отменена или разрешение истекло"))
+                } else if (parts.size == 2 && parts[0] in setOf("pause", "resume") && parts[1].matches(Regex("[a-f0-9-]{36}"))) {
                     val template = subscriptions.list().find { it.id == parts[1] && it.subscribed && it.sourceMode != "global" }
                     if (template == null) reply(BotPayload("Подписка больше недоступна"))
                     else {
@@ -43,13 +51,31 @@ class BotUpdateHandler(
             val command = addressedCommand.substringBefore('@')
             if (command == "/start") {
                 repo.registerBotRecipient(botId, user, chat.id, now())
-                reply(BotPayload("hradar подключён. Ваш user ID: $user. Уведомления поступают только о новых совпадениях после регистрации.\n/status · /subscriptions · /pause · /resume"))
-            } else if (command in setOf("/status", "/subscriptions", "/pause", "/resume")) {
+                reply(BotPayload("hradar подключён. Ваш user ID: $user. Уведомления поступают только о новых совпадениях после регистрации.\n/help · /matches · /sources · /digest · /status · /subscriptions · /pause · /resume"))
+            } else if (command in setOf("/status", "/subscriptions", "/pause", "/resume", "/matches", "/sources", "/digest", "/help", "/agent_publish")) {
                 if (!repo.botRegistered(botId, user)) {
                     // /start is the only opt-in operation; no implicit recipient registration.
                     return@handleBotUpdate
                 }
                 when (command) {
+                    "/matches" -> reply(inbox.matches())
+                    "/sources" -> reply(inbox.sources())
+                    "/digest" -> reply(inbox.digest())
+                    "/help" -> reply(BotPayload("""/matches — сохранённые совпадения, кнопки просмотра и отметки прочитанного
+/sources — сохранённые источники
+/digest — сводка непрочитанных
+/status — состояние
+/subscriptions · /pause · /resume — общие подписки
+/agent_publish on — отдельно разрешить запросы публикации от агента
+/agent_publish off — отозвать разрешение
+Каждая публикация требует вашего подтверждения. Прочитанность общая с hradar. Свободный текст не выполняется."""))
+                    "/agent_publish" -> {
+                        val mode = raw.substringAfter(' ', "").trim()
+                        if (mode in setOf("on", "off")) {
+                            repo.allowBotPublish(botId, user, mode == "on")
+                            reply(BotPayload(if (mode == "on") "Запросы агента разрешены. Каждый набор требует отдельного подтверждения в этом чате." else "Разрешение отозвано; ожидающие публикации отменены."))
+                        } else reply(BotPayload("/agent_publish on или /agent_publish off"))
+                    }
                     "/status" -> reply(BotPayload(statusText().take(2000)))
                     else -> reply(subscriptionMenu(command.removePrefix("/"), 0))
                 }

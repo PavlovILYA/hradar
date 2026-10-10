@@ -377,7 +377,7 @@ test('MCP settings require explicit enable and source grants and reuse the capab
       enabled = route.request().postDataJSON().enabled;
       return route.fulfill({ json: { enabled } });
     }
-    return route.fulfill({ json: { enabled, endpoint: 'http://127.0.0.1:8080/mcp', tools: [{ name: 'get_telegram_status', description: 'Read safe status' }, { name: 'prepare_message', description: 'Never sends' }], allowedSources: allowed ? [source] : [], availableSources: [source], csrfToken: 'synthetic-csrf', readOnly: true } });
+    return route.fulfill({ json: { enabled, endpoint: 'http://127.0.0.1:8080/mcp', tools: [{ name: 'get_telegram_status', description: 'Read safe status' }, { name: 'prepare_message', description: 'Never sends' }, { name: 'bot_publish_matches', description: 'Requires recipient permission and confirmation' }], allowedSources: allowed ? [source] : [], availableSources: [source], csrfToken: 'synthetic-csrf', readOnly: false } });
   });
   await page.route('**/api/integrations/mcp/sources', route => {
     expect(route.request().headers()['x-hradar-csrf']).toBe('synthetic-csrf');
@@ -397,7 +397,8 @@ test('MCP settings require explicit enable and source grants and reuse the capab
   await page.getByRole('button', { name: 'Проверить Telegram через общий API' }).click();
   await expect(page.getByText('Telegram: Ready · Ready')).toBeVisible(); expect(statusCalls).toBe(1);
   await expect(page.locator('.mcp-integration pre')).toContainText('codex mcp add hradar --url http://127.0.0.1:8080/mcp');
-  await expect(page.locator('.mcp-integration summary')).toHaveCount(2);
+  await expect(page.locator('.mcp-integration summary')).toHaveCount(3);
+  await expect(page.getByText(/Чтение и запросы публикации с подтверждением/)).toBeVisible();
   await page.getByRole('button', { name: 'Отключить MCP-доступ' }).click();
   await expect(page.getByText('MCP выключен', { exact: true })).toBeVisible();
 });

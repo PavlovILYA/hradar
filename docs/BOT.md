@@ -1,4 +1,4 @@
-# Telegram bot: notifications and subscription controls
+# Telegram Inbox, notifications and subscription controls
 
 The optional Bot API adapter uses HTTPS long polling and the existing application
 services. It has a separate bot identity; TDLib remains a single read-only **user**
@@ -96,7 +96,7 @@ webhook. Do not run ad-hoc getUpdates while hradar is polling.
 `GET /api/integrations/bot` is a read-only operational summary: state, safe notice,
 counts, retry deadline and last successful poll. It never returns the token, raw Bot
 API errors, message bodies, user IDs or local files. Queue counts include command
-replies. No Bot API transport is exposed as an MCP tool or arbitrary sender.
+replies. No arbitrary Bot API transport or arbitrary-chat sender is exposed. MCP can request a constrained publication only through the consent flow below.
 
 ## Automated checks and external evidence
 
@@ -117,3 +117,60 @@ fake tests alone do not establish those external outcomes.
 Official protocol references: [Bot API](https://core.telegram.org/bots/api#getupdates),
 [sendMessage](https://core.telegram.org/bots/api#sendmessage),
 [BotFather](https://core.telegram.org/bots/features#botfather).
+
+## Telegram Inbox and agent publication
+
+After `/start`, `/help` describes commands. `/matches` opens saved SQLite matches,
+10 per page, newest first. Inline buttons open a publication, switch to the adjacent
+newer/older publication, return to the list, and mark it read. These callbacks edit
+that bot message through the durable outbox; synthetic callbacks without a message
+ID fall back to a new reply. Read state is shared with the web Inbox and all operators;
+opening a match does not silently mark it read. Deleting a match makes old buttons
+return an explicit unavailable message. The excerpt is limited to 600 characters.
+“Оригинал” uses only a validated TDLib-provided t.me link; failed lookup omits it.
+`/sources` lists saved sources in pages of 15 without joining/importing them.
+`/digest` summarizes the current unread backlog (up to 15 source counts), not a
+scheduled send or an online search.
+
+Agent publications have two independent gates:
+
+1. The same opted-in operator sends `/agent_publish on` in their private bot chat.
+   This enables publication requests only, not model execution or arbitrary sends.
+2. MCP `bot_publish_matches` requests 1–10 existing match IDs from the MCP source
+   allowlist for that recipient. The bot shows the concrete selection with bounded
+   excerpts and detail buttons. Review buttons open separate cards and preserve the
+   confirmation keyboard. That operator must press “Подтвердить” within ten
+   minutes; only then are publication results queued. “Отмена” permanently rejects
+   that request. Other users cannot confirm it. Confirmation survives restart and
+   repeated callbacks cannot enqueue another result for the same request.
+
+`/agent_publish off` revokes permission and cancels pending previews/results.
+Disabling MCP or revoking any source cancels all pending agent publications
+conservatively, including confirmed results not yet sent. Delivery rechecks current
+permission and source allowlist. Removing the operator from the bot allowlist clears
+publication permission; re-adding requires `/start` and new explicit permission.
+There is no arbitrary text/destination argument, user-account send or agent execution.
+Three requests per recipient per rolling ten-minute window bound preview spam;
+MCP returns the request ID and awaiting-confirmation state, never “delivered”.
+A send already in flight cannot be recalled; Bot API crash/retry limitations apply.
+
+Schema v6 adds `bot_publish_permission` and `bot_publish_request` transactionally,
+without modifying archived content or existing recipient/outbox records. Back up the
+stopped database before upgrading. A v5 binary rejects v6: recovery requires restoring
+that backup and restarting the older binary, not downgrading tables in place.
+Expired request references are cleaned on the next publication request; request
+payloads store match IDs, not duplicate publication text. Excerpts use existing
+outbox retention rules. Failed edits (e.g. a deleted bot message) remain inspectable
+as failed deliveries; reopen `/matches` to continue.
+
+Manual check after deployment: stop the existing backend, back up the database,
+start exactly one backend from this branch, then use `/start`, `/help`, `/matches`,
+`/sources`, `/digest`. Open two saved matches, navigate, mark one read and verify
+web read state. Verify the original link. Grant one synthetic public source in MCP,
+use `/agent_publish on`, request its saved matches, cancel once and confirm a new
+request; verify actual phone delivery. Revoke permission/source before another
+confirmation and verify denial. Do not launch a second backend or send a test post
+from hradar. Live steps have not been performed by automated tests.
+
+Agent runtime proposal: [AGENT_BRIDGE.md](AGENT_BRIDGE.md). Inline keyboard protocol:
+[official Bot API](https://core.telegram.org/bots/api#inlinekeyboardbutton).

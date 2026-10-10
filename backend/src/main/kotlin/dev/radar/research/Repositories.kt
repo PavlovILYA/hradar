@@ -25,7 +25,7 @@ class Repositories(path: Path) : AutoCloseable {
             s.execute("PRAGMA busy_timeout=5000")
             s.execute("PRAGMA journal_mode=WAL")
             val version = s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) }
-            check(version <= 5) { "Database schema is newer than this application" }
+            check(version <= 6) { "Database schema is newer than this application" }
             if (version == 0) transaction {
                 s.execute("CREATE TABLE monitored_channels(id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, data TEXT NOT NULL)")
                 s.execute("CREATE TABLE search_templates(id TEXT PRIMARY KEY, data TEXT NOT NULL)")
@@ -61,6 +61,12 @@ class Repositories(path: Path) : AutoCloseable {
                 s.execute("CREATE INDEX bot_outbox_due ON bot_outbox(bot_id,state,next_attempt_at,id)")
                 s.execute("PRAGMA user_version=5")
             }
+            if (version < 6) transaction {
+                s.execute("CREATE TABLE bot_publish_permission(bot_id INTEGER NOT NULL,user_id INTEGER NOT NULL,PRIMARY KEY(bot_id,user_id))")
+                s.execute("CREATE TABLE bot_publish_request(id TEXT PRIMARY KEY,bot_id INTEGER NOT NULL,user_id INTEGER NOT NULL,match_ids TEXT NOT NULL,expires_at INTEGER NOT NULL,state TEXT NOT NULL DEFAULT 'PENDING' CHECK(state IN ('PENDING','CONFIRMED','CANCELLED')))")
+                s.execute("CREATE INDEX bot_publish_expiry ON bot_publish_request(bot_id,user_id,expires_at)")
+                s.execute("PRAGMA user_version=6")
+            }
         }
     }
     private fun <T> transaction(block: () -> T): T {
@@ -69,6 +75,7 @@ class Repositories(path: Path) : AutoCloseable {
         catch (ex: Throwable) { db.rollback(); throw ex }
         finally { db.autoCommit = true }
     }
+    private fun <T> atomic(block: () -> T): T = if (db.autoCommit) transaction(block) else block()
     private fun update(sql: String, vararg args: Any?): Int = db.prepareStatement(sql).use { s ->
         args.forEachIndexed { i, value -> s.setObject(i + 1, value) }; s.executeUpdate()
     }
@@ -115,7 +122,7 @@ class Repositories(path: Path) : AutoCloseable {
             update("INSERT INTO notifications VALUES(?,0,?)", record.id, System.currentTimeMillis())
             val botId = botPolicyId
             if (botId != null) {
-                val payload = matchPayload(record.templateName, message.title, message.username, message.text, message.link, message.channelId, message.id)
+                val payload = inboxPayload(record).let { it.copy(buttons = listOf(listOf(BotButton("Просмотреть", "match:${record.id}"))) + it.buttons) }
                 rows("SELECT user_id,chat_id FROM bot_recipients WHERE bot_id=? AND active=1 AND registered_since<=?", listOf(botId, message.date)) { it.getLong(1) to it.getLong(2) }
                     .filter { it.first in botAllowedUsers }.forEach { (userId, chatId) -> enqueueBot(botId, "match:${record.id}", userId, chatId, payload) }
             }
@@ -124,6 +131,58 @@ class Repositories(path: Path) : AutoCloseable {
     }
     @Synchronized fun notifications(limit: Int = 50, before: Long = Long.MAX_VALUE): List<NotificationRecord> = rows("SELECT m.data,n.is_read,n.rowid FROM notifications n JOIN matched_messages m ON m.id=n.id WHERE n.rowid<? ORDER BY n.rowid DESC LIMIT ?", listOf(before, limit)) {
         json.decodeFromString<NotificationRecord>(it.getString(1)).copy(read = it.getInt(2) == 1, sequence = it.getLong(3))
+    }
+    @Synchronized fun recentMatches(limit: Int, before: Long = Long.MAX_VALUE, sources: Set<Long>? = null): List<NotificationRecord> {
+        require(limit in 1..50 && before > 0)
+        if (sources != null && sources.isEmpty()) return emptyList()
+        val scope = sources?.let { " AND m.channel_id IN (${it.joinToString(",") { "?" }})" }.orEmpty()
+        return rows("SELECT m.data,n.is_read,n.rowid FROM notifications n JOIN matched_messages m ON m.id=n.id WHERE n.rowid<?$scope ORDER BY n.rowid DESC LIMIT ?", listOf(before) + sources.orEmpty().toList() + limit) {
+            json.decodeFromString<NotificationRecord>(it.getString(1)).copy(read = it.getInt(2) == 1, sequence = it.getLong(3))
+        }
+    }
+    @Synchronized fun newerMatch(sequence: Long): NotificationRecord? = rows("SELECT m.data,n.is_read,n.rowid FROM notifications n JOIN matched_messages m ON m.id=n.id WHERE n.rowid>? ORDER BY n.rowid ASC LIMIT 1", listOf(sequence)) {
+        json.decodeFromString<NotificationRecord>(it.getString(1)).copy(read = it.getInt(2) == 1, sequence = it.getLong(3))
+    }.firstOrNull()
+    @Synchronized fun match(id: String): NotificationRecord? = rows("SELECT m.data,n.is_read,n.rowid FROM notifications n JOIN matched_messages m ON m.id=n.id WHERE m.id=?", listOf(id)) {
+        json.decodeFromString<NotificationRecord>(it.getString(1)).copy(read = it.getInt(2) == 1, sequence = it.getLong(3))
+    }.firstOrNull()
+    @Synchronized fun allowBotPublish(botId: Long, user: Long, enabled: Boolean): Unit = atomic {
+        require(botId == botPolicyId && user in botAllowedUsers && botRegistered(botId, user))
+        if (enabled) update("INSERT OR IGNORE INTO bot_publish_permission VALUES(?,?)", botId, user)
+        else {
+            update("DELETE FROM bot_publish_permission WHERE bot_id=? AND user_id=?", botId, user)
+            update("UPDATE bot_publish_request SET state='CANCELLED' WHERE bot_id=? AND user_id=? AND state='PENDING'", botId, user)
+            update("UPDATE bot_outbox SET state='CANCELLED',payload='' WHERE bot_id=? AND user_id=? AND event_key LIKE 'publish:%' AND state='PENDING'", botId, user)
+        }
+    }
+    @Synchronized fun botPublishPermitted(user: Long): Boolean = botPolicyId?.let { publishAllowed(it, user) } == true
+    private fun publishAllowed(botId: Long, user: Long) = botId == botPolicyId && user in botAllowedUsers && botRegistered(botId, user) &&
+        rows("SELECT 1 FROM bot_publish_permission WHERE bot_id=? AND user_id=?", listOf(botId, user)) { true }.isNotEmpty()
+    @Synchronized fun requestBotPublish(user: Long, ids: List<String>, now: Long): String = transaction {
+        val botId = botPolicyId ?: throw IllegalArgumentException()
+        require(publishAllowed(botId, user))
+        require(ids.size in 1..10 && ids.distinct().size == ids.size)
+        val allowed = mcpSources().map { it.id }.toSet()
+        require(mcpEnabled() && ids.all { match(it)?.message?.channelId in allowed })
+        // Bound requests and preview spam; excerpts are shown only to the consenting recipient.
+        require(rows("SELECT COUNT(*) FROM bot_publish_request WHERE bot_id=? AND user_id=? AND expires_at>?", listOf(botId, user, now)) { it.getInt(1) }.single() < 3)
+        update("DELETE FROM bot_publish_request WHERE expires_at<=?", now)
+        val id = UUID.randomUUID().toString()
+        update("INSERT INTO bot_publish_request(id,bot_id,user_id,match_ids,expires_at) VALUES(?,?,?,?,?)", id, botId, user, json.encodeToString(ids), now + 600_000)
+        enqueueBot(botId, "publish:preview:$id", user, user, BotPayload("Агент запросил публикацию ${ids.size} совпадений в этот личный чат. Подтверждение действует 10 минут.\n\n" + ids.mapIndexed { index, matchId ->
+            val record = match(matchId)!!
+            "${index + 1}. ${record.message.title.take(80)} · ${record.templateName.take(60)}\n${record.message.text.orEmpty().replace(Regex("\\s+"), " ").take(120)}"
+        }.joinToString("\n\n"), ids.mapIndexed { i, matchId -> listOf(BotButton("Просмотреть ${i + 1}", "review:$matchId")) } + listOf(listOf(BotButton("Подтвердить", "publish:$id"), BotButton("Отмена", "reject:$id"))), publishRequestId = id))
+        id
+    }
+    @Synchronized fun confirmBotPublish(botId: Long, user: Long, id: String, accept: Boolean, now: Long): Boolean = atomic {
+        val ids = rows("SELECT match_ids FROM bot_publish_request WHERE id=? AND bot_id=? AND user_id=? AND state='PENDING' AND expires_at>?", listOf(id, botId, user, now)) { json.decodeFromString<List<String>>(it.getString(1)) }.firstOrNull() ?: return@atomic false
+        val records = ids.mapNotNull(::match)
+        val sources = mcpSources().map { it.id }.toSet()
+        val valid = accept && publishAllowed(botId, user) && mcpEnabled() && records.size == ids.size && records.all { it.message.channelId in sources }
+        update("UPDATE bot_publish_request SET state=? WHERE id=?", if (valid) "CONFIRMED" else "CANCELLED", id)
+        if (valid) records.forEach { record -> enqueueBot(botId, "publish:result:$id:${record.id}", user, user, dev.radar.bot.inboxPayload(record).copy(mcpSourceId = record.message.channelId)) }
+        valid
     }
     @Synchronized fun unreadByChannel(): Map<Long, Int> = rows("SELECT m.channel_id,COUNT(*) FROM notifications n JOIN matched_messages m ON m.id=n.id WHERE n.is_read=0 GROUP BY m.channel_id") { it.getLong(1) to it.getInt(2) }.toMap()
     @Synchronized fun unreadCount(): Int = rows("SELECT COUNT(*) FROM notifications WHERE is_read=0") { it.getInt(1) }.single()
@@ -167,10 +226,20 @@ class Repositories(path: Path) : AutoCloseable {
         return HistoryPage(messages, messages.lastOrNull()?.id?.takeIf { page.size > limit }, total, query)
     }
     @Synchronized fun mcpEnabled(): Boolean = rows("SELECT enabled FROM mcp_settings WHERE id=1") { it.getInt(1) != 0 }.single()
-    @Synchronized fun setMcpEnabled(enabled: Boolean) { update("UPDATE mcp_settings SET enabled=? WHERE id=1", if (enabled) 1 else 0) }
+    private fun cancelAgentPublications() {
+        update("UPDATE bot_publish_request SET state='CANCELLED' WHERE state='PENDING'")
+        update("UPDATE bot_outbox SET state='CANCELLED',payload='' WHERE event_key LIKE 'publish:%' AND state='PENDING'")
+    }
+    @Synchronized fun setMcpEnabled(enabled: Boolean) = transaction {
+        update("UPDATE mcp_settings SET enabled=? WHERE id=1", if (enabled) 1 else 0)
+        if (!enabled) cancelAgentPublications()
+    }
     @Synchronized fun mcpSources(): List<MonitoredChannel> = rows("SELECT channel_id,username,title FROM mcp_sources ORDER BY channel_id") { MonitoredChannel(it.getLong(1), it.getString(2), it.getString(3)) }
     @Synchronized fun allowMcpSource(channel: MonitoredChannel) { require(channel.id < 0 && channel.username.matches(Regex("[a-zA-Z0-9_]{5,32}"))); update("INSERT INTO mcp_sources VALUES(?,?,?) ON CONFLICT(channel_id) DO UPDATE SET username=excluded.username,title=excluded.title", channel.id, channel.username, channel.title) }
-    @Synchronized fun revokeMcpSource(id: Long) { update("DELETE FROM mcp_sources WHERE channel_id=?", id) }
+    @Synchronized fun revokeMcpSource(id: Long) = transaction {
+        update("DELETE FROM mcp_sources WHERE channel_id=?", id)
+        cancelAgentPublications()
+    }
     @Synchronized fun auditMcp(tool: String, code: String, duration: Long) {
         update("INSERT INTO mcp_audit(called_at,tool,result_code,duration_ms) VALUES(?,?,?,?)", System.currentTimeMillis(), tool, code, duration)
         update("DELETE FROM mcp_audit WHERE id NOT IN (SELECT id FROM mcp_audit ORDER BY id DESC LIMIT 500)")
@@ -192,7 +261,7 @@ class Repositories(path: Path) : AutoCloseable {
             rows("SELECT DISTINCT user_id FROM bot_outbox WHERE bot_id=? AND state='PENDING'", listOf(botId)) { it.getLong(1) }
                 .filter { it !in allowed }.forEach { update("UPDATE bot_outbox SET state='CANCELLED',payload='' WHERE bot_id=? AND user_id=? AND state='PENDING'", botId, it) }
             rows("SELECT user_id FROM bot_recipients WHERE bot_id=? AND active=1", listOf(botId)) { it.getLong(1) }
-                .filter { it !in allowed }.forEach { update("UPDATE bot_recipients SET active=0 WHERE bot_id=? AND user_id=?", botId, it) }
+                .filter { it !in allowed }.forEach { update("UPDATE bot_recipients SET active=0 WHERE bot_id=? AND user_id=?", botId, it); update("DELETE FROM bot_publish_permission WHERE bot_id=? AND user_id=?", botId, it); update("UPDATE bot_publish_request SET state='CANCELLED' WHERE bot_id=? AND user_id=? AND state='PENDING'", botId, it) }
         }
     }
     /** Command mutation, its reply and polling cursor commit together; replay cannot reapply pause/resume. */
@@ -207,6 +276,8 @@ class Repositories(path: Path) : AutoCloseable {
         update("INSERT INTO bot_recipients VALUES(?,?,?,?,1) ON CONFLICT(bot_id,user_id) DO UPDATE SET chat_id=excluded.chat_id,registered_since=CASE WHEN active=0 THEN excluded.registered_since ELSE registered_since END,active=1", botId, userId, chatId, now / 1000)
     }
     @Synchronized fun stopBotRecipient(botId: Long, userId: Long) {
+        update("DELETE FROM bot_publish_permission WHERE bot_id=? AND user_id=?", botId, userId)
+        update("UPDATE bot_publish_request SET state='CANCELLED' WHERE bot_id=? AND user_id=? AND state='PENDING'", botId, userId)
         update("UPDATE bot_recipients SET active=0 WHERE bot_id=? AND user_id=?", botId, userId)
         update("UPDATE bot_outbox SET state='CANCELLED',payload='' WHERE bot_id=? AND user_id=? AND state='PENDING'", botId, userId)
     }
@@ -222,6 +293,10 @@ class Repositories(path: Path) : AutoCloseable {
         update("INSERT INTO bot_outbox(bot_id,event_key,user_id,chat_id,payload) VALUES(?,?,?,?,?) ON CONFLICT(bot_id,event_key,user_id) DO NOTHING", botId, key, userId, chatId, json.encodeToString(payload))
     }
     @Synchronized fun nextBotDelivery(botId: Long, now: Long): BotOutboxItem? = rows("SELECT o.id,o.user_id,o.chat_id,o.payload,o.attempts FROM bot_outbox o JOIN bot_recipients r ON r.bot_id=o.bot_id AND r.user_id=o.user_id WHERE o.bot_id=? AND o.state='PENDING' AND o.next_attempt_at<=? AND r.active=1 ORDER BY o.id LIMIT 1", listOf(botId, now)) { BotOutboxItem(it.getLong(1), it.getLong(2), it.getLong(3), json.decodeFromString<BotPayload>(it.getString(4)), it.getInt(5)) }.firstOrNull()
+    @Synchronized fun botDeliveryPending(id: Long): Boolean = rows("SELECT 1 FROM bot_outbox WHERE id=? AND state='PENDING'", listOf(id)) { true }.isNotEmpty()
+    @Synchronized fun publishPreviewValid(botId: Long, user: Long, request: String, now: Long): Boolean =
+        publishAllowed(botId, user) && mcpEnabled() && rows("SELECT 1 FROM bot_publish_request WHERE id=? AND bot_id=? AND user_id=? AND state='PENDING' AND expires_at>?", listOf(request, botId, user, now)) { true }.isNotEmpty()
+    @Synchronized fun cancelBotDelivery(id: Long) { update("UPDATE bot_outbox SET state='CANCELLED',payload='' WHERE id=? AND state='PENDING'", id) }
     @Synchronized fun prepareBotDelivery(id: Long, payload: BotPayload) { update("UPDATE bot_outbox SET payload=? WHERE id=? AND state='PENDING'", json.encodeToString(payload), id) }
     @Synchronized fun confirmBotDelivery(id: Long, messageId: Long) { update("UPDATE bot_outbox SET state='SENT',sent_message_id=?,payload='',last_error=NULL WHERE id=? AND state='PENDING'", messageId, id) }
     @Synchronized fun retryBotDelivery(id: Long, at: Long, code: String, permanent: Boolean) {

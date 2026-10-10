@@ -24,12 +24,12 @@ class BotConfig private constructor(internal val token: String?, val allowedUser
     }
 }
 
-@Serializable data class BotButton(val text: String, val callback: String)
-@Serializable data class BotPayload(val text: String, val buttons: List<List<BotButton>> = emptyList(), val channelId: Long? = null, val messageId: Long? = null, val needsLink: Boolean = false)
+@Serializable data class BotButton(val text: String, val callback: String = "", val url: String? = null)
+@Serializable data class BotPayload(val text: String, val buttons: List<List<BotButton>> = emptyList(), val channelId: Long? = null, val messageId: Long? = null, val needsLink: Boolean = false, val mcpSourceId: Long? = null, val editMessageId: Long? = null, val publishRequestId: String? = null)
 data class BotOutboxItem(val id: Long, val userId: Long, val chatId: Long, val payload: BotPayload, val attempts: Int)
 data class BotChat(val id: Long, val type: String)
 data class BotMessage(val userId: Long, val chat: BotChat, val text: String?, val isBot: Boolean = false)
-data class BotCallback(val id: String, val userId: Long, val chat: BotChat?, val data: String?, val isBot: Boolean = false)
+data class BotCallback(val id: String, val userId: Long, val chat: BotChat?, val data: String?, val isBot: Boolean = false, val messageId: Long? = null)
 data class BotUpdate(val id: Long, val message: BotMessage? = null, val callback: BotCallback? = null)
 data class BotIdentity(val id: Long, val username: String)
 @Serializable data class BotDeliveryCounts(val pending: Int = 0, val sent: Int = 0, val failed: Int = 0)
@@ -45,5 +45,5 @@ fun verifiedTelegramLink(link: String?): String? = try {
 fun matchPayload(name: String, source: String, username: String?, text: String?, link: String?, channelId: Long, messageId: Long): BotPayload {
     val original = verifiedTelegramLink(link)
     val excerpt = text.orEmpty().replace(Regex("\\s+"), " ").trim().take(600).ifEmpty { "Публикация без текста" }
-    return BotPayload("hradar · ${name.take(100)}\nИсточник: ${source.take(150)}${username?.takeIf { it.matches(Regex("[A-Za-z0-9_]{5,32}")) }?.let { " (@$it)" }.orEmpty()}\n\n$excerpt" + (original?.let { "\n\n$it" } ?: ""), channelId = channelId, messageId = messageId, needsLink = original == null)
+    return BotPayload("hradar · ${name.take(100)}\nИсточник: ${source.take(150)}${username?.takeIf { it.matches(Regex("[A-Za-z0-9_]{5,32}")) }?.let { " (@$it)" }.orEmpty()}\n\n$excerpt" + (original?.let { "\n\n$it" } ?: ""), buttons = original?.let { listOf(listOf(BotButton("Оригинал", url = it))) } ?: emptyList(), channelId = channelId, messageId = messageId, needsLink = original == null)
 }
