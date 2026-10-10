@@ -13,9 +13,10 @@ Build a local-first recruiting workspace centered on **explicitly permitted Tele
 - [x] Rule templates (AND/OR/NOT), selected sources, persisted subscriptions, monitored matches and in-app/browser notifications.
 - [x] Controlled full-history import: limits, pause/resume, cursor persistence, deduplication and rate-limit handling.
 - [x] Read-only, source-allowlisted MCP server with nine tools and corresponding typed REST capabilities.
+- [x] Optional Bot API notifications and `/start`, `/status`, `/subscriptions`, `/pause`, `/resume` operator controls; fake-API verified, real phone delivery still requires manual verification.
 - [x] Split GitHub workflows for fast CI and native macOS ARM64 TDLib/JNI builds.
 
-**Verification gaps:** real fresh-message → matching → OS notification delivery; operational limits of channel-history recovery; published, trusted ARM64 artifacts and end-to-end Fast backend CI. See the latest CI runs rather than treating this checklist as a green-build report.
+**Verification gaps:** real fresh-message → matching → OS/bot phone notification delivery; operational limits of channel-history recovery; published, trusted ARM64 artifacts and end-to-end Fast backend CI. See the latest CI runs rather than treating this checklist as a green-build report.
 
 ## Now — P0 reliability and first usable distribution
 
@@ -37,14 +38,14 @@ Build a local-first recruiting workspace centered on **explicitly permitted Tele
 
 ## Next — P2 Telegram bot: notifications and controls
 
-**The bot is not implemented today.** Build a separate **Bot API** adapter alongside TDLib in the same local app, using `getUpdates` long polling (no public inbound URL required).
+**First stage implemented:** separate **Bot API** adapter alongside TDLib, with `getUpdates` long polling, durable SQLite outbox and explicit allowlisted private-chat opt-in. Manual real-bot verification is still pending; see [BOT.md](docs/BOT.md).
 
 - Deliver rule-match notifications to an **opted-in, allowlisted Telegram user ID** in a private bot chat, with publication link/short excerpt and deduplication.
-- Add `/status`, `/sources`, `/matches`, `/pause`, `/resume`, and inline buttons for low-risk operations on the shared application services.
+- Implemented `/start`, `/status`, `/subscriptions`, `/pause`, `/resume` and paginated inline controls through shared SubscriptionService. `/sources` and `/matches` remain future work.
 - Use durable delivery queue/retry/backoff; never leak unapproved private conversations or secrets through bot messages.
 - Enforce operator identity; bot tokens are separate from the TDLib user session. If the Mac is asleep/offline, there is **no live delivery** until it comes back.
 
-**Done when:** turning on an allowed subscription in React produces exactly one bot notification for a new matching test message, and a button changes the same state visible in React without creating a second TDLib session.
+**Done when:** turning on an allowed subscription in React produces one deduplicated outbox event and a delivered bot notification for a new matching test message (delivery can repeat across a crash), and a button changes the same state visible in React without creating a second TDLib session.
 
 ## Later — P3 AI-enabled workflows
 

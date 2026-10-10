@@ -401,3 +401,23 @@ test('MCP settings require explicit enable and source grants and reuse the capab
   await page.getByRole('button', { name: 'Отключить MCP-доступ' }).click();
   await expect(page.getByText('MCP выключен', { exact: true })).toBeVisible();
 });
+
+test('bot integration shows optional configuration and persistent delivery status without credentials', async ({ page }) => {
+  let state = { state: 'disabled', notice: 'Bot API выключен: TG_BOT_TOKEN не задан', allowedUsers: 0, registeredUsers: 0, delivery: { pending: 0, sent: 0, failed: 0 }, retryAt: 0, lastPollAt: 0 };
+  await page.route('**/api/integrations/bot', route => route.fulfill({ json: state }));
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Интеграции → Telegram Bot', exact: true }).click();
+  const panel = page.getByRole('region', { name: 'Интеграции Bot API', exact: true });
+  await expect(panel.getByText('Bot API выключен', { exact: true })).toBeVisible();
+  await expect(panel.getByText(/браузер можно закрыть/)).toBeVisible();
+  await expect(panel.getByText(/после сбоя возможна повторная доставка/i)).toBeVisible();
+  await expect(panel.locator('input')).toHaveCount(0);
+  state = { state: 'error', notice: 'Telegram ограничил Bot API; доставка ожидает retry_after', allowedUsers: 1, registeredUsers: 1, delivery: { pending: 3, sent: 2, failed: 1 }, retryAt: Date.now() + 60_000, lastPollAt: Date.now() };
+  await panel.getByRole('button', { name: 'Обновить состояние бота' }).click();
+  await expect(panel.getByText('Bot API: требуется внимание', { exact: true })).toBeVisible();
+  await expect(panel.getByText(/доставка ожидает retry_after/)).toBeVisible();
+  await expect(panel.locator('dd')).toHaveText(['1', '1', '3', '2', '1']);
+  await expect(panel.getByText(/Повторная попытка не раньше/)).toBeVisible();
+  await page.getByRole('button', { name: 'Поиск в Telegram', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Поиск в Telegram', exact: true })).toBeVisible();
+});

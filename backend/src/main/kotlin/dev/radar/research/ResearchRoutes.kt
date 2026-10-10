@@ -25,6 +25,7 @@ import org.drinkless.tdlib.TdApi
 class ResourceNotFound : RuntimeException()
 
 fun Application.configureResearchRoutes(telegram: TdlibGateway, repo: Repositories, matching: MatchingService, search: SearchService, notifications: NotificationService) {
+    val subscriptions = SubscriptionService(repo, matching)
     routing {
         get("/api/notifications") {
             val limit = messageLimit(call.request.queryParameters["limit"] ?: "50")
@@ -70,18 +71,18 @@ fun Application.configureResearchRoutes(telegram: TdlibGateway, repo: Repositori
             if (!deleted) throw ResourceNotFound()
             call.respond(Deleted(true))
         }
-        get("/api/templates") { call.respond(withContext(Dispatchers.IO) { repo.templates() }) }
+        get("/api/templates") { call.respond(withContext(Dispatchers.IO) { subscriptions.list() }) }
         post("/api/templates") {
-            val template = matching.validate(call.receive<SearchTemplate>().copy(id = ""))
-            call.respond(HttpStatusCode.Created, withContext(Dispatchers.IO) { repo.saveTemplate(template) })
+            val template = call.receive<SearchTemplate>().copy(id = "")
+            call.respond(HttpStatusCode.Created, withContext(Dispatchers.IO) { subscriptions.save(template) })
         }
         put("/api/templates/{id}") {
             val id = call.parameters["id"]!!
-            val template = matching.validate(call.receive<SearchTemplate>().copy(id = id))
-            call.respond(withContext(Dispatchers.IO) { if (repo.template(id) == null) throw ResourceNotFound(); repo.saveTemplate(template) })
+            val template = call.receive<SearchTemplate>().copy(id = id)
+            call.respond(withContext(Dispatchers.IO) { subscriptions.save(template, mustExist = true) })
         }
         delete("/api/templates/{id}") {
-            if (!withContext(Dispatchers.IO) { repo.deleteTemplate(call.parameters["id"]!!) }) throw ResourceNotFound()
+            if (!withContext(Dispatchers.IO) { subscriptions.delete(call.parameters["id"]!!) }) throw ResourceNotFound()
             call.respond(Deleted(true))
         }
         get("/api/templates/{id}/preview") {

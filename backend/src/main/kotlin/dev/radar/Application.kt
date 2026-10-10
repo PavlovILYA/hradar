@@ -1,6 +1,8 @@
 package dev.radar
 
 import dev.radar.api.configureRoutes
+import dev.radar.bot.*
+import org.drinkless.tdlib.TdApi
 import dev.radar.telegram.TdlibGateway
 import dev.radar.telegram.TelegramRequestException
 import dev.radar.research.*
@@ -44,15 +46,23 @@ fun main() {
     val matching = MatchingService()
     val search = SearchService(telegram, repositories, matching)
     val notifications = NotificationService(repositories, matching)
+    val subscriptions = SubscriptionService(repositories, matching)
+    val bot = BotService(BotConfig.fromEnvironment(), repositories, subscriptions, statusText = {
+        val status = telegram.getStatus()
+        "hradar\nTDLib: ${status.authorizationState} · ${status.connectionState}\nМониторинг: ${repositories.channels().size} источников\nАктивные подписки: ${subscriptions.list().count { it.active && it.subscribed && it.sourceMode != "global" }}"
+    }, link = { chatId, messageId ->
+        (telegram.executeRead(TdApi.GetMessageLink().apply { this.chatId = chatId; this.messageId = messageId }) as TdApi.MessageLink).link
+    })
     val monitoring = MonitoringService(telegram, repositories, search, notifications)
     val historySync = HistorySyncService(repositories, telegram::getHistoryPage, { telegram.getStatus().let { it.authorized && it.connectionState == "Ready" } })
     val readPort = TdlibReadPort(telegram, search)
     val capabilities = CapabilityService(readPort, repositories)
     (org.slf4j.LoggerFactory.getLogger("io.modelcontextprotocol") as ch.qos.logback.classic.Logger).level = ch.qos.logback.classic.Level.OFF
     telegram.start()
+    bot.start()
     monitoring.start()
     historySync.resumePending()
-    Runtime.getRuntime().addShutdownHook(Thread { historySync.close(); monitoring.close(); telegram.close(); repositories.close() })
+    Runtime.getRuntime().addShutdownHook(Thread { historySync.close(); monitoring.close(); bot.close(); telegram.close(); repositories.close() })
 
     embeddedServer(Netty, host = "127.0.0.1", port = 8080) {
         // Root route installation permits the MCP child route to use its SDK serializer.
@@ -87,6 +97,7 @@ fun main() {
             }
         }
         configureCapabilities(capabilities, readPort, repositories)
+        configureBotRoutes(bot)
         configureRoutes(telegram)
         configureResearchRoutes(telegram, repositories, matching, search, notifications)
         configureHistoryRoutes(telegram, repositories, historySync)

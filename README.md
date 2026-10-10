@@ -251,3 +251,18 @@ expired workflow-artifact fallback is used.
 Run offline frontend checks with `npm run test:ci --prefix frontend`. Six `@telegram`
 integration tests remain separate (`npm run test:telegram --prefix frontend`).
 See [CI setup, bootstrap publication, retry and TDLib updates](docs/CI.md).
+
+## Optional Telegram bot
+
+Set `TG_BOT_TOKEN` and `TG_BOT_ALLOWED_USER_IDS` in your ignored local `.env`,
+restart the single backend and send `/start` to your bot from an allowlisted private
+account. Without a token the app works normally; an empty/invalid allowlist blocks
+the bot. New subscription matches use a durable SQLite delivery queue; old matches
+are not backfilled. `/status`, `/subscriptions`, `/pause`, `/resume` share the same
+rules as React. Open **Интеграции → Telegram Bot** for safe status and queue counts.
+
+The bot uses HTTPS long polling, no webhook/public server or second TDLib client.
+It sends only as the bot to opted-in operators. Retries honor network failures and
+429/retry_after; a crash after send success can repeat delivery. The Mac/backend
+must remain running; closing the browser is fine. Setup, BotFather, your numeric ID,
+real phone verification and limitations: [Bot guide](docs/BOT.md).

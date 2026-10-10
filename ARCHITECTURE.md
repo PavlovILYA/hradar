@@ -1,10 +1,10 @@
 # hradar — Architecture
 
-> **As implemented on `master` at `ce6363e` (2026-10-10).** This is a map of the current code, not a promise that every external integration has been exercised end-to-end. For verified commands, blockers, and the latest runtime state, read [`docs/DEV_STATUS.md`](docs/DEV_STATUS.md).
+> **Architecture snapshot (2026-10-10), including the optional Bot API adapter.** This is a map of the current code, not a promise that every external integration has been exercised end-to-end. For verified commands, blockers, and the latest runtime state, read [`docs/DEV_STATUS.md`](docs/DEV_STATUS.md).
 
 ## Purpose and boundaries
 
-hradar is a **local-first Telegram recruitment research workspace**, currently targeting macOS. It reads explicitly selected Telegram sources, searches publications, imports channel history when requested, evaluates deterministic monitoring rules, and exposes selected read-only capabilities to AI clients over MCP. It is **not** yet a recruiting ATS, a packaged desktop app, or a Telegram Bot API service.
+hradar is a **local-first Telegram recruitment research workspace**, currently targeting macOS. It reads explicitly selected Telegram sources, searches publications, imports channel history when requested, evaluates deterministic monitoring rules, and exposes selected read-only capabilities to AI clients over MCP. It is **not** yet a recruiting ATS, a packaged desktop app, or a cloud-hosted service. An optional Bot API adapter provides allowlisted notifications and controls.
 
 ### Logical view
 
@@ -30,12 +30,14 @@ Ktor / Kotlin JVM 21 (127.0.0.1:8080) <---- MCP client (Codex etc.)
                         |
                   Telegram / MTProto
 
+Telegram Bot API (HTTPS long polling) --> BotService/BotUpdateHandler --> SubscriptionService
+NotificationService --> SQLite bot_outbox --> BotGateway sendMessage
+
 Planned, NOT implemented:
-Telegram Bot API (long polling) --> Bot adapter --> same application services
 Optional agent runtime --> allowlisted MCP capabilities / application services
 ```
 
-The UI, MCP, and future bot are **adapters**, not separate implementations of search or monitoring. Higher-level application services own validation and authorization; the gateway owns the underlying Telegram session. Do not use the bot as an indirect way to bypass MCP permissions, or expose a generic `TdApi.Function` executor to agents.
+The UI, MCP, and bot are **adapters**, not separate implementations of search or monitoring. Higher-level application services own validation and authorization; the gateway owns the underlying Telegram session. Do not use the bot as an indirect way to bypass MCP permissions, or expose a generic `TdApi.Function` executor to agents.
 
 ## Repository map
 
@@ -45,10 +47,12 @@ The UI, MCP, and future bot are **adapters**, not separate implementations of se
 | TDLib bridge | `telegram/TdlibGateway.kt` | Telegram authentication, request/response bridging, connection state, new-message callbacks |
 | Search and rules | `research/SearchService.kt`, `MatchingService.kt`, `Models.kt` | Search, deterministic AND/OR/NOT matching and typed research models |
 | Monitoring | `research/NotificationService.kt` | `MonitoringService`, live update queue, bounded recovery polling, saved matches |
+| Bot transport | `bot/BotGateway.kt`, `BotService.kt`, `BotUpdateHandler.kt`, `BotRoutes.kt` | Optional HTTPS polling, allowlisted private commands, durable outbox delivery/status |
+| Shared subscriptions | `research/SubscriptionService.kt` | Validation and shared REST/bot template and pause/resume operations |
 | Historical import | `history/HistorySyncService.kt`, `HistoryRoutes.kt` | Explicit channel archive import with pause/resume, limits, cursors, retries |
-| Persistence | `research/Repositories.kt` | SQLite schema and migrations, sources, templates, matches, notifications, archive, MCP policy |
+| Persistence | `research/Repositories.kt` | SQLite schema and migrations, sources, templates, matches, notifications, archive, MCP policy, bot registration/cursors/outbox |
 | MCP / shared capabilities | `capabilities/CapabilityService.kt`, `TelegramReadPort.kt`, `McpTools.kt`, `McpRoutes.kt` | Typed read-only operations, source allowlist, REST/MCP exposure, local security checks |
-| Web | `frontend/src/` | React workspace; online search, local archive, templates, notifications, MCP settings |
+| Web | `frontend/src/` | React workspace; online search, local archive, templates, notifications, MCP settings and bot status |
 | Tests | `backend/src/test/`, `frontend/tests/`, `tests/` | Kotlin unit/MCP tests, Playwright browser tests, CI safeguards |
 | Delivery | `.github/workflows/ci.yml`, `macos-arm64.yml` | Fast frontend/backend checks and separate costly ARM64 TDLib build |
 
@@ -87,23 +91,24 @@ Bounded channel-history recovery (roughly each minute) -+        |
                                                               browser desktop notification
 ```
 
-For sources not joined by the Telegram user, monitoring may depend on bounded history recovery rather than live `UpdateNewMessage`. New subscriptions start from a saved checkpoint; they do not automatically notify about all historical publications. `NotificationService` persists matching publications with unique `(template, channel, message)` identity. Browser/OS desktop notifications require permission and an open page; **no Telegram-bot delivery exists yet**.
+For sources not joined by the Telegram user, monitoring may depend on bounded history recovery rather than live `UpdateNewMessage`. New subscriptions start from a saved checkpoint; they do not automatically notify about all historical publications. `NotificationService` persists matching publications with unique `(template, channel, message)` identity. Browser/OS desktop notifications require permission and an open page; the optional bot delivers new matches to allowlisted `/start` recipients via a transactional SQLite outbox. Bot payloads use a short excerpt and an optional link obtained through GetMessageLink, never a guessed post number. See [BOT.md](docs/BOT.md).
 
 ### MCP and application capabilities
 
 `POST /mcp` exposes Streamable HTTP using the official Kotlin MCP SDK. Nine read-only tools share `CapabilityService` with `POST /api/capabilities/{tool}`. Agents can query status, allowed sources, history, search, message context, local archives, rules, and unsent drafts. They cannot call arbitrary TDLib methods, grant themselves sources, access personal chats, or send messages. Local UI controls the allowlist and enabled state; docs: [`docs/MCP.md`](docs/MCP.md).
 
-MCP is **a tool protocol, not an agent runtime**. A future Telegram bot may call common services for deterministic commands and may optionally delegate natural-language tasks to a separately constrained agent process. Neither bridge exists in the current implementation.
+MCP is **a tool protocol, not an agent runtime**. The bot calls shared services for deterministic operator commands; it does not call localhost REST or MCP. A future Agent Bridge must retain separate operator authorization, source-scoped agent permissions and out-of-band approval. No natural-language executor exists.
 
 ## Local storage and security boundaries
 
-- SQLite: `~/.hradar/research.sqlite` (schema tracked via migrations; currently v4 in the repository).
+- SQLite: `~/.hradar/research.sqlite` (schema tracked via migrations; currently v5 in the repository, including bot recipients, polling cursors/cooldowns and outbox).
 - TDLib account session: `~/.recruitment-radar/tdlib/`. It is sensitive and never belongs in Git, logs, or MCP results.
-- Credentials: local `.env`/environment (`TG_API_ID`, `TG_API_HASH`); do not send to UI, AI tools, or repositories.
+- Credentials: local `.env`/environment (`TG_API_ID`, `TG_API_HASH`, optional `TG_BOT_TOKEN` and `TG_BOT_ALLOWED_USER_IDS`); do not send to UI, AI tools, or repositories.
 - Ktor binds to **127.0.0.1 only**. Localhost is not user authentication and is not protection against malicious local processes. Do not expose `/api` or `/mcp` through ngrok, public tunnels, LAN, or reverse proxies in the current architecture.
 - MCP is initially disabled; users explicitly allow individual public channels. Route-level Host/Origin/CSRF checks are described in `docs/MCP.md`; there is no internet-facing multi-user auth.
 - Telegram messages are **untrusted content**: never treat text returned to an AI agent as instructions. Personal data collection, retention, export, AI analysis, and third-party sharing require separate product/privacy review and appropriate authorization. Access to a channel is not blanket permission to reuse all its content.
-- Do not automatically join channels, send Telegram messages, perform paid operations, or mass-contact people. Future account mutations need separate, scoped typed operations and **out-of-band human approval**.
+- Bot commands check sender ID, private chat and explicit `/start` registration. Bot identity namespaces recipients/cursors; allowlist removal cancels pending deliveries. Bot sends are confined to opted-in operators, not candidate outreach. Retry deadlines survive restart; crash after send before acknowledgement can redeliver. No exactly-once guarantee.
+- Do not automatically join channels, send from the TDLib user account, perform paid operations, or mass-contact people. Future account mutations need separate, scoped typed operations and **out-of-band human approval**.
 
 ## Builds and delivery
 
