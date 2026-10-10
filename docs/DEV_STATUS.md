@@ -10,19 +10,32 @@ Worktree `/Users/pavlov/Projects/hradar-ci`, branch `ci/tdlib-bootstrap` only.
   Artifact `11667860623` is available until 2027-01-08. Latest Fast run
   [38050957209](https://github.com/PavlovILYA/hradar/actions/runs/38050957209)
   passed frontend; backend log shows bootstrap guard exit 1 before Kotlin build.
-  Releases API returned an empty list. Seven Python safeguard tests and shell
-  syntax checks passed locally. Fast CI now supports bootstrap branch pushes
-  and manual dispatch; no native workflow or product code changed.
-- **NOT VERIFIED:** downloaded binary SHA256, independent provenance validation,
-  Release publication, release fetcher and green backend Fast CI. Artifact
-  connector supplied an expired signed download URL (HTTP 403). Temporary CLI
-  `/private/tmp/hradar-gh/gh_2.102.0_macOS_amd64/bin/gh` is installed but not logged in.
-  No TDLib rebuild, backend startup, push, master modification or merge occurred.
-  Existing backend listener PID 68501 was left untouched.
-- **NEXT ACTION:** authenticate the temporary CLI with `gh auth login --web`,
-  download the successful run's artifact, verify both hashes and attestations,
-  prepare release assets and pin verified metadata. Obtain explicit permission
-  before Release publication and branch push, then verify Fast CI on this branch.
+  Releases API returned an empty list; the proposed v1 tag is absent. Downloaded
+  artifact via authenticated CLI. Both SHA256 values match SHA256SUMS/metadata;
+  both `gh attestation verify` commands exited 0 with exact repository, signer,
+  master ref, build commit and GitHub-hosted runner requirements. Certificates
+  identify that exact run. JAR classes/source identity, ARM64 `lipo`, and pinned
+  upstream schema/original/patched CMake hashes passed independent checks.
+  `otool -L` confirms external JDK/Homebrew OpenSSL dependencies. Verified hashes
+  and build commit are now pinned in config/tdlib.json (see docs/CI.md).
+  Seven Python safeguard tests passed again. JDK 21 `./gradlew :backend:build
+  --no-daemon --console=plain` exited 0 with the downloaded verified JAR, no JNI,
+  no Telegram credentials/session: 56 tests, zero failures/errors/skips.
+  Fast CI supports bootstrap branch
+  pushes and manual dispatch; no native workflow or product code changed.
+  Commit `4b8272d` was pushed with explicit user authorization. Its Fast run
+  [38093744547](https://github.com/PavlovILYA/hradar/actions/runs/38093744547)
+  passed frontend and stopped backend at the unpinned bootstrap guard.
+- **NOT VERIFIED:** Release publication, release fetcher and green backend Fast CI.
+  Intel local checks do not replace the GitHub ARM64 JNI smoke test; ARM64 JNI
+  was not loaded locally. No TDLib rebuild, backend startup, master modification
+  or merge occurred. Application processes in other worktrees were left untouched.
+- **NEXT ACTION:** obtain explicit confirmation to publish
+  `tdlib-bc9c263e2bfee06aaab41e82db51a103376030bc-v1` targeted at the verified native
+  build commit with the four original assets. Release notes are prepared at
+  `.tdlib-build/release-review/notes.md` (ignored local review artifact).
+  After publication, verify the permanent-release fetcher and push the pinning
+  commit with authorization, then verify both Fast CI jobs on this branch.
 
 The product runtime handoff below is preserved; its previous native-CI blocker
 is superseded by the evidence above.

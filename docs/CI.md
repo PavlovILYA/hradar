@@ -33,9 +33,31 @@ to complete this bootstrap; download and independently verify these outputs.
 [Fast run 38050957209](https://github.com/PavlovILYA/hradar/actions/runs/38050957209)
 at `ae7b3227cf82aeb870c09f3041b3d29b093a5474` passed frontend build and offline tests.
 Backend exited 1 at the bootstrap guard, before Gradle compilation or tests.
-The GitHub Releases API returned no releases. Binary checksums and independent
-provenance verification are still pending; a successful job alone does not
-authorize promotion. Publication requires explicit maintainer confirmation.
+The bootstrap branch run [38093744547](https://github.com/PavlovILYA/hradar/actions/runs/38093744547)
+also passed frontend and stopped backend at the same guard before pinning.
+The GitHub Releases API returned no releases and the proposed v1 tag is absent.
+Publication requires explicit maintainer confirmation.
+
+The successful run's downloaded binaries were independently verified locally:
+`SHA256SUMS` and metadata match both files; `gh attestation verify` exited 0 for
+each with the exact repository, signer workflow, master ref, build commit and
+`--deny-self-hosted-runners`. Verified certificate identities also name run
+38045478478, GitHub-hosted execution and that build commit. The JAR identity/classes
+check and ARM64 `lipo` check passed. Schema and original/patched Java CMake hashes
+match the pinned official upstream sources. `otool -L` confirms external JDK 21
+and Homebrew OpenSSL dependencies; the dylib was not loaded on the Intel host.
+
+| Asset | Verified SHA256 |
+| --- | --- |
+| `tdlib-java.jar` | `f94f26b5ff60d254c51ce728079b600aa6c76b80cca009aa2969f81c6972adad` |
+| `libtdjni.dylib` | `d2a124be93e6a9e5000a8e8ca6a2826991cbe68145d2a21db9f2e4d3dbd19dfa` |
+
+`config/tdlib.json` now pins the verified JAR hash and build commit. The Release
+download/fetch path and green backend Fast CI remain pending publication and
+push of the pinning commit. No TDLib rebuild is needed.
+Local JDK 21 `./gradlew :backend:build --no-daemon --console=plain` with this
+verified JAR exited 0: 56 tests, zero failures/errors/skips, no JNI or Telegram
+credentials/session. This local result does not establish green GitHub Fast CI.
 
 ## Previous failure diagnosis
 
@@ -79,9 +101,10 @@ with explicit host architecture and separate commit/architecture build directori
 
 ## Fast CI dependency and initial bootstrap
 
-**Initial state: backend Fast CI is intentionally blocked until the first successful
-native build is published and reviewed.** `jarSha256` and `buildSourceDigest` in
-`config/tdlib.json` are null, so the fetcher fails with explicit bootstrap instructions.
+**Backend Fast CI remains blocked until the verified native build is published.**
+The bootstrap branch now has reviewed `jarSha256` and `buildSourceDigest` values
+in `config/tdlib.json`; previous commits have null values and fail with explicit
+bootstrap instructions. The new configuration requires the permanent Release.
 No dummy JAR, skipped Kotlin tests or expired-run artifact fallback is used. The
 frontend job still runs independently.
 
@@ -104,8 +127,12 @@ Fast CI uses permanent Release assets, never these expiring uploads.
 
 First publication is a **manual maintainer action**, not automatic tag/release overwrite:
 
-1. Push the reviewed CI commit to master yourself; the agent has not pushed it.
-2. Start the new workflow on master (GitHub Actions UI or authenticated GitHub CLI):
+1. The native CI commit is already on master and run 38045478478 succeeded.
+   Reuse its artifacts for this bootstrap. The agent works only on
+   ci/tdlib-bootstrap; pushing that branch requires maintainer authorization.
+2. For a future native source/toolchain update, start a new workflow on master
+   (GitHub Actions UI or authenticated GitHub CLI). For the current bootstrap,
+   skip dispatch/watch and use `RUN_ID=38045478478` for download:
 
    ```bash
    gh workflow run macos-arm64.yml --repo PavlovILYA/hradar --ref master
