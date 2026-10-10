@@ -37,12 +37,19 @@ application {
 
 tasks.test { useJUnitPlatform() }
 
-tasks.register("checkTdlib") {
+tasks.register("checkTdlibJava") {
     group = "verification"
     doLast {
         check(file("libs/tdlib-java.jar").exists()) {
             "Missing TDLib Java bindings. Run ./scripts/build-tdlib-macos.sh first."
         }
+    }
+}
+
+tasks.register("checkTdlib") {
+    group = "verification"
+    dependsOn("checkTdlibJava")
+    doLast {
         check(file("native/libtdjni.dylib").exists()) {
             "Missing TDLib native library. Run ./scripts/build-tdlib-macos.sh first."
         }
@@ -54,4 +61,4 @@ tasks.named<JavaExec>("run") {
     standardInput = System.`in`
 }
 
-tasks.named("compileKotlin") { dependsOn("checkTdlib") }
+tasks.named("compileKotlin") { dependsOn("checkTdlibJava") }

@@ -1,16 +1,32 @@
 import { test, expect } from '@playwright/test';
 
-test.beforeAll(async ({ request }) => {
-  await expect.poll(async () => {
-    try {
-      const response = await request.get('/api/telegram/status', { timeout: 2000 });
-      const status = await response.json();
-      return response.ok() && status.authorized && (!status.connectionState || status.connectionState === 'Ready');
-    } catch { return false; }
-  }, { timeout: 30_000, intervals: [1000, 2000] }).toBe(true);
+// Live tests are explicit. Offline tests block all backend traffic and use synthetic data.
+test.beforeEach(async ({ page, request }, testInfo) => {
+  if (testInfo.tags.includes('@telegram')) {
+    await expect.poll(async () => {
+      try {
+        const response = await request.get('/api/telegram/status', { timeout: 2000 });
+        const status = await response.json();
+        return response.ok() && status.authorized && status.connectionState === 'Ready';
+      } catch { return false; }
+    }, { timeout: 30_000, intervals: [1000, 2000] }).toBe(true);
+    return;
+  }
+  await page.route('**/api/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/telegram/status') return route.fulfill({ json: { authorizationState: 'Ready', authorized: true, connectionState: 'Ready' } });
+    if (path === '/api/channels' || path === '/api/templates' || path === '/api/monitoring') return route.fulfill({ json: [] });
+    if (path === '/api/notifications') return route.fulfill({ json: { items: [], unread: 0, cursor: null } });
+    if (path === '/api/events') return route.abort();
+    if (/^\/api\/messages\/-?\d+\/\d+\/link$/.test(path)) return route.fulfill({ json: { link: 'https://t.me/synthetic_source/1' } });
+    if (path === '/api/history/syncs') return route.fulfill({ json: [] });
+    if (/^\/api\/history\/[a-zA-Z0-9_]+\/sync$/.test(path) && route.request().method() === 'GET') return route.fulfill({ json: { channelId: -100123, username: path.split('/')[3], title: 'Synthetic archive', status: 'IDLE', cursor: 0, messageCount: 0, retryCount: 0, nextRetryAt: 0, error: null, updatedAt: 0, maxMessages: 1000, pauseReason: null } });
+    if (path.startsWith('/api/telegram/chats/')) return route.fulfill({ json: Array.from({ length: 10 }, (_, i) => ({ id: 100 - i, date: 1700000000 + i, text: 'Synthetic public publication', channelId: -100123 })) });
+    throw new Error(`Offline test made an unmocked API request: ${path}`);
+  });
 });
 
-test('loads real Telegram messages through the frontend proxy', async ({ page }) => {
+test('loads real Telegram messages through the frontend proxy', { tag: '@telegram' }, async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('status')).toHaveText('Telegram подключён');
   await expect(page.getByRole('heading', { name: 'Здесь появятся сообщения канала' })).toBeVisible();
@@ -24,7 +40,7 @@ test('loads real Telegram messages through the frontend proxy', async ({ page })
   await expect(page.locator('.message-card')).toHaveCount(10);
 });
 
-test('shows real missing-channel error without stale messages', async ({ page }) => {
+test('shows real missing-channel error without stale messages', { tag: '@telegram' }, async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('status')).toHaveText('Telegram подключён');
   await page.getByLabel('Username канала').fill('@hradar_missing_test_9x7q2');
@@ -98,7 +114,7 @@ test('theme persists and publication details show actual message IDs', async ({ 
   await page.screenshot({ path: '/tmp/hradar-research-dark.png', fullPage: true });
 });
 
-test('creates edits pauses and deletes a template through the real API', async ({ page }) => {
+test('creates edits pauses and deletes a template through the real API', { tag: '@telegram' }, async ({ page }) => {
   const name = `E2E research ${Date.now()}`;
   const edited = name + ' edited';
   await page.goto('/');
@@ -125,7 +141,7 @@ test('creates edits pauses and deletes a template through the real API', async (
   await expect(card).toHaveCount(0);
 });
 
-test('searches Telegram history with paging and original links', async ({ page }) => {
+test('searches Telegram history with paging and original links', { tag: '@telegram' }, async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('status')).toHaveText('Telegram подключён');
   await page.getByLabel('Сообщений', { exact: true }).fill('5');
@@ -164,7 +180,7 @@ test('global free limit is explicit and never substitutes channel results', asyn
   await expect(page.locator('.message-card')).toHaveCount(0);
 });
 
-test('real local archive paginates and searches through backend', async ({ page }) => {
+test('real local archive paginates and searches through backend', { tag: '@telegram' }, async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('status')).toHaveText('Telegram подключён');
   await page.getByRole('button', { name: 'Локальный архив', exact: true }).click();
@@ -331,7 +347,7 @@ test('SSE updates and reconnect deduplicate desktop notices and click opens the 
   await expect(page.getByRole('link', { name: 'Открыть в Telegram' })).toHaveAttribute('href', item.message.link);
 });
 
-test('real SSE can disconnect and reconnect with a fresh summary', async ({ page }) => {
+test('real SSE can disconnect and reconnect with a fresh summary', { tag: '@telegram' }, async ({ page }) => {
   await page.goto('/');
   const summaries = await page.evaluate(async () => {
     const result: { unread: number; revision: number }[] = [];

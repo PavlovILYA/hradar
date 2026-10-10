@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "playwright test"
+    "test": "playwright test",
+    "test:ci": "playwright test --grep-invert @telegram",
+    "test:telegram": "playwright test --grep @telegram"
   },
   "dependencies": {
     "react": "^19.3.0",

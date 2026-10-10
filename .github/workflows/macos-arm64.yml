@@ -1,100 +1,98 @@
 name: hradar - macOS ARM64 TDLib
-
-# First iteration: expensive native build runs manually, or when this workflow/build script changes.
 on:
   workflow_dispatch:
+    inputs:
+      use_cache:
+        description: Reuse CMake intermediate cache (disable for a clean retry)
+        type: boolean
+        default: true
   push:
+    branches: [master]
     paths:
       - '.github/workflows/macos-arm64.yml'
+      - 'config/tdlib.json'
       - 'scripts/build-tdlib-macos.sh'
-
+      - 'scripts/prepare-tdlib-java.py'
+      - 'scripts/check-tdlib-bindings.py'
+      - 'scripts/verify-tdlib-macos.sh'
+      - 'scripts/package-tdlib-artifact.py'
 permissions:
   contents: read
-
 concurrency:
   group: hradar-arm64-${{ github.ref }}
   cancel-in-progress: true
-
 jobs:
   build-arm64:
-    name: TDLib JNI + Kotlin backend (Apple Silicon)
+    name: Pinned official TDLib + ARM64 JNI + Kotlin tests
     runs-on: macos-15
     timeout-minutes: 100
-    env:
-      # Pin official TDLib source to the version successfully used by hradar locally.
-      TDLIB_COMMIT: bc9c263e2bfee06aaab41e82db51a103376030bc
-
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - name: Checkout hradar
-        uses: actions/checkout@v4
-
-      - name: Verify Apple Silicon runner
-        shell: bash
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require GitHub-hosted Apple Silicon
         run: |
-          uname -a
-          arch="$(uname -m)"
-          echo "Architecture: $arch"
-          test "$arch" = arm64
-
-      - name: Set up Java 21
-        uses: actions/setup-java@v4
+          echo "Runner architecture: $(uname -m)"
+          test "$(uname -m)" = arm64
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: '21'
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          gradle-version: '8.14.3'
-
-      - name: Install TDLib build dependencies
-        shell: bash
+          python-version: '3.12'
+      - name: Install CMake 3.31.8 and native dependencies
         run: |
-          brew install cmake gperf openssl@3
-          java -version
-          cmake --version
-
-      - name: Checkout pinned official TDLib sources
-        shell: bash
+          brew install gperf openssl@3
+          python3 -m venv .tdlib-build/cmake-tools
+          .tdlib-build/cmake-tools/bin/pip install cmake==3.31.8
+          echo "$PWD/.tdlib-build/cmake-tools/bin" >> "$GITHUB_PATH"
+      - name: Read pinned source and identify toolchain cache
+        id: toolchain
         run: |
-          mkdir -p .tdlib-build/td
-          git -C .tdlib-build/td init -q
-          git -C .tdlib-build/td remote add origin https://github.com/tdlib/td.git
-          git -C .tdlib-build/td fetch --depth 1 origin "$TDLIB_COMMIT"
-          git -C .tdlib-build/td checkout --detach FETCH_HEAD
-          git -C .tdlib-build/td rev-parse HEAD
-
-      - name: Compile TDLib and Java JNI bindings
-        shell: bash
-        run: |
-          export JAVA_HOME="$JAVA_HOME"
-          bash scripts/build-tdlib-macos.sh
-
-      - name: Verify generated ARM64 JNI artifacts
-        shell: bash
-        run: |
-          test -s backend/libs/tdlib-java.jar
-          test -s backend/native/libtdjni.dylib
-          file backend/native/libtdjni.dylib
-          lipo -archs backend/native/libtdjni.dylib
-          lipo -verify_arch arm64 backend/native/libtdjni.dylib
-          otool -L backend/native/libtdjni.dylib
-
-      - name: Build and test Kotlin backend
-        shell: bash
-        run: |
-          if [[ -f ./gradlew ]]; then
-            bash ./gradlew :backend:build --no-daemon --console=plain
-          else
-            gradle :backend:build --no-daemon --console=plain
-          fi
-
-      - name: Upload compiled ARM64 TDLib artifacts
-        uses: actions/upload-artifact@v4
+          python3 -c 'import json,os; c=json.load(open("config/tdlib.json")); f=open(os.environ["GITHUB_OUTPUT"],"a"); print("tdlib="+c["commit"],file=f)'
+          identity="$( { clang --version; xcrun --show-sdk-version; brew list --versions openssl@3; java -version 2>&1; echo "$JAVA_HOME ${ImageVersion:-unknown}"; } | shasum -a 256 | cut -d ' ' -f 1)"
+          echo "identity=$identity" >> "$GITHUB_OUTPUT"
+      - name: Cache pinned CMake intermediates (not a dependency source)
+        if: github.event_name != 'workflow_dispatch' || inputs.use_cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          name: hradar-tdlib-macos-arm64
+          key: tdlib-arm64-${{ steps.toolchain.outputs.tdlib }}-${{ steps.toolchain.outputs.identity }}-${{ hashFiles('scripts/*tdlib*', 'config/tdlib.json') }}
           path: |
-            backend/libs/tdlib-java.jar
-            backend/native/libtdjni.dylib
+            .tdlib-build/td
+            .tdlib-build/native-build-*
+            .tdlib-build/example-build-*
+      - name: Compile official bindings and JNI without demonstration Example.java
+        timeout-minutes: 80
+        run: bash scripts/build-tdlib-macos.sh
+      - name: Verify pinned Java classes, ARM64 architecture and real JNI linking
+        run: |
+          python3 -B scripts/check-tdlib-bindings.py backend/libs/tdlib-java.jar
+          bash scripts/verify-tdlib-macos.sh arm64
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - name: Test source patch and binary identity safeguards
+        run: python3 -B -m unittest discover -s tests -v
+      - name: Build Kotlin and run account-free backend tests
+        run: ./gradlew :backend:build --no-daemon --console=plain
+      - name: Stage binaries, source provenance and checksums
+        id: package
+        run: python3 -B scripts/package-tdlib-artifact.py
+      - name: Attest binary provenance for permanent Release consumers
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            .tdlib-build/release/tdlib-java.jar
+            .tdlib-build/release/libtdjni.dylib
+      - name: Upload verified ARM64 binaries (publish Release manually)
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hradar-tdlib-macos-arm64-${{ steps.toolchain.outputs.tdlib }}
+          path: .tdlib-build/release/
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 90

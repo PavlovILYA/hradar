@@ -231,3 +231,23 @@ codex mcp list
 Private chats, arbitrary TDLib methods, automatic joins/sends and paid operations
 are unavailable. The server remains local; Host/Origin checks and UI-only CSRF
 management protect the allowlist. See [MCP setup, schemas and security](docs/MCP.md).
+
+## Continuous integration
+
+- **Fast CI** (`ci.yml`) runs on pushes/PRs to master: independent frontend
+  build/offline browser tests and Java-only Kotlin build/unit tests. No Telegram
+  credentials/session or JNI is required. npm/Gradle caches are enabled.
+- **Native ARM64** (`macos-arm64.yml`) runs manually or on master changes to the
+  listed TDLib workflow/scripts/configuration. It builds the pinned official source,
+  verifies ARM64/JNI/dependencies, tests Kotlin and uploads checksummed binaries
+  with GitHub provenance. React/Kotlin changes alone do not start native compilation.
+
+Fast CI fetches only a SHA-pinned, attested Java JAR from a permanent versioned
+hradar Release. **Initial bootstrap is still required:** until a successful native
+run is manually published and its hash/build commit are pinned, the backend job
+fails explicitly; the frontend job runs independently. No unverified binary or
+expired workflow-artifact fallback is used.
+
+Run offline frontend checks with `npm run test:ci --prefix frontend`. Six `@telegram`
+integration tests remain separate (`npm run test:telegram --prefix frontend`).
+See [CI setup, bootstrap publication, retry and TDLib updates](docs/CI.md).

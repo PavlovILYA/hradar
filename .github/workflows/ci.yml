@@ -1,0 +1,57 @@
+name: hradar - Fast CI
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+concurrency:
+  group: fast-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  frontend:
+    name: Frontend build and offline browser tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked npm dependencies
+        run: npm ci
+      - name: TypeScript check and production build
+        run: npm run build
+      - name: Install locked Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Test UI with synthetic data (no Telegram/backend)
+        run: npm run test:ci
+  backend:
+    name: Kotlin build and account-free unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - name: Fetch SHA-pinned and attested Java bindings (bootstrap required once)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B scripts/fetch-tdlib-java.py
+      - name: Test TDLib build safeguards
+        run: python3 -B -m unittest discover -s tests -v
+      - name: Compile Kotlin and run fake-gateway/unit tests (no JNI)
+        run: ./gradlew :backend:build --no-daemon --console=plain

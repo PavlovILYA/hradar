@@ -8,10 +8,12 @@ fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="${TDLIB_SOURCE_DIR:-$ROOT/.tdlib-build/td}"
-INSTALL="$ROOT/.tdlib-build/artifacts"
-CMAKE_BUILD="$ROOT/.tdlib-build/native-build"
-EXAMPLE_BUILD="$ROOT/.tdlib-build/example-build"
 BUILD_JOBS="${TDLIB_BUILD_JOBS:-2}"
+PIN="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["commit"])' "$ROOT/config/tdlib.json")"
+[[ "${TDLIB_COMMIT:-$PIN}" = "$PIN" ]] || { echo "TDLIB_COMMIT conflicts with config/tdlib.json" >&2; exit 1; }
+INSTALL="$ROOT/.tdlib-build/artifacts-$PIN-$(uname -m)"
+CMAKE_BUILD="$ROOT/.tdlib-build/native-build-$PIN-$(uname -m)"
+EXAMPLE_BUILD="$ROOT/.tdlib-build/example-build-$PIN-$(uname -m)"
 LOCAL_CMAKE="$ROOT/.tdlib-build/tools/cmake-3.31.8-macos-universal/CMake.app/Contents/bin"
 if [[ -x "$LOCAL_CMAKE/cmake" ]]; then
   export PATH="$LOCAL_CMAKE:$PATH"
@@ -42,13 +44,31 @@ fi
 
 if [[ ! -f "$SRC/CMakeLists.txt" ]]; then
   mkdir -p "$(dirname "$SRC")"
-  git clone --depth 1 https://github.com/tdlib/td.git "$SRC"
+  mkdir -p "$SRC"
+  git -C "$SRC" init -q
+  if ! git -C "$SRC" remote get-url origin >/dev/null 2>&1; then
+    git -C "$SRC" remote add origin https://github.com/tdlib/td.git
+  fi
+  [[ "$(git -C "$SRC" remote get-url origin)" = https://github.com/tdlib/td.git ]] || {
+    echo "Unexpected TDLib source remote; refusing checkout" >&2; exit 1;
+  }
+  git -C "$SRC" fetch --depth 1 origin "$PIN"
+  git -C "$SRC" checkout --detach FETCH_HEAD
 fi
+[[ "$(git -C "$SRC" rev-parse HEAD)" = "$PIN" ]] || {
+  echo "TDLib checkout differs from pinned SHA. Preserve it and use TDLIB_SOURCE_DIR with a fresh path." >&2; exit 1;
+}
+# Only our exact idempotent CMake patch is allowed in tracked third-party sources.
+[[ -z "$(git -C "$SRC" diff HEAD --name-only -- . ':!example/java/CMakeLists.txt')" ]] || {
+  echo "Unexpected tracked TDLib source changes; refusing native build" >&2; exit 1;
+}
+python3 "$ROOT/scripts/prepare-tdlib-java.py" "$SRC"
 
-echo "Building official TDLib with JNI for $(uname -m). This is the expensive one-time step."
+echo "Building official TDLib $PIN with JNI for $(uname -m). This is the expensive one-time step."
 cmake -S "$SRC" -B "$CMAKE_BUILD" \
   "${CMAKE_CXX_OPTIONS[@]}" \
   -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_OSX_ARCHITECTURES="$(uname -m)" \
   -DTD_ENABLE_JNI=ON \
   -DJAVA_HOME="$JAVA_HOME" \
   -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT" \
@@ -58,6 +78,7 @@ cmake --build "$CMAKE_BUILD" --target install --parallel "$BUILD_JOBS"
 cmake -S "$SRC/example/java" -B "$EXAMPLE_BUILD" \
   "${CMAKE_CXX_OPTIONS[@]}" \
   -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_OSX_ARCHITECTURES="$(uname -m)" \
   -DJAVA_HOME="$JAVA_HOME" \
   -DTd_DIR="$SRC/example/java/td/lib/cmake/Td" \
   -DCMAKE_INSTALL_PREFIX="$INSTALL"
@@ -67,6 +88,11 @@ BIN="$INSTALL/bin"
 test -f "$BIN/libtdjni.dylib" || { echo "Missing libtdjni.dylib in $BIN" >&2; exit 1; }
 test -f "$BIN/org/drinkless/tdlib/TdApi.class" || { echo "Missing generated TdApi.class in $BIN" >&2; exit 1; }
 mkdir -p "$ROOT/backend/libs" "$ROOT/backend/native"
-jar --create --file "$ROOT/backend/libs/tdlib-java.jar" -C "$BIN" org/drinkless/tdlib
+MANIFEST="$(mktemp)"
+trap 'rm -f "$MANIFEST"' EXIT
+printf 'Manifest-Version: 1.0\nTDLib-Commit: %s\n\n' "$PIN" > "$MANIFEST"
+jar --create --file "$ROOT/backend/libs/tdlib-java.jar" --manifest "$MANIFEST" -C "$BIN" org/drinkless/tdlib
+python3 "$ROOT/scripts/check-tdlib-bindings.py" "$ROOT/backend/libs/tdlib-java.jar"
 cp "$BIN/libtdjni.dylib" "$ROOT/backend/native/libtdjni.dylib"
+bash "$ROOT/scripts/verify-tdlib-macos.sh" "$(uname -m)"
 echo "Success: backend/libs/tdlib-java.jar and backend/native/libtdjni.dylib are ready."
