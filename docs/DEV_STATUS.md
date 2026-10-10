@@ -1,5 +1,30 @@
 # hradar — Development status / session handoff
 
+## Runtime follow-up — 2026-10-11
+
+VERIFIED: User reported new commands unavailable. Listener PID 68501 was still the
+old adjacent `hradar` checkout; its live MCP listing had nine tools. Stopped that
+backend with SIGTERM, verified port release, created a private-permission SQLite
+backup (`~/.hradar/research.pre-inbox-*.sqlite`) and started exactly one backend from
+`feat/bot-workspace` at `dfa8aa0` (listener PID 50722). Existing ignored local config
+and compatible JNI were reused; no native build or tracked scripts were changed.
+`/health`=200; live MCP lists 12 tools including the three new operations; Bot API
+state=running, no notice, successful poll recorded; TDLib authorization/connection
+Ready. Production migration to v6 preserved 8,942 archive messages, one template,
+one bot recipient and the prior match/source counts. There are currently zero saved
+matches and zero MCP source grants; empty Inbox is expected, not a search failure.
+
+NOT VERIFIED: Phone display and new command/callback responses still require the
+operator to send commands. No ad-hoc outgoing message or competing getUpdates was
+issued during diagnosis. Earlier statements below that this branch was not deployed
+refer to the preceding checkpoint and are superseded by this runtime follow-up.
+
+NEXT ACTION: In the existing registered private bot chat, resend `/help`, `/sources`,
+`/matches`. To populate Inbox, enable monitoring and personally publish a fresh
+matching post in an authorized test source. MCP match reads additionally need explicit
+source grants. No push or merge.
+
+
 Current checkpoint: 2026-10-11, Telegram Inbox and safe MCP publication, branch
 `feat/bot-workspace`, based on `ae7b322`. No push, merge, CI/script changes or backend
 restart. Previous checkpoint evidence is retained below as historical context.
