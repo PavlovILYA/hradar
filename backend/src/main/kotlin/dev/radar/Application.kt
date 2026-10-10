@@ -47,10 +47,12 @@ fun main() {
     val search = SearchService(telegram, repositories, matching)
     val notifications = NotificationService(repositories, matching)
     val subscriptions = SubscriptionService(repositories, matching)
+    val recruiter = RecruiterService(repositories, RecruiterSearchPort(search::search))
+    val workspace = BotWorkspaceService(repositories, recruiter)
     val bot = BotService(BotConfig.fromEnvironment(), repositories, subscriptions, statusText = {
         val status = telegram.getStatus()
         "hradar\nTDLib: ${status.authorizationState} · ${status.connectionState}\nМониторинг: ${repositories.channels().size} источников\nАктивные подписки: ${subscriptions.list().count { it.active && it.subscribed && it.sourceMode != "global" }}"
-    }, link = { chatId, messageId ->
+    }, workspace = workspace, link = { chatId, messageId ->
         (telegram.executeRead(TdApi.GetMessageLink().apply { this.chatId = chatId; this.messageId = messageId }) as TdApi.MessageLink).link
     })
     val monitoring = MonitoringService(telegram, repositories, search, notifications)
@@ -98,6 +100,7 @@ fun main() {
         }
         configureCapabilities(capabilities, readPort, repositories)
         configureBotRoutes(bot)
+        configureSavedRoutes(repositories)
         configureRoutes(telegram)
         configureResearchRoutes(telegram, repositories, matching, search, notifications)
         configureHistoryRoutes(telegram, repositories, historySync)

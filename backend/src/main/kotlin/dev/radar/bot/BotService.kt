@@ -13,10 +13,11 @@ class BotService(
     private val link: suspend (Long, Long) -> String? = { _, _ -> null },
     private val now: () -> Long = System::currentTimeMillis,
     gatewayFactory: (String) -> BotGateway = ::HttpsBotGateway,
+    workspace: BotWorkspaceService? = null,
 ) : AutoCloseable {
     private val gateway = if (config.enabled) gatewayFactory(config.token!!) else null
     private val botId = config.botId
-    private val handler = BotUpdateHandler(config, repo, subscriptions, statusText, now)
+    private val handler = BotUpdateHandler(config, repo, subscriptions, statusText, now, workspace)
     private val job = SupervisorJob()
     private val scope = CoroutineScope(job + Dispatchers.IO)
     private val started = AtomicBoolean()
@@ -116,6 +117,7 @@ class BotService(
                 catch (_: Exception) { null }
                 payload = payload.copy(buttons = payload.buttons + (original?.let { listOf(listOf(BotButton("Оригинал", url = it))) } ?: emptyList()), text = payload.text + (original?.let { "\n\n$it" } ?: ""), needsLink = false)
                 repo.prepareBotDelivery(item.id, payload)
+                if (original != null) repo.rememberPublicationLink(id, item.userId, payload.channelId!!, payload.messageId!!, original)
             }
             currentCoroutineContext().ensureActive()
             if (!deliveryPermitted(item)) { repo.cancelBotDelivery(item.id); return@withLock }

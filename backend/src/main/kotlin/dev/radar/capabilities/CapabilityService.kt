@@ -91,6 +91,17 @@ class CapabilityService(private val telegram: TelegramReadPort, private val repo
                         val page = all.drop(input.cursor).take(input.limit).map { RuleDto(it.id, it.name, it.required, it.any, it.excluded, it.active, it.subscribed, if (it.sourceMode == "all") ids else it.sources.filter { id -> id in ids }) }
                         objectOf(RulePage(page, (input.cursor + page.size).takeIf { it < all.size }))
                     }
+                    "list_saved_results" -> {
+                        val input = decode<RecentMatchesInput>(arguments); checkLimit(input.limit); require(input.before == null || input.before > 0)
+                        val page = repo.savedResults(input.limit, input.before ?: Long.MAX_VALUE, sources = repo.mcpSources().map { it.id }.toSet(), status = "SAVED")
+                        objectOf(page.copy(items = page.items.map(::safeSaved)))
+                    }
+                    "get_saved_result" -> {
+                        val input = decode<SavedResultInput>(arguments); require(input.resultId.matches(Regex("[a-f0-9-]{36}")))
+                        val record = repo.savedResult(input.resultId)?.takeIf { it.status == "SAVED" } ?: throw AccessDenied()
+                        channel(record.message.channelId.toString())
+                        objectOf(safeSaved(record))
+                    }
                     "list_recent_matches" -> {
                         val input = decode<RecentMatchesInput>(arguments); checkLimit(input.limit); require(input.before == null || input.before > 0)
                         val allowed = repo.mcpSources().map { it.id }.toSet()
@@ -136,6 +147,10 @@ class CapabilityService(private val telegram: TelegramReadPort, private val repo
         runCatching { repo.auditMcp(name.take(64), result.error?.code ?: "OK", (System.nanoTime() - started) / 1_000_000) }
             .onFailure { org.slf4j.LoggerFactory.getLogger(CapabilityService::class.java).warn("MCP audit storage unavailable") }
         result
+    }
+    private fun safeSaved(record: SavedResult): SavedResult {
+        val allowed = channel(record.message.channelId.toString())
+        return record.copy(message = record.message.copy(text = record.message.text?.take(2000), title = allowed.title, username = allowed.username, link = dev.radar.bot.verifiedTelegramLink(record.message.link)))
     }
     private fun safeMatch(record: NotificationRecord): NotificationRecord {
         val allowed = channel(record.message.channelId.toString())

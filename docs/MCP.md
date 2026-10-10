@@ -149,3 +149,23 @@ cancels pending publications; permissions are rechecked on confirmation and deli
 Bot operator source access and MCP grants remain separate; an agent cannot inherit
 an operator's broader source access. See [BOT.md](BOT.md) for retention/recovery and
 manual phone verification. [AGENT_BRIDGE.md](AGENT_BRIDGE.md) is a proposal only.
+
+## Mobile workspace saved-result reads
+
+The operator workflow `/find` → Save → `/watch` → notification → `/digest` is the
+current priority; no MCP publication request is necessary for it. Existing constrained
+publication consent behavior remains intact.
+
+| Tool | Arguments | Result |
+| --- | --- | --- |
+| list_saved_results | `limit=25` (1–50), `before` | Saved publication cards, source-filtered before LIMIT, keyset nextCursor |
+| get_saved_result | `resultId` | One SAVED publication from an explicitly allowed source |
+
+Both are read-only and use the shared SQLite saved-result repository. They expose no
+operator IDs, workflow drafts or private sources, and cannot save/reject publications
+or create subscriptions. Removed/rejected result IDs return ACCESS_DENIED. Text is
+clipped to 2,000 characters, Telegram links are validated, unknown arguments rejected
+and the existing enabled-policy/result recheck, body/response bounds and audit apply.
+There are now 14 tools: 13 reads and the existing constrained publication request.
+The read-only registry proposed for `/ask` explicitly excludes publication and any
+settings/import/subscription mutation; see [AGENT_BRIDGE.md](AGENT_BRIDGE.md).

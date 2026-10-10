@@ -1,5 +1,60 @@
 # hradar — Development status / session handoff
 
+## Mobile recruiter checkpoint — 2026-10-11
+
+This checkpoint supersedes runtime and task status below. Branch `feat/bot-workspace`;
+previous Inbox work preserved in `dfa8aa0` and `b5fbcdd`. Feature push authorized;
+no master merge, CI configuration or TDLib build-script changes.
+
+VERIFIED:
+- `/find` reuses SearchService/TDLib for saved public sources and existing SQLite
+  archive reads. Explicit mode/source selection, ten results per page, five-page
+  budget, navigation, original links, per-operator save/reject and watch creation.
+  No claim of global Telegram coverage. Archive query is a literal phrase.
+- `/watch` persists the dialog, previews and confirms a genuine SearchTemplate via
+  SubscriptionService. React refreshes shared templates on opening its tab and with
+  “Обновить подписки”. `/saved` and React “Избранное” expose durable decisions.
+- SQLite v7 preserves archive/templates/recipients, adds unique operator/publication
+  decisions, expiring bot workspace and match publication dates. Rejects suppress
+  untreated results and future notification of that publication for that operator.
+  Digest uses actual matches for today/rolling seven days; read state remains shared.
+- Read-only MCP `list_saved_results`/`get_saved_result` enforce the existing source
+  grants. There are 14 tools including the preserved separately consented publication
+  tool. `/ask` remains unconnected; isolated-runtime specification in AGENT_BRIDGE.md.
+- Backend build exit 0: 75 tests, zero failures/errors. Built an isolated copy with
+  identical backend sources and existing matching TDLib JAR, without credentials,
+  native session or a second backend. Tests use fake BotGateway/Telegram and temporary
+  SQLite, covering migrations, bounded pagination, duplicate save/events, rejection,
+  stale callbacks, cancellation/restart, denied access and transaction rollback.
+- React production build exit 0. Offline Playwright: 16 passed. Temporary config used
+  an owned frontend at 127.0.0.1:5174 with mocked APIs; removed after verification.
+- Stopped old backend/frontend before deployment, backed up SQLite privately at
+  `~/.hradar/research.pre-mobile-v7-*.sqlite`, then started this checkout. Exactly one
+  backend listens at 127.0.0.1:8080 (PID 54482); frontend at 127.0.0.1:5173.
+  Health 200, TDLib authorized/Ready, Bot API running with successful polling.
+  Actual v6→v7 migration preserved 8942 archive messages, one template and one bot
+  recipient. Real bounded `java` search in one saved public source returned five
+  Telegram results with next cursor; archive returned five of 1681 matches.
+  Live saved endpoint and browser view respond correctly with empty saved state.
+
+NOT VERIFIED:
+- No real phone command/callback or outgoing test message was initiated. Complete
+  phone workflow, newly created real subscription, fresh matching publication delivery
+  and period digest navigation require operator verification. Current match count is
+  zero; fake-port notification evidence does not establish real phone delivery.
+- No Codex/AI runtime is executed from Telegram. Agent Bridge remains a specification.
+
+NEXT ACTION:
+- In the registered private bot chat send `/find java`, choose Telegram and a saved
+  public source, navigate and save a card; check `/saved` and React “Избранное”.
+- Use `/watch`, complete the fields/source selection and confirm the preview. Open
+  React “Шаблоны” or press “Обновить подписки”; verify the same active subscription.
+- Personally publish a new matching post in an authorized monitored test source;
+  verify the existing notification arrives, then `/digest` today/seven days and open
+  the match. Use `/help` and docs/BOT.md for cancellation and limits.
+- For rollback stop the backend and restore the stopped-database backup before
+  running an older binary; do not downgrade v7 in place or run a second TDLib client.
+
 ## Runtime follow-up — 2026-10-11
 
 VERIFIED: User reported new commands unavailable. Listener PID 68501 was still the

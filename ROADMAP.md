@@ -12,7 +12,7 @@ Build a local-first recruiting workspace centered on **explicitly permitted Tele
 - [x] Online Telegram channel search and SQLite-only archive search with separate UI modes.
 - [x] Rule templates (AND/OR/NOT), selected sources, persisted subscriptions, monitored matches and in-app/browser notifications.
 - [x] Controlled full-history import: limits, pause/resume, cursor persistence, deduplication and rate-limit handling.
-- [x] Source-allowlisted MCP server with eleven reads and one constrained publication-request tool and corresponding typed REST capabilities.
+- [x] Source-allowlisted MCP server with thirteen reads and one constrained publication-request tool and corresponding typed REST capabilities.
 - [x] Optional Bot API notifications and `/start`, `/status`, `/subscriptions`, `/pause`, `/resume` operator controls; fake-API verified, real phone delivery still requires manual verification.
 - [x] Split GitHub workflows for fast CI and native macOS ARM64 TDLib/JNI builds.
 
@@ -74,3 +74,18 @@ Build a local-first recruiting workspace centered on **explicitly permitted Tele
 ## How to choose the next task
 
 Prefer the **smallest vertical slice** with an observable user outcome. For each milestone: write acceptance criteria, implement behind shared domain services, test with fakes first, perform a limited real integration check if authorized, and record what was actually verified. Split unrelated features into separate commits/PRs. New ideas go here only after review, not automatically into the next Codex prompt.
+
+## Current priority — mobile recruiter workflow
+
+Implemented in `feat/bot-workspace`: `/find` with explicit Telegram/SQLite source
+choice and bounded cards; `/watch` form/preview/confirmation through shared template
+services; per-operator saved/rejected publications with minimal React review; and
+period-based real-match `/digest`. Shared read-only saved-result MCP operations
+support later Agent Bridge work. The previous `bot_publish_matches` gate is preserved
+but no longer drives the product milestone. `/ask` runtime is specified, not enabled.
+
+Acceptance is the phone path find → review → save → watch → React template → fresh
+notification → digest. Automated fake-port checks cover this application path; real
+Telegram search, actual phone notification/display and OS/browser behavior require
+separate manual evidence in DEV_STATUS. No broad ATS, AI matching, shell bridge or
+private-chat access is introduced.

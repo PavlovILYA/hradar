@@ -4,19 +4,20 @@ import dev.radar.research.*
 
 /** Saved publications only; no online search, joins or history imports. */
 class BotInboxService(private val repo: Repositories) {
-    fun matches(before: Long = Long.MAX_VALUE): BotPayload {
-        val page = repo.recentMatches(11, before)
+    fun matches(before: Long = Long.MAX_VALUE, botId: Long? = null, user: Long? = null): BotPayload {
+        val page = repo.recentMatches(11, before, botId = botId, user = user)
         val records = page.take(10)
         val rows = records.map { listOf(BotButton("${if (it.read) "✓" else "●"} ${it.templateName.take(35)} · ${it.message.title.take(25)}", "match:${it.id}")) }.toMutableList()
         if (page.size > 10) rows.add(listOf(BotButton("Ранее →", "matches:${records.last().sequence}")))
         if (before != Long.MAX_VALUE) rows.add(listOf(BotButton("К новым", "matches:${Long.MAX_VALUE}")))
         return BotPayload(if (records.isEmpty()) "Совпадений пока нет." else "Сохранённые совпадения: выберите публикацию", rows)
     }
-    fun details(id: String, read: Boolean = false): BotPayload {
+    fun details(id: String, read: Boolean = false, botId: Long? = null, user: Long? = null): BotPayload {
         val record = repo.match(id) ?: return BotPayload("Совпадение больше недоступно")
+        if (botId != null && user != null && repo.publicationStatus(botId, user, record.message.channelId, record.message.id) == "REJECTED") return BotPayload("Публикация отмечена как «Не подходит»")
         if (read) repo.markRead(id)
-        val newer = repo.newerMatch(record.sequence)
-        val older = repo.recentMatches(1, record.sequence).firstOrNull()
+        val newer = repo.newerMatch(record.sequence, botId, user)
+        val older = repo.recentMatches(1, record.sequence, botId = botId, user = user).firstOrNull()
         val navigation = buildList {
             newer?.let { add(BotButton("← Новее", "match:${it.id}")) }
             older?.let { add(BotButton("Ранее →", "match:${it.id}")) }

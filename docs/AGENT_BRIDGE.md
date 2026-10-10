@@ -57,3 +57,65 @@ rate limits must be sanitized, bounded and cancellable.
 Acceptance requires denial before provider access, no second TDLib client, no generic
 shell/tool executor, no content export before consent, no publication before human
 confirmation, durable cancellation/restart semantics, and measured cost/rate limits.
+
+## `/ask` technical specification for the mobile recruiter (proposal)
+
+The current `/ask` command returns “not connected”; it never starts a model, Codex,
+subprocess or shell. Implementation is a separate future task after the mobile
+`/find` → save → watch → notification → digest workflow has been verified.
+
+### Explicit job contract
+
+`AskRequest(operatorKey, botIdentity, question, sourceGrantVersion, approvedSourceIds,
+providerConsentId, budget)` creates one durable job only after operator authorization
+and explicit provider/data-transfer consent. Limit questions to 1,000 characters;
+maximum one active job per operator, five queued jobs, two minutes runtime,
+20 tool calls and a configurable capped model token/cost budget. `/ask_cancel`
+transitions the job to CANCELLED idempotently and cancels provider/tool coroutines.
+Missing consent, empty grants or unavailable provider must deny before export.
+
+`AskResult(jobId, boundedSummary, evidenceReferences, notice)` is data, not an action.
+Every evidence reference must resolve to an existing allowed saved result/match or
+allowed public-message ID. Do not infer identities or skills. Clip summaries to
+2,000 characters and make unavailable/partial evidence explicit. The worker cannot
+select a recipient: the application binds the response to the initiating opted-in
+private bot operator and rechecks registration/allowlist before returning it.
+
+### Runtime and permitted tools
+
+Use a provider API behind `AgentPort`; a fake port comes first. Runtime credentials
+are separate from Bot API/TDLib, injected only into that port and never passed to
+prompts/tools. Do not execute `codex exec`, interpret publication text as commands,
+mount `.env`, expose home directories, attach the TDLib database/JNI, or register
+shell/file/general network tools. The worker can access only a fixed typed registry:
+
+- `get_telegram_status`, `list_chats`, `list_monitoring_rules`;
+- `list_recent_matches`, `get_match_details`;
+- `list_saved_results`, `get_saved_result`;
+- optionally bounded `search_local_archive` and `get_message_context` after separate
+  agreement about exporting source content to the provider.
+
+Every call goes through CapabilityService and the intersection of the job's snapshot
+and current local source grants. MCP read-only annotations alone are not an allowlist:
+exclude `bot_publish_matches`, consent/settings mutations, imports and subscription
+creation explicitly. No tool grants itself access or sends bot messages. Publication
+text, tool results and provider responses stay untrusted data; validation never
+executes or follows instructions embedded in them.
+
+### Return path, persistence and verification
+
+Persist job metadata/state and minimum evidence references; no raw prompt/content in
+logs. Proposed states: QUEUED, RUNNING, REVIEW_REQUIRED, DELIVERED, CANCELLED,
+EXPIRED, FAILED. A result enters REVIEW_REQUIRED and is shown as a bounded review
+card with explicit provenance. Human confirmation enqueues only that job's reviewed
+summary to the bound operator using the durable outbox. No model-written callback
+payloads or reply keyboards. Restarted RUNNING jobs become REVIEW_REQUIRED/FAILED,
+not silently re-billed. Revocation cancels jobs, discards results and cancels pending
+outbox rows; in-flight provider/Telegram requests cannot be recalled.
+
+Acceptance tests must use fake AgentPort, fake BotGateway and temporary SQLite to
+prove denied-source isolation, budget exhaustion, injection resistance, invalid
+references, cancellation/restart, provider 429/backoff, sanitized failures, operator
+binding, no tool sends and no export before consent. A separate live test requires
+explicit authorization and synthetic public-source data. This specification grants
+no permission to transmit source content to any model provider today.

@@ -174,3 +174,100 @@ from hradar. Live steps have not been performed by automated tests.
 
 Agent runtime proposal: [AGENT_BRIDGE.md](AGENT_BRIDGE.md). Inline keyboard protocol:
 [official Bot API](https://core.telegram.org/bots/api#inlinekeyboardbutton).
+
+## Mobile recruiter workflow (`/find`, `/watch`, `/saved`)
+
+The current product priority is the operator's phone workflow. The previously shipped
+MCP publication consent flow remains available but is not needed to search, save,
+create subscriptions or review a digest.
+
+### Search and review
+
+Send `/find java` (or another query, up to 256 characters). Choose **В Telegram** or
+**В локальном архиве**, then a saved public source or **Все сохранённые**. Telegram
+uses the existing SearchService in tracked-source mode, never global/private-chat
+search. Archive uses the existing SQLite history search: a literal normalized phrase,
+not an AND query parser. Neither mode joins channels, imports history or claims to
+search all Telegram. An archive with no imported messages is honestly empty.
+
+Cards offer previous/next, original link, Save, Not suitable, and Create subscription.
+One explicit next-page action reads at most ten results; at most five pages/50 cards
+are retained per search, including empty/duplicate pages. Narrow the query with a new
+`/find` after reaching the limit. Saved/rejected publications are omitted from new
+unprocessed searches for that operator. “Не подходит” is durable per `(bot identity,
+operator, source, TDLib message ID)`, independent of other operators and templates.
+Inbox/digest listings and subsequent duplicate-publication notifications also respect
+that operator's rejection. Saved publications remain available through `/saved`.
+Removing a saved publication sets REMOVED, so it may be reconsidered in a future search.
+
+The original link is validated, obtained from TDLib when available and never guessed
+from a TDLib ID. Optional link lookups remain bounded; missing links are omitted.
+Resolved links are retained with the workflow/saved snapshot for the React view.
+
+### Create a real subscription
+
+Send `/watch` or choose **Создать подписку** on a search card:
+
+1. Enter a filter name (1–100 characters).
+2. Enter required words/phrases separated by commas (AND), or `-` to skip.
+3. Enter alternatives separated by commas (OR), or `-` for none. At least one
+   required or alternative term must exist. Each list allows up to 20 terms,
+   100 characters per term and 700 characters total so the preview fits on one card.
+4. Enter exclusions separated by commas (NOT), or `-` for none.
+5. Toggle saved sources, or choose all; at least one and at most ten are required.
+6. Review the exact conditions, source usernames and Telegram query, then confirm.
+
+The first required term (or first alternative) becomes the bounded Telegram search
+query; the existing MatchingService checks the full criteria. SubscriptionService
+validates/saves the actual SearchTemplate with monitoring enabled and a fresh
+subscription time. It appears in React's templates and existing `/subscriptions`,
+`/pause`, `/resume`. Creation does not backfill historical notifications. To test a
+new notification, personally publish a fresh matching post in an authorized test
+source after confirmation. No independent matching or notification engine exists.
+
+`/cancel` abandons the draft without creating a rule. Only explicit text responses
+inside the active `/watch` dialogue are interpreted as form fields; publication
+content/free text outside it is never an executable prompt. Each rendered keyboard
+has a new operator-bound nonce, preventing a stale card from saving another card's
+publication. Workflows expire after one hour and survive normal restart; expire/delete
+cleanup is lazy on the next workflow update. `/start` is still required.
+
+### Saved publications and digest
+
+`/saved` shows only that operator's saved cards, with remove/reject/original controls
+and bounded pagination. SQLite stores a maximum 4,000-character publication excerpt,
+status and a unique operator/publication identity; duplicate Save is an upsert.
+React **Избранное** reads the same SQLite records, shows statuses and paginated cards,
+and offers refresh. It aggregates local operators without exposing their numeric IDs;
+it is a review list, not candidate profiles or an ATS. No browser mutation of another
+operator's decisions is exposed.
+
+`/digest` defaults to today, with buttons for today or rolling last seven days. Today
+uses the backend's local timezone (shown in the response). Counts are real saved
+monitoring matches by publication date, with the existing shared read flag for unread
+count; they are not the favorites count or generated recommendations. Open individual
+matches from the digest buttons and use **Прочитано** to update shared React/bot read
+state. Empty periods and earlier pages are explicit. Operator-rejected posts are excluded.
+
+### Persistence, migration and manual acceptance
+
+Schema v7 adds `bot_workspace` and unique `publication_decisions`; it also backfills
+an indexed publication-date column on existing matches. Migration is transactional,
+retains archive/rules/bot registration/cursors/outbox and does not backfill events.
+Back up the stopped database before upgrading. A v6 binary cannot read v7: restore
+that backup for rollback, never delete/downgrade tables in the production database.
+Saved decisions retain excerpts until a separate retention/deletion policy is added;
+no external AI receives them. Existing outbox crash/retry/edit limitations still apply.
+
+Phone acceptance: `/find java` → choose Telegram and an authorized saved source →
+next/previous → Save → `/saved` → Create subscription (from a new `/find` card) or
+`/watch` → form → preview/confirm → check React templates → personally publish a
+fresh matching synthetic post in the authorized source → receive bot notification →
+`/digest` today/seven days → open match and mark read. Also test archive mode, repeat
+Save, Not suitable followed by the same search, cancel, restart and a stale keyboard.
+Fake-port tests establish application behavior, not actual phone delivery or search
+availability on a live Telegram account.
+
+MCP additions are **read-only** `list_saved_results` and `get_saved_result`, clipped
+and filtered by the separate MCP source allowlist. `/ask` reports that agent execution
+is not connected. Its scoped runtime specification is in [AGENT_BRIDGE.md](AGENT_BRIDGE.md).

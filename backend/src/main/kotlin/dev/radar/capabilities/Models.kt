@@ -29,3 +29,5 @@ import kotlinx.serialization.json.JsonObject
 @Serializable data class PublishMatchesInput(val recipientUserId: Long, val matchIds: List<String>)
 @Serializable data class MatchPage(val matches: List<dev.radar.research.NotificationRecord>, val nextCursor: Long?)
 @Serializable data class PublishRequestDto(val requestId: String, val state: String = "AWAITING_USER_CONFIRMATION", val sent: Boolean = false)
+
+@Serializable data class SavedResultInput(val resultId: String)

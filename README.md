@@ -219,7 +219,7 @@ monitoring can continue with the browser closed and matches remain in the app.
 
 Open **Интеграции → MCP** in the existing UI, enable access and manually allow
 public sources. MCP starts disabled; saved channels do not automatically receive
-agent access. Eleven read-only tools expose status, permitted sources, bounded
+agent access. Thirteen read-only tools expose status, permitted sources, bounded
 history/search/context, local archive, monitoring rules, saved matches and an unsent
 draft. A separate bot_publish_matches operation requests publication of existing
 allowed matches only after recipient permission and per-selection human confirmation.
@@ -261,7 +261,10 @@ restart the single backend and send `/start` to your bot from an allowlisted pri
 account. Without a token the app works normally; an empty/invalid allowlist blocks
 the bot. New subscription matches use a durable SQLite delivery queue; old matches
 are not backfilled. `/status`, `/subscriptions`, `/pause`, `/resume` share the same
-rules as React. `/matches`, `/sources`, `/digest` and `/help` provide a Telegram Inbox
+rules as React. `/find query` searches saved Telegram sources or SQLite archive, `/watch` creates
+real subscriptions with preview/confirmation, and `/saved` opens operator favorites.
+React **Избранное** shows the same saved/rejected decisions. `/digest` selects today
+or the last seven days. `/matches`, `/sources` and `/help` provide a Telegram Inbox
 with inline navigation, shared read state and original links. `/agent_publish on`
 permits agent publication requests; each selection still requires your confirmation
 in the private bot chat. `/agent_publish off` revokes and cancels pending publications.

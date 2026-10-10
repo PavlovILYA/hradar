@@ -48,6 +48,7 @@ The UI, MCP, and bot are **adapters**, not separate implementations of search or
 | Search and rules | `research/SearchService.kt`, `MatchingService.kt`, `Models.kt` | Search, deterministic AND/OR/NOT matching and typed research models |
 | Monitoring | `research/NotificationService.kt` | `MonitoringService`, live update queue, bounded recovery polling, saved matches |
 | Bot transport | `bot/BotGateway.kt`, `BotService.kt`, `BotUpdateHandler.kt`, `BotRoutes.kt` | Optional HTTPS polling, allowlisted private commands, durable outbox delivery/status |
+| Mobile research | `research/RecruiterService.kt`, `bot/BotWorkspaceService.kt`, `research/SavedRoutes.kt` | Existing SearchService/SQLite search port, operator workflows, saved decisions and read-only React view |
 | Shared subscriptions | `research/SubscriptionService.kt` | Validation and shared REST/bot template and pause/resume operations |
 | Historical import | `history/HistorySyncService.kt`, `HistoryRoutes.kt` | Explicit channel archive import with pause/resume, limits, cursors, retries |
 | Persistence | `research/Repositories.kt` | SQLite schema and migrations, sources, templates, matches, notifications, archive, MCP policy, bot registration/cursors/outbox |
@@ -95,13 +96,13 @@ For sources not joined by the Telegram user, monitoring may depend on bounded hi
 
 ### MCP and application capabilities
 
-`POST /mcp` exposes Streamable HTTP using the official Kotlin MCP SDK. Eleven read-only tools and one constrained publication-request tool share `CapabilityService` with `POST /api/capabilities/{tool}`. Agents can query status, allowed sources, history, search, message context, local archives, rules, and unsent drafts. They cannot call arbitrary TDLib methods, grant themselves sources, access personal chats, or send from the TDLib user account. Bot publication requests require a separate opted-in recipient permission and confirmation in that private bot chat. Local UI controls the allowlist and enabled state; docs: [`docs/MCP.md`](docs/MCP.md).
+`POST /mcp` exposes Streamable HTTP using the official Kotlin MCP SDK. Thirteen read-only tools and one constrained publication-request tool share `CapabilityService` with `POST /api/capabilities/{tool}`. Agents can query status, allowed sources, history, search, message context, local archives, rules, and unsent drafts. They cannot call arbitrary TDLib methods, grant themselves sources, access personal chats, or send from the TDLib user account. Bot publication requests require a separate opted-in recipient permission and confirmation in that private bot chat. Local UI controls the allowlist and enabled state; docs: [`docs/MCP.md`](docs/MCP.md).
 
 MCP is **a tool protocol, not an agent runtime**. The bot calls shared services for deterministic operator commands; it does not call localhost REST or MCP. A future Agent Bridge must retain separate operator authorization, source-scoped agent permissions and out-of-band approval. No natural-language executor exists. The separate proposal is [AGENT_BRIDGE.md](docs/AGENT_BRIDGE.md). BotInboxService reads saved matches with inline navigation and shared read state; MCP reads apply source filters before pagination. Confirmation and result outbox inserts commit atomically. Revoking MCP access cancels pending agent publications, while normal operator Inbox access retains its existing bot allowlist boundary.
 
 ## Local storage and security boundaries
 
-- SQLite: `~/.hradar/research.sqlite` (schema tracked via migrations; currently v6 in the repository, including bot recipients, polling cursors/cooldowns and outbox, plus separate publication permission and expiring confirmation requests).
+- SQLite: `~/.hradar/research.sqlite` (schema tracked via migrations; currently v7 in the repository, including bot recipients, polling cursors/cooldowns and outbox, plus separate publication permission and expiring confirmation requests).
 - TDLib account session: `~/.recruitment-radar/tdlib/`. It is sensitive and never belongs in Git, logs, or MCP results.
 - Credentials: local `.env`/environment (`TG_API_ID`, `TG_API_HASH`, optional `TG_BOT_TOKEN` and `TG_BOT_ALLOWED_USER_IDS`); do not send to UI, AI tools, or repositories.
 - Ktor binds to **127.0.0.1 only**. Localhost is not user authentication and is not protection against malicious local processes. Do not expose `/api` or `/mcp` through ngrok, public tunnels, LAN, or reverse proxies in the current architecture.
@@ -121,3 +122,25 @@ Development uses JDK 21/Gradle and React/Vite. Java TDLib bindings (`tdlib-java.
 ## Change rules
 
 Changes to the shared Telegram access layer should preserve the single-client boundary; changes to persisted data should use tested migrations; changes to permissions should be tested through both REST and MCP; changes to imports should cover cancellation, resume and rate limiting. Update this document **only for actual architectural changes**. Record execution evidence and open blockers in `docs/DEV_STATUS.md`, not here. Follow [`AGENTS.md`](AGENTS.md) for the Codex workflow.
+
+## Mobile recruiter application flow
+
+BotWorkspaceService prepares bounded reads before the short BotUpdateHandler update
+transaction. It persists one expiring operator-bound workflow, rotating keyboard
+nonces on every response. Update offset, decisions/template mutations, workflow state
+and reply enqueue commit together. Cancellation leaves the cursor/state unchanged;
+ignored/denied updates advance the cursor without searching or exposing data.
+RecruiterService calls a narrow typed RecruiterSearchPort backed by the existing
+SearchService for tracked-source Telegram reads, and reuses historyMessages for
+SQLite-only archive pages. MatchingService/SubscriptionService retain all rule logic.
+The existing monitoring/NotificationService/outbox pipeline delivers new subscription
+matches; no second TDLib client or global search/polling worker is added.
+
+Schema v7 holds per-operator unique publication decisions (SAVED/REJECTED/REMOVED/
+VIEWED), bounded excerpts and persistent workflow state, plus an indexed match
+publication date for exact digest counts/pages. `/saved`, local read-only `/api/saved`
+and source-allowlisted saved-result MCP reads share those records. React shows a
+minimal aggregated review list/status filter without numeric operator IDs. Public
+source revocation/deletion is rechecked after network reads; operator rejection is
+separate from shared match read state. `/ask` remains disabled; only its specification
+was expanded. Existing MCP publication consent operations are preserved.

@@ -39,8 +39,8 @@ class McpCapabilityTest {
     private fun allow(repo: Repositories) { repo.setMcpEnabled(true); repo.allowMcpSource(channel) }
 
     @Test fun registrationAndSchemasExposeBoundedOperationsWithOneConfirmationRequest() {
-        assertEquals(12, McpTools.definitions.size)
-        assertEquals(12, McpTools.definitions.map { it.name }.toSet().size)
+        assertEquals(14, McpTools.definitions.size)
+        assertEquals(14, McpTools.definitions.map { it.name }.toSet().size)
         McpTools.definitions.forEach {
             assertEquals("object", it.schema["type"]!!.jsonPrimitive.content)
             it.schema["required"]!!.jsonArray.forEach { field -> assertTrue(field.jsonPrimitive.content in it.schema["properties"]!!.jsonObject) }
@@ -78,6 +78,28 @@ class McpCapabilityTest {
             repo.revokeMcpSource(channel.id)
             assertEquals(0, repo.botDeliveryCounts(123).pending)
             assertEquals("ACCESS_DENIED", service.call("get_match_details", args("""{"matchId":"$permitted"}""")).error!!.code)
+            assertEquals(0, fake.calls)
+        }
+    }
+    @Test fun savedResultsRemainReadOnlySourceScopedAndHideOperatorIdentity() = runBlocking {
+        repo().use { repo ->
+            repo.saveChannel(channel)
+            val other = MonitoredChannel(-1002, "synthetic_hidden", "Hidden source"); repo.saveChannel(other)
+            repo.configureBot(123, setOf(7)); repo.registerBotRecipient(123, 7, 7, 1700000000000)
+            val message = ResearchMessage(1, channel.id, 1700000000, "Synthetic saved java", channel.title, channel.username)
+            repo.decidePublication(123, 7, message, "SAVED")
+            repo.decidePublication(123, 7, message, "SAVED")
+            repo.decidePublication(123, 7, message.copy(id = 2, channelId = other.id, text = "Hidden saved"), "SAVED")
+            allow(repo)
+            val fake = Fake(channel); val service = CapabilityService(fake, repo)
+            val page = service.call("list_saved_results", args("""{"limit":1}"""))
+            assertTrue(page.ok); assertFalse(page.data.toString().contains("Hidden")); assertFalse(page.data.toString().contains("userId"))
+            val id = page.data!!["items"]!!.jsonArray.single().jsonObject["id"]!!.jsonPrimitive.content
+            assertTrue(service.call("get_saved_result", args("""{"resultId":"$id"}""")).ok)
+            repo.decidePublication(123, 7, message, "REJECTED")
+            assertEquals("ACCESS_DENIED", service.call("get_saved_result", args("""{"resultId":"$id"}""")).error!!.code)
+            assertTrue(service.call("list_saved_results", args("{}")).data!!["items"]!!.jsonArray.isEmpty())
+            assertEquals("INVALID_ARGUMENTS", service.call("list_saved_results", args("""{"status":"REJECTED"}""")).error!!.code)
             assertEquals(0, fake.calls)
         }
     }
@@ -148,7 +170,7 @@ class McpCapabilityTest {
             val initialized = rpc("initialize","""{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1"}}""")
             assertEquals(HttpStatusCode.OK,initialized.status)
             val listed = args(rpc("tools/list").bodyAsText())["result"]!!.jsonObject["tools"]!!.jsonArray
-            assertEquals(12,listed.size)
+            assertEquals(14,listed.size)
             listed.forEach { item ->
                 val tool = item.jsonObject
                 assertEquals(tool["name"]!!.jsonPrimitive.content != "bot_publish_matches", tool["annotations"]!!.jsonObject["readOnlyHint"]!!.jsonPrimitive.boolean)
