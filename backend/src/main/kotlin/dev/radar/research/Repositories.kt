@@ -22,7 +22,7 @@ class Repositories(path: Path) : AutoCloseable {
             s.execute("PRAGMA busy_timeout=5000")
             s.execute("PRAGMA journal_mode=WAL")
             val version = s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) }
-            check(version <= 3) { "Database schema is newer than this application" }
+            check(version <= 4) { "Database schema is newer than this application" }
             if (version == 0) transaction {
                 s.execute("CREATE TABLE monitored_channels(id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, data TEXT NOT NULL)")
                 s.execute("CREATE TABLE search_templates(id TEXT PRIMARY KEY, data TEXT NOT NULL)")
@@ -43,6 +43,13 @@ class Repositories(path: Path) : AutoCloseable {
                 s.execute("INSERT INTO history_sync SELECT * FROM history_sync_v2")
                 s.execute("DROP TABLE history_sync_v2")
                 s.execute("PRAGMA user_version=3")
+            }
+            if (version < 4) transaction {
+                s.execute("CREATE TABLE mcp_settings(id INTEGER PRIMARY KEY CHECK(id=1), enabled INTEGER NOT NULL DEFAULT 0)")
+                s.execute("INSERT INTO mcp_settings VALUES(1,0)")
+                s.execute("CREATE TABLE mcp_sources(channel_id INTEGER PRIMARY KEY, username TEXT NOT NULL, title TEXT NOT NULL)")
+                s.execute("CREATE TABLE mcp_audit(id INTEGER PRIMARY KEY AUTOINCREMENT, called_at INTEGER NOT NULL, tool TEXT NOT NULL, result_code TEXT NOT NULL, duration_ms INTEGER NOT NULL)")
+                s.execute("PRAGMA user_version=4")
             }
         }
     }
@@ -140,6 +147,15 @@ class Repositories(path: Path) : AutoCloseable {
         val page = rows("SELECT message_id,date,text FROM imported_messages WHERE channel_id=? AND message_id<? AND instr(normalized_text,?)>0 ORDER BY message_id DESC LIMIT ?", listOf(channelId, before ?: Long.MAX_VALUE, normalized, limit + 1)) { TelegramMessage(it.getLong(1), it.getInt(2), it.getString(3), channelId) }
         val messages = page.take(limit)
         return HistoryPage(messages, messages.lastOrNull()?.id?.takeIf { page.size > limit }, total, query)
+    }
+    @Synchronized fun mcpEnabled(): Boolean = rows("SELECT enabled FROM mcp_settings WHERE id=1") { it.getInt(1) != 0 }.single()
+    @Synchronized fun setMcpEnabled(enabled: Boolean) { update("UPDATE mcp_settings SET enabled=? WHERE id=1", if (enabled) 1 else 0) }
+    @Synchronized fun mcpSources(): List<MonitoredChannel> = rows("SELECT channel_id,username,title FROM mcp_sources ORDER BY channel_id") { MonitoredChannel(it.getLong(1), it.getString(2), it.getString(3)) }
+    @Synchronized fun allowMcpSource(channel: MonitoredChannel) { require(channel.id < 0 && channel.username.matches(Regex("[a-zA-Z0-9_]{5,32}"))); update("INSERT INTO mcp_sources VALUES(?,?,?) ON CONFLICT(channel_id) DO UPDATE SET username=excluded.username,title=excluded.title", channel.id, channel.username, channel.title) }
+    @Synchronized fun revokeMcpSource(id: Long) { update("DELETE FROM mcp_sources WHERE channel_id=?", id) }
+    @Synchronized fun auditMcp(tool: String, code: String, duration: Long) {
+        update("INSERT INTO mcp_audit(called_at,tool,result_code,duration_ms) VALUES(?,?,?,?)", System.currentTimeMillis(), tool, code, duration)
+        update("DELETE FROM mcp_audit WHERE id NOT IN (SELECT id FROM mcp_audit ORDER BY id DESC LIMIT 500)")
     }
     @Synchronized override fun close() { db.close() }
 }

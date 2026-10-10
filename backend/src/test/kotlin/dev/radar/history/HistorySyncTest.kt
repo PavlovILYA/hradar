@@ -127,7 +127,8 @@ class HistorySyncTest {
         val path = database()
         Repositories(path).use { repo -> repo.saveChannel(channel) }
         DriverManager.getConnection("jdbc:sqlite:$path").use { db -> db.createStatement().use { s ->
-            s.execute("DROP TABLE imported_messages"); s.execute("DROP TABLE history_sync"); s.execute("PRAGMA user_version=1")
+            s.execute("DROP TABLE imported_messages"); s.execute("DROP TABLE history_sync");
+            s.execute("DROP TABLE mcp_settings"); s.execute("DROP TABLE mcp_sources"); s.execute("DROP TABLE mcp_audit"); s.execute("PRAGMA user_version=1")
         } }
         Repositories(path).use { repo ->
             assertEquals(channel, repo.channels().single())

@@ -349,3 +349,39 @@ test('real SSE can disconnect and reconnect with a fresh summary', async ({ page
   expect(summaries).toHaveLength(2);
   for (const summary of summaries) { expect(summary.unread).toBeGreaterThanOrEqual(0); expect(summary.revision).toBeGreaterThanOrEqual(0); }
 });
+
+test('MCP settings require explicit enable and source grants and reuse the capability API', async ({ page }) => {
+  let enabled = false;
+  let allowed = false;
+  let statusCalls = 0;
+  const source = { id: -1001, username: 'telegram', title: 'Synthetic public source' };
+  await page.route('**/api/integrations/mcp', route => {
+    if (route.request().method() === 'PUT') {
+      expect(route.request().headers()['x-hradar-csrf']).toBe('synthetic-csrf');
+      enabled = route.request().postDataJSON().enabled;
+      return route.fulfill({ json: { enabled } });
+    }
+    return route.fulfill({ json: { enabled, endpoint: 'http://127.0.0.1:8080/mcp', tools: [{ name: 'get_telegram_status', description: 'Read safe status' }, { name: 'prepare_message', description: 'Never sends' }], allowedSources: allowed ? [source] : [], availableSources: [source], csrfToken: 'synthetic-csrf', readOnly: true } });
+  });
+  await page.route('**/api/integrations/mcp/sources', route => {
+    expect(route.request().headers()['x-hradar-csrf']).toBe('synthetic-csrf');
+    allowed = route.request().postDataJSON().allowed;
+    return route.fulfill({ json: { allowed } });
+  });
+  await page.route('**/api/capabilities/get_telegram_status', route => { statusCalls++; return route.fulfill({ json: { ok: true, data: { authorized: true, authorizationState: 'Ready', connectionState: 'Ready' }, error: null } }); });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Интеграции → MCP', exact: true }).click();
+  await expect(page.getByText('MCP выключен', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Проверить Telegram через общий API' })).toBeDisabled();
+  await expect(page.getByLabel(/Synthetic public source/)).not.toBeChecked();
+  await page.getByRole('button', { name: 'Включить MCP-доступ', exact: true }).click();
+  await expect(page.getByText('MCP включён', { exact: true })).toBeVisible();
+  await page.getByLabel(/Synthetic public source/).check();
+  await expect(page.getByLabel(/Synthetic public source/)).toBeChecked();
+  await page.getByRole('button', { name: 'Проверить Telegram через общий API' }).click();
+  await expect(page.getByText('Telegram: Ready · Ready')).toBeVisible(); expect(statusCalls).toBe(1);
+  await expect(page.locator('.mcp-integration pre')).toContainText('codex mcp add hradar --url http://127.0.0.1:8080/mcp');
+  await expect(page.locator('.mcp-integration summary')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Отключить MCP-доступ' }).click();
+  await expect(page.getByText('MCP выключен', { exact: true })).toBeVisible();
+});

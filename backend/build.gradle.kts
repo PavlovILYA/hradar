@@ -20,6 +20,8 @@ dependencies {
     implementation("ch.qos.logback:logback-classic:1.5.18")
     implementation("org.xerial:sqlite-jdbc:3.53.4.0")
     implementation(files("libs/tdlib-java.jar"))
+    implementation("io.modelcontextprotocol:kotlin-sdk-server:0.14.0")
+    testImplementation("io.ktor:ktor-server-test-host-jvm:$ktorVersion")
     testImplementation(kotlin("test"))
 }
 

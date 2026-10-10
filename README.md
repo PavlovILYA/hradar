@@ -122,7 +122,7 @@ notifications survive restarts; unique constraints prevent duplicate notificatio
 Rate-limit recovery waits are persisted. Public non-member channels may rely on the
 periodic recovery scan rather than live updates. Keep the backend running to monitor.
 
-Local SQLite: `~/.hradar/research.sqlite` (schema migration version 3). Account credentials
+Local SQLite: `~/.hradar/research.sqlite` (schema migration version 4). Account credentials
 stay in `.env` and the separate TDLib session; they are not stored in research tables.
 `/api/events` streams updates with SSE. Browser desktop notifications need explicit
 permission and an open page; no external push server or Telegram sends are used.
@@ -214,3 +214,20 @@ browser permission, desktop notices show the source and a short fragment; clicki
 opens that publication in hradar, with its original Telegram link where available.
 OS delivery is browser-dependent and requires the page to remain open; backend
 monitoring can continue with the browser closed and matches remain in the app.
+
+## MCP integration
+
+Open **Интеграции → MCP** in the existing UI, enable access and manually allow
+public sources. MCP starts disabled; saved channels do not automatically receive
+agent access. Nine read-only tools expose status, permitted sources, bounded
+history/search/context, local archive, monitoring rules and an unsent draft.
+The typed capability implementation is shared by REST and MCP.
+
+```bash
+codex mcp add hradar --url http://127.0.0.1:8080/mcp
+codex mcp list
+```
+
+Private chats, arbitrary TDLib methods, automatic joins/sends and paid operations
+are unavailable. The server remains local; Host/Origin checks and UI-only CSRF
+management protect the allowlist. See [MCP setup, schemas and security](docs/MCP.md).
