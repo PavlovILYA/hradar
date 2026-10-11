@@ -1,6 +1,6 @@
 # hradar — Architecture
 
-> **Architecture snapshot (2026-10-10), including the optional Bot API adapter.** This is a map of the current code, not a promise that every external integration has been exercised end-to-end. For verified commands, blockers, and the latest runtime state, read [`docs/DEV_STATUS.md`](docs/DEV_STATUS.md).
+> **Architecture snapshot (2026-10-11), including the optional Bot API adapter.** This is a map of the current code, not a promise that every external integration has been exercised end-to-end. For verified commands, blockers, and the latest runtime state, read [`docs/DEV_STATUS.md`](docs/DEV_STATUS.md).
 
 ## Purpose and boundaries
 
@@ -55,7 +55,7 @@ The UI, MCP, and bot are **adapters**, not separate implementations of search or
 | MCP / shared capabilities | `capabilities/CapabilityService.kt`, `TelegramReadPort.kt`, `McpTools.kt`, `McpRoutes.kt` | Typed source-scoped reads and confirmation requests, REST/MCP exposure, local security checks |
 | Web | `frontend/src/` | React workspace; online search, local archive, templates, notifications, MCP settings and bot status |
 | Tests | `backend/src/test/`, `frontend/tests/`, `tests/` | Kotlin unit/MCP tests, Playwright browser tests, CI safeguards |
-| Delivery | `.github/workflows/ci.yml`, `macos-arm64.yml` | Fast frontend/backend checks and separate costly ARM64 TDLib build |
+| Delivery | `.github/workflows/ci.yml`, `macos-arm64.yml`, `macos-native.yml`, `macos-distribution.yml`, `macos-release.yml` | Preserved Fast/ARM bootstrap, portable dual-architecture native cache, jpackage/hdiutil installers, optional manual signing and existing-tag promotion |
 
 See [`docs/MCP.md`](docs/MCP.md) and [`docs/CI.md`](docs/CI.md) for protocols and exact build/bootstrap instructions. `README.md` is the user-facing setup guide.
 

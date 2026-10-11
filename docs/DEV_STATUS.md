@@ -1,32 +1,80 @@
 # hradar — Development status / session handoff
 
-## macOS distribution checkpoint — 2026-10-11
+## Standalone macOS distribution — 2026-10-11
 
-Branch `feat/macos-distribution`, clean starting worktree at `077c974`; no user data,
-existing backend/session or other feature branches modified. Draft
-[PR #5](https://github.com/PavlovILYA/hradar/pull/5). No tag or Release publication.
+Branch `feat/macos-distribution`, functional commit `d03b10a84525e7c70c074dcfeba6e03c647030fc`.
+[PR #5](https://github.com/PavlovILYA/hradar/pull/5), targeting master; no merge, tag
+or Release publication. This checkpoint supersedes the initial distribution notes.
 
-VERIFIED at this checkpoint: local JDK 21 `:backend:build` exit 0, 78 tests with zero
-failures/errors/skips; production React build exit 0 and 17 offline Playwright tests
-passed, including synthetic onboarding. Local jpackage JVM/browser smoke used an
-isolated temporary home and port 18080, restricted PATH and no TG credentials/client:
-production UI, cookie/Origin/CSRF denials, duplicate/legacy-port refusal, restart
-SQLite/session sentinel persistence and UI shutdown passed. Existing listener PID
-72388 on 127.0.0.1:8080 was left running. Local smoke does not prove portable JNI or
-a CI installer. Existing [Fast CI 38161372557](https://github.com/PavlovILYA/hradar/actions/runs/38161372557)
-succeeded at `456b49d`; subsequent runtime/packaging corrections still need final CI.
+VERIFIED:
+- [Installer CI 38165466566](https://github.com/PavlovILYA/hradar/actions/runs/38165466566)
+  concluded **success** on GitHub-hosted `macos-15` ARM64 and `macos-15-intel` x86_64.
+  Both native and both packaging jobs passed; optional signing was skipped.
+  [Fast CI 38165466300](https://github.com/PavlovILYA/hradar/actions/runs/38165466300)
+  also succeeded. Original Fast/native-ARM workflows and `config/tdlib.json` are
+  unchanged; the existing verified TDLib Release remains intact.
+- Real installer artifacts, each containing DMG, executable/symlink-preserving app
+  ZIP, SHA256SUMS and distribution/provenance metadata:
+  [ARM64 artifact 11711454728](https://github.com/PavlovILYA/hradar/actions/runs/38165466566/artifacts/11711454728),
+  [Intel artifact 11711887163](https://github.com/PavlovILYA/hradar/actions/runs/38165466566/artifacts/11711887163).
+  Both are **unsigned internal beta** (ad-hoc seal, no Developer ID/notarization),
+  product version 0.1.0, internal macOS bundle version 1.0.0, minimum macOS **15.0**.
+- Both official pinned native builds passed architecture checks, account-free JNI
+  execution, source identity, SHA256 and provenance. Separate portable build/cache
+  namespace and static checksum-pinned OpenSSL 3.5.9; linkage lists only system
+  libraries and `@rpath/libjvm.dylib`, provided by the bundled JVM. Independently
+  downloaded native bundles and verified both binary hashes and exact-source,
+  exact-workflow GitHub-hosted attestations. Public Java API and TDLib constructor
+  IDs match across all 3426 classes; bytecode debug attributes/ZIP hashes can differ.
+- Native jobs in subsequent installer runs restored successful architecture-specific
+  bundle caches and skipped C++ compilation. First ARM native job took about 20 min;
+  Intel about 39 min. Their original caller run 38161372825 was later cancelled
+  after successful native uploads/cache saves to stop obsolete packaging. Final
+  run rechecked/re-attested cached bundles and all installer jobs succeeded.
+- Each installer job built production React/Kotlin, used Temurin 21.0.12+8-LTS,
+  checked all Mach-O dependencies/OS targets and executed the bundled JVM/JNI.
+  CI mounted the actual read-only DMG, compared **182 app files byte-for-byte** with
+  app ZIP (including resource seals), then repeated native/runtime and real
+  production-browser/lifecycle checks from the mounted volume. DMG creation uses
+  hdiutil to preserve the app; jpackage's DMG repacking was found to change seals.
+- Backend build: 78 tests, zero failures/errors/skips; React production build passed;
+  17 offline Playwright tests passed, including fake phone/code/error/2FA/email and
+  other-device-confirmation onboarding. No real Telegram credentials/client/session
+  in automatic tests. Packaged smoke used isolated temporary homes, scrubbed TG
+  environment and restricted PATH: cookie/Host/Origin/CSRF denial, duplicate and
+  legacy-port refusal, SQLite/session sentinel preservation across restart,
+  newer-schema refusal without downgrade/data loss, and graceful UI shutdown.
+- Independently downloaded final DMG/ZIP pairs: all four SHA256 checks and all four
+  provenance checks passed with repository, signer workflow, exact PR merge source
+  `a1e7bdb0810d213ba15ed22e773ff25c69a3eb1a`, refs/pull/5/merge and denied self-hosted
+  runners. Earlier successful installers also passed local hdiutil integrity checks
+  and Intel mounted-DMG fake lifecycle smoke on macOS 15.5. App archives contain
+  runtime/JNI/production code, not session/SQLite/API settings.
+- Existing user backend PID 72388 on 127.0.0.1:8080 was left running; no real TDLib
+  startup, authorization, user-data deletion, unrelated branch mutation or paid
+  resource creation. Owned local test processes/temporary mounts were stopped.
 
-NOT VERIFIED: [installer run 38161372825](https://github.com/PavlovILYA/hradar/actions/runs/38161372825)
-is still building both portable native bundles at this checkpoint. Installer fixes
-(version/module arguments/ad-hoc seal) are pending the next commit/run. Real downloaded
-DMG installation on physical Intel/Apple Silicon, browser/Finder activation, existing
-real-session continuation, Telegram auth, signed/notarized Gatekeeper and macOS newer
-than CI's macOS 15 remain unverified. Signing needs owner-provided Apple credentials.
+NOT VERIFIED:
+- Downloaded/quarantined installation on **physical** Intel and Apple Silicon Macs,
+  Finder/LaunchServices browser activation/relaunch, real Telegram onboarding and
+  continuation of a real existing session, live monitoring/notifications, sleep/
+  network recovery and real-user upgrade. No Telegram authorization was attempted.
+- Apple Developer ID signing, hardened-runtime operation and notarized/offline
+  Gatekeeper acceptance: protected optional jobs are implemented but no paid Apple
+  credentials supplied or used. Automatic updates are not implemented. CI tested
+  macOS 15; later versions and all macOS <15 are not established as compatible.
+- Current application supports SQLite through schema v7. A newer feature database
+  is visibly refused and retained; use a build with that newer schema/features.
+  Optional Bot API credentials remain environment-based, outside user-account UI
+  onboarding. Existing MCP default-disabled/source-grant boundaries are retained.
 
-NEXT ACTION: preserve completed native cache, push only this feature branch, inspect
-both actual installer runs to completion and fix failures. Publish artifact links and
-replace this checkpoint with final evidence. Scope/toolchain/owner procedures are in
-[MACOS_DISTRIBUTION.md](MACOS_DISTRIBUTION.md); production minimum is macOS 15.0.
+NEXT ACTION (owner/manual QA): download the architecture-matching artifact, verify
+checksums, stop the old development backend, open DMG and drag hradar.app into
+Applications on macOS 15+. Confirm startup/onboarding and shutdown, then test a
+stopped-data backup/upgrade preserving archive/subscriptions/session. Do not bypass
+newer-schema refusal by deleting data. Configure protected Apple environments/secrets
+and validate signed builds on both physical Macs before any separately authorized
+public release. Exact setup/limitations: [MACOS_DISTRIBUTION.md](MACOS_DISTRIBUTION.md).
 
 ## Feature/master integration — 2026-10-11
 

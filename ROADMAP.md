@@ -57,7 +57,7 @@ Build a local-first recruiting workspace centered on **explicitly permitted Tele
 
 ## Later — P4 desktop releases and platform support
 
-1. **Current authorized distribution scope:** standalone ARM64 and Intel macOS 15+ installers, local UI Telegram onboarding, production assets and bundled runtime/JNI. Implementation in `feat/macos-distribution`; require successful real GitHub installer builds for both architectures and explicit physical-Mac verification before claiming distribution acceptance.
+1. **Current authorized distribution scope:** standalone ARM64 and Intel macOS 15+ installers, local UI Telegram onboarding, production assets and bundled runtime/JNI. Implemented in `feat/macos-distribution`; real GitHub installer builds and mounted-DMG smoke pass for both architectures (see DEV_STATUS). Physical-Mac acceptance and signed public distribution remain separate, unverified milestones.
 2. Protected optional signing/notarization and manual existing-tag promotion; no publication without separate owner authorization. Apple credentials and physical-Mac acceptance remain owner actions.
 3. Evaluate Windows x64 and Linux x64 separately; no cross-platform support claim from macOS builds.
 4. Automatic updates and broader macOS compatibility require separate testing and design.
