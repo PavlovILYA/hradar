@@ -9,7 +9,14 @@ were the previously integrated React navigation, desktop-aware CRM guard and doc
 Resolved with the verified integration versions; application code remains identical
 to ba417de. Ports 8080/5173 free. No user profile/session/installed app touched.
 
-NOT VERIFIED: new hosted Fast CI and dual-architecture installer jobs for this head.
+VERIFIED: pushed integration head `1e8de4f`; Fast CI 38175051557 succeeded:
+React build, 32 offline Playwright scenarios, 7 safeguards and Kotlin build.
+Installer 38175051744 passed both native jobs and Intel packaging/mounted-DMG
+CRM v8 lifecycle. ARM packaging found a fake-auth browser race: real SSE Credentials
+status overwrote mocked HTTP Ready status. Reproduced locally; isolate SSE in the
+CRM fake-auth context, preserve separate real onboarding and actual CRM REST/SQLite.
+
+NOT VERIFIED: final dual-architecture installer run after the test correction.
 NEXT ACTION: authorized push only to distribution, verify both installer artifacts,
 checksums and provenance. No master merge, tag or Release publication.
 

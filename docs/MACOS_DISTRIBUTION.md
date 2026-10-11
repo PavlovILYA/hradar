@@ -142,7 +142,7 @@ Both architecture jobs also execute the offline Playwright suite. Mounted-DMG sm
 creates synthetic CRM/archive records through real REST, preserves notes/stages and
 compares stored rows after reopening an existing v8 database. It checks SQLite
 integrity/foreign keys and refuses v9 without changing CRM rows. Browser CRM uses
-production resources and real REST; only authorization status is mocked.
+production resources and real REST; authorization status is mocked and its live SSE channel isolated.
 
 The smoke test uses an isolated temporary home, no account client, a restricted PATH
 and no TG environment credentials; checks production JS/CSS, cookie/Origin/CSRF
