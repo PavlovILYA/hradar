@@ -1,5 +1,7 @@
 package dev.radar
 
+import dev.radar.desktop.*
+import io.ktor.server.http.content.staticResources
 import dev.radar.api.configureRoutes
 import dev.radar.bot.*
 import org.drinkless.tdlib.TdApi
@@ -33,16 +35,32 @@ internal suspend fun ApplicationCall.respondApiError(status: HttpStatusCode, err
 }
 
 fun main() {
-    val apiId = System.getenv("TG_API_ID")?.toIntOrNull()
-        ?: error("Set TG_API_ID in your environment (see .env.example)")
-    val apiHash = System.getenv("TG_API_HASH")?.takeIf { it.isNotBlank() }
-        ?: error("Set TG_API_HASH in your environment (see .env.example)")
-
-    val tdlibDirectory = Path.of(System.getProperty("user.home"), ".recruitment-radar", "tdlib")
-    Files.createDirectories(tdlibDirectory)
-
-    val telegram = TdlibGateway(apiId, apiHash, tdlibDirectory)
-    val repositories = Repositories(Path.of(System.getProperty("user.home"), ".hradar", "research.sqlite"))
+    if (System.getProperty("hradar.jniSmoke") == "true") { jniSmoke(); return }
+    val paths = RuntimePaths()
+    paths.prepare()
+    val lease = SessionLease.acquire(paths.session)
+    if (lease == null) {
+        if (!DesktopRuntime.reopen(paths)) DesktopRuntime.conflict("hradar уже использует эту Telegram-сессию. Закройте работающий экземпляр.")
+        if (DesktopRuntime.enabled && !DesktopRuntime.smoke) kotlin.system.exitProcess(0)
+        return
+    }
+    // Older development installs don't take our lock: reject occupied port before TDLib starts.
+    if (DesktopRuntime.portOccupied()) {
+        lease.close()
+        DesktopRuntime.conflict("Порт 8080 занят. Закройте старый backend hradar или другое приложение и повторите запуск.")
+        return
+    }
+    val credentials = if (DesktopRuntime.smoke) null else paths.loadCredentials()
+    val telegram = TdlibGateway(credentials?.apiId, credentials?.apiHash, paths.session)
+    val repositories = try { Repositories(paths.database) } catch (ex: Exception) {
+        lease.close()
+        DesktopRuntime.conflict(if (ex is IllegalStateException && ex.message == "Database schema is newer than this application")
+            "База данных создана более новой версией hradar. Используйте совместимую новую сборку; данные не удалены."
+        else "Не удалось открыть пользовательскую базу hradar. Проверьте доступ к профилю и завершите старый экземпляр.")
+        return
+    }
+    val csrf = DesktopRuntime.token()
+    val launchToken = if (DesktopRuntime.enabled) DesktopRuntime.token() else null
     val matching = MatchingService()
     val search = SearchService(telegram, repositories, matching)
     val notifications = NotificationService(repositories, matching)
@@ -60,13 +78,10 @@ fun main() {
     val readPort = TdlibReadPort(telegram, search)
     val capabilities = CapabilityService(readPort, repositories)
     (org.slf4j.LoggerFactory.getLogger("io.modelcontextprotocol") as ch.qos.logback.classic.Logger).level = ch.qos.logback.classic.Level.OFF
-    telegram.start()
-    bot.start()
-    monitoring.start()
-    historySync.resumePending()
-    Runtime.getRuntime().addShutdownHook(Thread { historySync.close(); monitoring.close(); bot.close(); telegram.close(); repositories.close() })
-
-    embeddedServer(Netty, host = "127.0.0.1", port = 8080) {
+    val server = embeddedServer(Netty, host = "127.0.0.1", port = DesktopRuntime.port) {
+        configureDesktopSecurity(launchToken, csrf)
+        configureOnboarding(telegram, paths, csrf) { Thread { kotlin.system.exitProcess(0) }.start() }
+        routing { staticResources("/", "web", index = "index.html") }
         // Root route installation permits the MCP child route to use its SDK serializer.
         routing { install(ContentNegotiation) {
             json(Json { prettyPrint = true; encodeDefaults = true })
@@ -88,6 +103,9 @@ fun main() {
                     else -> "Telegram request failed"
                 }))
             }
+            exception<dev.radar.telegram.OnboardingRejected> { call, ex ->
+                call.respondApiError(if (ex.rateLimited) HttpStatusCode.TooManyRequests else HttpStatusCode.BadRequest, ApiError(ex.message!!))
+            }
             exception<IllegalArgumentException> { call, ex ->
                 call.respondApiError(HttpStatusCode.BadRequest, ApiError(ex.message ?: "Bad request"))
             }
@@ -106,5 +124,42 @@ fun main() {
         configureRoutes(telegram)
         configureResearchRoutes(telegram, repositories, matching, search, notifications)
         configureHistoryRoutes(telegram, repositories, historySync)
-    }.start(wait = true)
+    }
+    val marker = paths.data.resolve("desktop-instance.json")
+    val stopped = java.util.concurrent.CountDownLatch(1)
+    val cleaned = java.util.concurrent.atomic.AtomicBoolean(false)
+    fun cleanup() {
+        if (!cleaned.compareAndSet(false, true)) return
+        try {
+            server.stop(500, 3000)
+            historySync.close(); monitoring.close(); bot.close(); telegram.close(); repositories.close()
+            if (launchToken != null) Files.deleteIfExists(marker)
+        } finally { lease.close(); stopped.countDown() }
+    }
+    Runtime.getRuntime().addShutdownHook(Thread { cleanup() })
+    try {
+        // Bind first. A competing unrelated listener must never cause a second account client.
+        server.start(wait = false)
+        if (!DesktopRuntime.smoke) { telegram.start(); bot.start(); monitoring.start(); historySync.resumePending() }
+        if (launchToken != null) {
+            val temporaryMarker = Files.createTempFile(paths.data, "desktop-", ".tmp", java.nio.file.attribute.PosixFilePermissions.asFileAttribute(java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")))
+            try {
+                Files.writeString(temporaryMarker, "{\"pid\":${ProcessHandle.current().pid()},\"token\":\"$launchToken\"}")
+                Files.move(temporaryMarker, marker, java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            } finally { Files.deleteIfExists(temporaryMarker) }
+            // Netty start returns after bind; verify the HTTP route before launching the browser.
+            val http = java.net.http.HttpClient.newHttpClient()
+            repeat(50) {
+                try {
+                    if (http.send(java.net.http.HttpRequest.newBuilder(java.net.URI("http://127.0.0.1:${DesktopRuntime.port}/health")).build(), java.net.http.HttpResponse.BodyHandlers.discarding()).statusCode() == 200) {
+                        DesktopRuntime.open("http://127.0.0.1:${DesktopRuntime.port}/#launch=$launchToken")
+                        stopped.await(); return
+                    }
+                } catch (_: java.io.IOException) { }
+                Thread.sleep(100)
+            }
+            error("Локальный сервер не готов")
+        }
+        stopped.await()
+    } finally { cleanup() }
 }

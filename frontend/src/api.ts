@@ -15,7 +15,7 @@ export async function request<T>(path: string, signal?: AbortSignal, init: Reque
       403: 'Канал недоступен для текущего Telegram-аккаунта.',
       404: 'Канал не найден. Проверьте его username.',
       429: 'Telegram ограничил частоту запросов. Попробуйте немного позже.',
-      503: 'Telegram пока не авторизован. Завершите вход в терминале backend.',
+      503: 'Telegram пока не авторизован. Завершите вход в интерфейсе hradar.',
     };
     const detail = await response.json().catch(() => null) as { error?: string } | null;
     const readable = detail?.error && /[а-яё]/i.test(detail.error) ? detail.error : null;

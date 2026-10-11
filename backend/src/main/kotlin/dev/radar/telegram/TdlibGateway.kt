@@ -62,8 +62,8 @@ internal suspend fun readChannelHistory(
 }
 
 class TdlibGateway(
-    private val apiId: Int,
-    private val apiHash: String,
+    private var apiId: Int? = null,
+    private var apiHash: String? = null,
     private val databaseDirectory: Path,
 ) {
     @Volatile private var authState = "INITIALIZING"
@@ -72,18 +72,33 @@ class TdlibGateway(
     private lateinit var client: Client
     @Volatile var messageListener: ((TdApi.Message) -> Unit)? = null
 
-    // Never block TDLib's update thread by reading the terminal from callbacks.
-    private val authExecutor = Executors.newSingleThreadExecutor { task ->
-        Thread(task, "tdlib-auth-console").apply { isDaemon = true }
+    val onboarding = Onboarding(::rawRequest)
+
+    @Synchronized fun configure(credentials: ApiCredentials, persist: () -> Unit = {}) {
+        credentials.validate()
+        check(!::client.isInitialized || onboarding.status().state in setOf("ParametersFailed")) { "TDLib уже настроен" }
+        persist()
+        apiId = credentials.apiId; apiHash = credentials.apiHash
+        if (::client.isInitialized) {
+            onboarding.initializing()
+            authExecutor.execute { handleAuthorizationState(TdApi.AuthorizationStateWaitTdlibParameters()) }
+        } else start()
     }
 
-    fun start() {
+    // Never block TDLib's update thread by reading the terminal from callbacks.
+    private val authExecutor = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "tdlib-parameters").apply { isDaemon = true }
+    }
+
+    @Synchronized fun start() {
+        if (apiId == null || apiHash == null || ::client.isInitialized) return
+        onboarding.initializing()
         // Native debug logs can contain account data; keep normal operation quiet.
         Client.execute(TdApi.SetLogVerbosityLevel(0))
         client = Client.create(
             { update -> onUpdate(update) },
-            { ex -> System.err.println("TDLib update handler failed: ${ex.message}") },
-            { ex -> System.err.println("TDLib request handler failed: ${ex.message}") },
+            { ex -> System.err.println("TDLib update handler failed") },
+            { ex -> System.err.println("TDLib request handler failed") },
         )
     }
 
@@ -118,21 +133,24 @@ class TdlibGateway(
     }
 
     private fun ensureAuthorized() {
-        check(authorized) { "Telegram isn't authorized yet. Check the server terminal." }
+        check(authorized) { "Завершите вход в Telegram в интерфейсе hradar." }
     }
 
-    private suspend fun request(query: TdApi.Function<*>): TdApi.Object = withTimeout(20_000) {
-        val result = suspendCancellableCoroutine<TdApi.Object> { continuation ->
+    private suspend fun request(query: TdApi.Function<*>): TdApi.Object {
+        val result = rawRequest(query)
+        if (result is TdApi.Error) throw TelegramRequestException(result.code, result.message)
+        return result
+    }
+
+    private suspend fun rawRequest(query: TdApi.Function<*>): TdApi.Object = withTimeout(20_000) {
+        suspendCancellableCoroutine<TdApi.Object> { continuation ->
             client.send(query, { answer ->
                 if (continuation.isActive) continuation.resume(answer)
             }, { exception ->
-                if (continuation.isActive) continuation.resumeWithException(exception)
+                // Authentication exception details are not safe to return or log.
+                if (continuation.isActive) continuation.resumeWithException(IllegalStateException("Telegram временно недоступен"))
             })
         }
-        if (result is TdApi.Error) {
-            throw TelegramRequestException(result.code, result.message)
-        }
-        result
     }
 
     private fun onUpdate(update: TdApi.Object) {
@@ -142,80 +160,42 @@ class TdlibGateway(
             val state = update.authorizationState
             authState = state.javaClass.simpleName.removePrefix("AuthorizationState")
             authorized = state is TdApi.AuthorizationStateReady
-            authExecutor.execute { handleAuthorizationState(state) }
+            onboarding.update(state)
+            if (state is TdApi.AuthorizationStateClosed) closed.countDown()
+            if (state is TdApi.AuthorizationStateWaitTdlibParameters) authExecutor.execute { handleAuthorizationState(state) }
         }
     }
 
-    private fun handleAuthorizationState(state: TdApi.AuthorizationState) {
+    @Synchronized private fun handleAuthorizationState(state: TdApi.AuthorizationState) {
         when (state) {
             is TdApi.AuthorizationStateWaitTdlibParameters -> {
                 val params = TdApi.SetTdlibParameters().apply {
                     databaseDirectory = this@TdlibGateway.databaseDirectory.toString()
                     useMessageDatabase = true
                     useSecretChats = false
-                    apiId = this@TdlibGateway.apiId
-                    apiHash = this@TdlibGateway.apiHash
+                    apiId = this@TdlibGateway.apiId!!
+                    apiHash = this@TdlibGateway.apiHash!!
                     systemLanguageCode = "en"
                     deviceModel = "Recruitment Radar (macOS)"
                     applicationVersion = "0.1.0"
                 }
                 sendAuthorization(params)
             }
-            is TdApi.AuthorizationStateWaitPhoneNumber -> {
-                sendAuthorization(TdApi.SetAuthenticationPhoneNumber(prompt("Telegram phone (+...): "), null))
-            }
-            is TdApi.AuthorizationStateWaitCode -> {
-                sendAuthorization(TdApi.CheckAuthenticationCode(prompt("Telegram login code: ")))
-            }
-            is TdApi.AuthorizationStateWaitPassword -> {
-                sendAuthorization(TdApi.CheckAuthenticationPassword(prompt("Telegram 2FA password: ")))
-            }
-            is TdApi.AuthorizationStateWaitEmailAddress -> {
-                sendAuthorization(TdApi.SetAuthenticationEmailAddress(prompt("Login email address: ")))
-            }
-            is TdApi.AuthorizationStateWaitEmailCode -> {
-                val code = prompt("Login email code: ")
-                sendAuthorization(TdApi.CheckAuthenticationEmailCode(TdApi.EmailAddressAuthenticationCode(code)))
-            }
-            is TdApi.AuthorizationStateWaitOtherDeviceConfirmation -> {
-                println("Confirm login in Telegram on another device: ${state.link}")
-            }
-            is TdApi.AuthorizationStateWaitRegistration -> {
-                System.err.println("New account registration is not supported in this prototype.")
-            }
-            is TdApi.AuthorizationStateReady -> println("Telegram authenticated. GET http://127.0.0.1:8080/api/telegram/me")
-            is TdApi.AuthorizationStateClosing, is TdApi.AuthorizationStateClosed -> println("TDLib is closing/closed")
             else -> Unit
         }
     }
 
-    private fun prompt(message: String): String {
-        print(message)
-        System.out.flush()
-        return readlnOrNull()?.trim() ?: error("No terminal input available")
-    }
-
     private fun sendAuthorization(query: TdApi.Function<*>) {
-        client.send(query, { result ->
-            if (result is TdApi.Error) {
-                System.err.println("Telegram authorization failed (${result.code}): ${result.message}")
-                // Retry requires user action / a subsequent state update; do not loop on a bad code.
-                authExecutor.execute { handleAuthorizationStateFromRetry() }
-            }
-        })
+        client.send(query, { result -> if (result is TdApi.Error) onboarding.parametersFailed() })
     }
 
-    private fun handleAuthorizationStateFromRetry() {
-        // GetAuthorizationState lets us re-prompt after an incorrect code or password.
-        client.send(TdApi.GetAuthorizationState(), { result ->
-            if (result is TdApi.AuthorizationState) {
-                authExecutor.execute { handleAuthorizationState(result) }
-            }
-        })
-    }
+    private val closed = java.util.concurrent.CountDownLatch(1)
 
     fun close() {
-        if (::client.isInitialized) client.send(TdApi.Close(), null)
+        if (::client.isInitialized) {
+            client.send(TdApi.Close(), null)
+            closed.await(10, java.util.concurrent.TimeUnit.SECONDS)
+        }
         authExecutor.shutdown()
     }
 }

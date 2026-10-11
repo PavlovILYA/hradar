@@ -1,5 +1,151 @@
 # hradar — Development status / session handoff
 
+## CRM master synchronization — 2026-10-12
+
+VERIFIED: PR #4 was merged by the maintainer as origin/master `0a24f2e`.
+Clean distribution worktree retained local integration `ba417de` and all prepared
+CRM/desktop changes. Merged master into feat/macos-distribution only; four conflicts
+were the previously integrated React navigation, desktop-aware CRM guard and docs.
+Resolved with the verified integration versions; application code remains identical
+to ba417de. Ports 8080/5173 free. No user profile/session/installed app touched.
+
+VERIFIED: pushed integration head `1e8de4f`; Fast CI 38175051557 succeeded:
+React build, 32 offline Playwright scenarios, 7 safeguards and Kotlin build.
+Installer 38175051744 passed both native jobs and Intel packaging/mounted-DMG
+CRM v8 lifecycle. ARM packaging found a fake-auth browser race: real SSE Credentials
+status overwrote mocked HTTP Ready status. Reproduced locally; isolate SSE in the
+CRM fake-auth context, preserve separate real onboarding and actual CRM REST/SQLite.
+
+NOT VERIFIED: final dual-architecture installer run after the test correction.
+NEXT ACTION: authorized push only to distribution, verify both installer artifacts,
+checksums and provenance. No master merge, tag or Release publication.
+
+## CRM v8 / macOS integration — 2026-10-11
+
+Prepared in `feat/macos-distribution` from distribution `381e4c8` and CRM
+`c754b63`. PR #4 and PR #5 remain OPEN; master/AI branch, live backend PID 72388,
+user SQLite/TDLib session and secrets untouched. No PR merge or Release publication.
+
+VERIFIED:
+- Initial worktree clean; fetched origin and confirmed both PR heads/base master
+  `077c974`. PRs mergeable. CRM Fast run 38145621920 and distribution Fast
+  38167019291 / installer 38167019519 succeeded; both hosted architecture jobs
+  passed. These prior installer artifacts do NOT contain CRM.
+- CRM services/routes, migrations v8, production React project/Kanban navigation
+  integrated with desktop onboarding/shutdown and localhost cookie/origin guard.
+  Installer metadata declares schema v8 / recruitment-crm; both package jobs now
+  run offline Playwright. Future-schema preservation test now uses v9.
+- JDK 21 isolated `:backend:build :backend:stageDesktop -PbundledWeb=true` with
+  checksum-verified Intel TDLib JAR: exit 0, 117 tests, zero failures/errors/skips.
+  Migration matrix v1–v7 → v8/reopen and failed v8 DDL transaction rollback pass.
+  React build exit 0; offline Playwright on owned port 5175: 32 passed; Python
+  safeguards: 7 passed. `git diff --check` clean.
+- Local Intel DMG/app ZIP created; hdiutil integrity, signatures, Mach-O linkage,
+  bundled JVM/JNI and byte-for-byte mounted-DMG comparison (254 files) passed.
+  Mounted-DMG smoke exit 0 on isolated port 18082/temporary home: real CRM REST
+  creation/archive search/card notes/stage; production browser CRM (only Telegram
+  authorization status mocked); v8 reopen preserves exact CRM/archive/source/template
+  rows, integrity_check=ok / foreign_key_check empty; future v9 refused with rows
+  intact; cookie/origin/CSRF denials, duplicate/busy-port refusal and shutdown pass.
+- Local Homebrew JDK packaging correctly refused its external giflib dependency.
+  Local smoke instead used the checksum-verified existing CI Intel app runtime;
+  repository workflow continues to build with pinned Temurin 21.0.12+8-LTS.
+  Initial overlapping isolated Gradle staging failed; sequential build succeeded.
+  Browser smoke's incorrect status mock URL fixed and final check succeeded.
+
+NOT VERIFIED:
+- New GitHub Actions runs / hosted ARM64 and Intel installer artifacts for this
+  integration: pending explicit branch-push authorization required by AGENTS.md.
+  Local Intel smoke is not hosted dual-architecture CI evidence.
+- Physical/quarantined installation, Developer ID/notarization, real Telegram
+  onboarding/session continuation, notifications and real-user upgrade remain
+  unverified. No real user database was opened or migrated. macOS 15+ only.
+
+NEXT ACTION:
+- After owner authorizes pushing this prepared distribution branch, push only
+  `feat/macos-distribution`; run Fast CI and unsigned macos-distribution workflows
+  on its exact head, verify both jobs/artifact checksums and strict provenance.
+  Do not merge either PR, tag or publish a Release without separate approval.
+- For manual upgrade stop old backend, back up stopped data/session privately,
+  replace the app and verify CRM records/session on each physical architecture.
+  Rollback restores the stopped pre-upgrade backup; never downgrade user_version.
+
+## Standalone macOS distribution — 2026-10-11
+
+Branch `feat/macos-distribution`, functional commit `d03b10a84525e7c70c074dcfeba6e03c647030fc`.
+[PR #5](https://github.com/PavlovILYA/hradar/pull/5), targeting master; no merge, tag
+or Release publication. This checkpoint supersedes the initial distribution notes.
+
+VERIFIED:
+- [Installer CI 38165466566](https://github.com/PavlovILYA/hradar/actions/runs/38165466566)
+  concluded **success** on GitHub-hosted `macos-15` ARM64 and `macos-15-intel` x86_64.
+  Both native and both packaging jobs passed; optional signing was skipped.
+  [Fast CI 38165466300](https://github.com/PavlovILYA/hradar/actions/runs/38165466300)
+  also succeeded. Original Fast/native-ARM workflows and `config/tdlib.json` are
+  unchanged; the existing verified TDLib Release remains intact.
+- Real installer artifacts, each containing DMG, executable/symlink-preserving app
+  ZIP, SHA256SUMS and distribution/provenance metadata:
+  [ARM64 artifact 11711454728](https://github.com/PavlovILYA/hradar/actions/runs/38165466566/artifacts/11711454728),
+  [Intel artifact 11711887163](https://github.com/PavlovILYA/hradar/actions/runs/38165466566/artifacts/11711887163).
+  Both are **unsigned internal beta** (ad-hoc seal, no Developer ID/notarization),
+  product version 0.1.0, internal macOS bundle version 1.0.0, minimum macOS **15.0**.
+- Both official pinned native builds passed architecture checks, account-free JNI
+  execution, source identity, SHA256 and provenance. Separate portable build/cache
+  namespace and static checksum-pinned OpenSSL 3.5.9; linkage lists only system
+  libraries and `@rpath/libjvm.dylib`, provided by the bundled JVM. Independently
+  downloaded native bundles and verified both binary hashes and exact-source,
+  exact-workflow GitHub-hosted attestations. Public Java API and TDLib constructor
+  IDs match across all 3426 classes; bytecode debug attributes/ZIP hashes can differ.
+- Native jobs in subsequent installer runs restored successful architecture-specific
+  bundle caches and skipped C++ compilation. First ARM native job took about 20 min;
+  Intel about 39 min. Their original caller run 38161372825 was later cancelled
+  after successful native uploads/cache saves to stop obsolete packaging. Final
+  run rechecked/re-attested cached bundles and all installer jobs succeeded.
+- Each installer job built production React/Kotlin, used Temurin 21.0.12+8-LTS,
+  checked all Mach-O dependencies/OS targets and executed the bundled JVM/JNI.
+  CI mounted the actual read-only DMG, compared **182 app files byte-for-byte** with
+  app ZIP (including resource seals), then repeated native/runtime and real
+  production-browser/lifecycle checks from the mounted volume. DMG creation uses
+  hdiutil to preserve the app; jpackage's DMG repacking was found to change seals.
+- Backend build: 78 tests, zero failures/errors/skips; React production build passed;
+  17 offline Playwright tests passed, including fake phone/code/error/2FA/email and
+  other-device-confirmation onboarding. No real Telegram credentials/client/session
+  in automatic tests. Packaged smoke used isolated temporary homes, scrubbed TG
+  environment and restricted PATH: cookie/Host/Origin/CSRF denial, duplicate and
+  legacy-port refusal, SQLite/session sentinel preservation across restart,
+  newer-schema refusal without downgrade/data loss, and graceful UI shutdown.
+- Independently downloaded final DMG/ZIP pairs: all four SHA256 checks and all four
+  provenance checks passed with repository, signer workflow, exact PR merge source
+  `a1e7bdb0810d213ba15ed22e773ff25c69a3eb1a`, refs/pull/5/merge and denied self-hosted
+  runners. Earlier successful installers also passed local hdiutil integrity checks
+  and Intel mounted-DMG fake lifecycle smoke on macOS 15.5. App archives contain
+  runtime/JNI/production code, not session/SQLite/API settings.
+- Existing user backend PID 72388 on 127.0.0.1:8080 was left running; no real TDLib
+  startup, authorization, user-data deletion, unrelated branch mutation or paid
+  resource creation. Owned local test processes/temporary mounts were stopped.
+
+NOT VERIFIED:
+- Downloaded/quarantined installation on **physical** Intel and Apple Silicon Macs,
+  Finder/LaunchServices browser activation/relaunch, real Telegram onboarding and
+  continuation of a real existing session, live monitoring/notifications, sleep/
+  network recovery and real-user upgrade. No Telegram authorization was attempted.
+- Apple Developer ID signing, hardened-runtime operation and notarized/offline
+  Gatekeeper acceptance: protected optional jobs are implemented but no paid Apple
+  credentials supplied or used. Automatic updates are not implemented. CI tested
+  macOS 15; later versions and all macOS <15 are not established as compatible.
+- Current application supports SQLite through schema v7. A newer feature database
+  is visibly refused and retained; use a build with that newer schema/features.
+  Optional Bot API credentials remain environment-based, outside user-account UI
+  onboarding. Existing MCP default-disabled/source-grant boundaries are retained.
+
+NEXT ACTION (owner/manual QA): download the architecture-matching artifact, verify
+checksums, stop the old development backend, open DMG and drag hradar.app into
+Applications on macOS 15+. Confirm startup/onboarding and shutdown, then test a
+stopped-data backup/upgrade preserving archive/subscriptions/session. Do not bypass
+newer-schema refusal by deleting data. Configure protected Apple environments/secrets
+and validate signed builds on both physical Macs before any separately authorized
+public release. Exact setup/limitations: [MACOS_DISTRIBUTION.md](MACOS_DISTRIBUTION.md).
+
 ## CRM technical QA audit — 2026-10-11
 
 Branch `feat/recruiting-crm`; PR #4 OPEN. Full report: [CRM_QA_REPORT.md](CRM_QA_REPORT.md).

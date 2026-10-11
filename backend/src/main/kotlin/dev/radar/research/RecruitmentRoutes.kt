@@ -2,6 +2,7 @@ package dev.radar.research
 
 import dev.radar.ApiError
 import dev.radar.respondApiError
+import dev.radar.desktop.DesktopRuntime
 import dev.radar.capabilities.LocalMcpSecurity
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -14,7 +15,8 @@ fun Application.configureRecruitmentRoutes(service: RecruitmentProjectService) {
     val localAccess = createRouteScopedPlugin("RecruitmentLocalAccess") {
         onCall { call ->
             call.response.headers.append("Cache-Control", "no-store")
-            if (!LocalMcpSecurity.valid(call.request.headers["Host"], call.request.headers["Origin"], call.request.httpMethod != HttpMethod.Get)) {
+            val desktopLocal = DesktopRuntime.enabled && call.request.headers["Host"] == "127.0.0.1:${DesktopRuntime.port}" && (call.request.headers["Origin"] == "http://127.0.0.1:${DesktopRuntime.port}" || (call.request.httpMethod == HttpMethod.Get && call.request.headers["Origin"] == null))
+            if (!desktopLocal && !LocalMcpSecurity.valid(call.request.headers["Host"], call.request.headers["Origin"], call.request.httpMethod != HttpMethod.Get)) {
                 call.respondApiError(HttpStatusCode.Forbidden, ApiError("Требуется локальный доступ"))
             }
         }

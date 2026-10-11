@@ -31,7 +31,7 @@ wrapper. The wrapper downloads Gradle on first use and verifies its SHA-256.
 For build commands, set `JAVA_HOME="$(/usr/libexec/java_home -v 21)"` and use
 `./gradlew :backend:build` after compiling TDLib.
 
-The terminal will request your phone number, Telegram login code, and if applicable 2FA password or email code. This project never asks you to put login codes in a public webpage or commit them. After authorization, the TDLib session is stored under `~/.recruitment-radar/tdlib` and can be reused on later starts. **Protect that directory: it contains account session data.**
+The local UI handles your phone number, Telegram login code, and if applicable 2FA password or email code. Use the localhost onboarding form; never put login codes in a public webpage or commit them. After authorization, the TDLib session is stored under `~/.recruitment-radar/tdlib` and can be reused on later starts. **Protect that directory: it contains account session data.**
 
 TDLib native binaries and generated bindings are intentionally excluded from Git. Never commit `.env`, account sessions or candidate personal information.
 
@@ -56,7 +56,7 @@ browser memory; templates and notification matches are persisted locally in SQLi
 
 The frontend serves only on localhost and proxies `/api` to the existing Ktor
 backend on port 8080 (see [Vite proxy documentation](https://vite.dev/config/server-options#server-proxy)).
-Authentication remains in the backend terminal. No API keys are passed to the browser.
+Authentication uses the local UI. Existing API settings are never returned to the browser; missing API ID/hash can be entered in the guarded onboarding form.
 
 ```bash
 cd frontend
@@ -275,3 +275,12 @@ It sends only as the bot to opted-in operators. Retries honor network failures a
 429/retry_after; a crash after send success can repeat delivery. The Mac/backend
 must remain running; closing the browser is fine. Setup, BotFather, your numeric ID,
 real phone verification and limitations: [Bot guide](docs/BOT.md).
+
+## Standalone macOS builds
+
+Dual-architecture app/DMG builds are implemented in `feat/macos-distribution` for
+macOS 15.0+. They bundle Java, production UI and TDLib; end users do not need build
+tools. PR artifacts are unsigned internal test builds. See
+[macOS distribution](docs/MACOS_DISTRIBUTION.md) for installation/data/onboarding,
+manual verification and optional Apple signing setup, and [verified status](docs/DEV_STATUS.md)
+for actual Actions results. No public application Release has been published by this task.

@@ -11,9 +11,11 @@ SRC="${TDLIB_SOURCE_DIR:-$ROOT/.tdlib-build/td}"
 BUILD_JOBS="${TDLIB_BUILD_JOBS:-2}"
 PIN="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["commit"])' "$ROOT/config/tdlib.json")"
 [[ "${TDLIB_COMMIT:-$PIN}" = "$PIN" ]] || { echo "TDLIB_COMMIT conflicts with config/tdlib.json" >&2; exit 1; }
-INSTALL="$ROOT/.tdlib-build/artifacts-$PIN-$(uname -m)"
-CMAKE_BUILD="$ROOT/.tdlib-build/native-build-$PIN-$(uname -m)"
-EXAMPLE_BUILD="$ROOT/.tdlib-build/example-build-$PIN-$(uname -m)"
+BUILD_SUFFIX=""
+[[ "${TDLIB_PORTABLE:-false}" != true ]] || BUILD_SUFFIX="-portable"
+INSTALL="$ROOT/.tdlib-build/artifacts-$PIN-$(uname -m)$BUILD_SUFFIX"
+CMAKE_BUILD="$ROOT/.tdlib-build/native-build-$PIN-$(uname -m)$BUILD_SUFFIX"
+EXAMPLE_BUILD="$ROOT/.tdlib-build/example-build-$PIN-$(uname -m)$BUILD_SUFFIX"
 LOCAL_CMAKE="$ROOT/.tdlib-build/tools/cmake-3.31.8-macos-universal/CMake.app/Contents/bin"
 if [[ -x "$LOCAL_CMAKE/cmake" ]]; then
   export PATH="$LOCAL_CMAKE:$PATH"
@@ -29,8 +31,8 @@ xcode-select -p >/dev/null 2>&1 || {
   exit 1
 }
 
-export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
-OPENSSL_ROOT="$(brew --prefix openssl@3)"
+export JAVA_HOME="${JAVA_HOME:-$(/usr/libexec/java_home -v 21)}"
+OPENSSL_ROOT="${TDLIB_OPENSSL_ROOT:-$(brew --prefix openssl@3)}"
 test -d "$OPENSSL_ROOT" || { echo "Install OpenSSL: brew install openssl@3" >&2; exit 1; }
 
 # Older CLT installations can leave an incomplete libc++ include directory
@@ -62,11 +64,15 @@ fi
 [[ -z "$(git -C "$SRC" diff HEAD --name-only -- . ':!example/java/CMakeLists.txt')" ]] || {
   echo "Unexpected tracked TDLib source changes; refusing native build" >&2; exit 1;
 }
-python3 "$ROOT/scripts/prepare-tdlib-java.py" "$SRC"
+PATCH_OPTIONS=()
+[[ "${TDLIB_PORTABLE:-false}" != true ]] || PATCH_OPTIONS=(--portable)
+python3 "$ROOT/scripts/prepare-tdlib-java.py" "$SRC" ${PATCH_OPTIONS[@]+"${PATCH_OPTIONS[@]}"}
+PORTABLE_OPTIONS=()
+[[ "${TDLIB_PORTABLE:-false}" != true ]] || PORTABLE_OPTIONS=(-DOPENSSL_USE_STATIC_LIBS=TRUE -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0)
 
 echo "Building official TDLib $PIN with JNI for $(uname -m). This is the expensive one-time step."
 cmake -S "$SRC" -B "$CMAKE_BUILD" \
-  "${CMAKE_CXX_OPTIONS[@]}" \
+  "${CMAKE_CXX_OPTIONS[@]}" ${PORTABLE_OPTIONS[@]+"${PORTABLE_OPTIONS[@]}"} \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_OSX_ARCHITECTURES="$(uname -m)" \
   -DTD_ENABLE_JNI=ON \
@@ -76,10 +82,11 @@ cmake -S "$SRC" -B "$CMAKE_BUILD" \
 cmake --build "$CMAKE_BUILD" --target install --parallel "$BUILD_JOBS"
 
 cmake -S "$SRC/example/java" -B "$EXAMPLE_BUILD" \
-  "${CMAKE_CXX_OPTIONS[@]}" \
+  "${CMAKE_CXX_OPTIONS[@]}" ${PORTABLE_OPTIONS[@]+"${PORTABLE_OPTIONS[@]}"} \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_OSX_ARCHITECTURES="$(uname -m)" \
   -DJAVA_HOME="$JAVA_HOME" \
+  -DOPENSSL_ROOT_DIR="$OPENSSL_ROOT" \
   -DTd_DIR="$SRC/example/java/td/lib/cmake/Td" \
   -DCMAKE_INSTALL_PREFIX="$INSTALL"
 cmake --build "$EXAMPLE_BUILD" --target install --parallel "$BUILD_JOBS"
