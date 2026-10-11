@@ -14,10 +14,11 @@ class BotService(
     private val now: () -> Long = System::currentTimeMillis,
     gatewayFactory: (String) -> BotGateway = ::HttpsBotGateway,
     workspace: BotWorkspaceService? = null,
+    private val agent: dev.radar.agent.AgentService? = null,
 ) : AutoCloseable {
     private val gateway = if (config.enabled) gatewayFactory(config.token!!) else null
     private val botId = config.botId
-    private val handler = BotUpdateHandler(config, repo, subscriptions, statusText, now, workspace)
+    private val handler = BotUpdateHandler(config, repo, subscriptions, statusText, now, workspace, agent)
     private val job = SupervisorJob()
     private val scope = CoroutineScope(job + Dispatchers.IO)
     private val started = AtomicBoolean()
@@ -97,6 +98,7 @@ class BotService(
     private fun deliveryPermitted(item: BotOutboxItem): Boolean {
         val payload = item.payload
         if (!repo.botDeliveryPending(item.id)) return false
+        if (payload.agentJobId != null && agent?.deliveryPermitted(dev.radar.agent.AgentOwner(botId!!, item.userId), payload.agentJobId) != true) return false
         if (payload.publishRequestId != null && !repo.publishPreviewValid(botId!!, item.userId, payload.publishRequestId, now())) return false
         return payload.mcpSourceId == null || (repo.botPublishPermitted(item.userId) && repo.mcpEnabled() && repo.mcpSources().any { it.id == payload.mcpSourceId })
     }
