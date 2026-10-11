@@ -25,6 +25,7 @@ security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
 security import "$HRADAR_CERTIFICATE_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
 security list-keychains -d user -s "$KEYCHAIN"
+security default-keychain -d user -s "$KEYCHAIN"
 xcrun notarytool store-credentials hradar-ci --keychain "$KEYCHAIN" --key "$HRADAR_NOTARY_KEY_PATH" --key-id "$APPLE_NOTARY_KEY_ID" --issuer "$APPLE_NOTARY_ISSUER_ID"
 rm -f "$HRADAR_CERTIFICATE_PATH" "$HRADAR_NOTARY_KEY_PATH"
 echo "APPLE_NOTARY_PROFILE=hradar-ci" >> "$GITHUB_ENV"

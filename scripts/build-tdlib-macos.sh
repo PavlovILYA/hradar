@@ -66,13 +66,13 @@ fi
 }
 PATCH_OPTIONS=()
 [[ "${TDLIB_PORTABLE:-false}" != true ]] || PATCH_OPTIONS=(--portable)
-python3 "$ROOT/scripts/prepare-tdlib-java.py" "$SRC" "${PATCH_OPTIONS[@]}"
+python3 "$ROOT/scripts/prepare-tdlib-java.py" "$SRC" ${PATCH_OPTIONS[@]+"${PATCH_OPTIONS[@]}"}
 PORTABLE_OPTIONS=()
 [[ "${TDLIB_PORTABLE:-false}" != true ]] || PORTABLE_OPTIONS=(-DOPENSSL_USE_STATIC_LIBS=TRUE -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0)
 
 echo "Building official TDLib $PIN with JNI for $(uname -m). This is the expensive one-time step."
 cmake -S "$SRC" -B "$CMAKE_BUILD" \
-  "${CMAKE_CXX_OPTIONS[@]}" "${PORTABLE_OPTIONS[@]}" \
+  "${CMAKE_CXX_OPTIONS[@]}" ${PORTABLE_OPTIONS[@]+"${PORTABLE_OPTIONS[@]}"} \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_OSX_ARCHITECTURES="$(uname -m)" \
   -DTD_ENABLE_JNI=ON \
@@ -82,7 +82,7 @@ cmake -S "$SRC" -B "$CMAKE_BUILD" \
 cmake --build "$CMAKE_BUILD" --target install --parallel "$BUILD_JOBS"
 
 cmake -S "$SRC/example/java" -B "$EXAMPLE_BUILD" \
-  "${CMAKE_CXX_OPTIONS[@]}" "${PORTABLE_OPTIONS[@]}" \
+  "${CMAKE_CXX_OPTIONS[@]}" ${PORTABLE_OPTIONS[@]+"${PORTABLE_OPTIONS[@]}"} \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_OSX_ARCHITECTURES="$(uname -m)" \
   -DJAVA_HOME="$JAVA_HOME" \

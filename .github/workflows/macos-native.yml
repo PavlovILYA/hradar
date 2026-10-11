@@ -37,7 +37,10 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: .tdlib-build/portable-bundle.tar.gz
-          key: portable-v1-${{ matrix.arch }}-jdk21.0.12+8.0.LTS-${{ hashFiles('config/tdlib.json', 'config/macos-distribution.json', 'scripts/build-portable-tdlib.sh', 'scripts/build-tdlib-macos.sh', 'scripts/prepare-tdlib-java.py', 'scripts/check-tdlib-bindings.py', 'scripts/verify-tdlib-macos.sh', 'scripts/package-tdlib-artifact.py') }}
+          # Exact one-time compatibility alias: bash 3.2 empty-array fix leaves
+          # nonempty portable compiler arguments unchanged. Any other input change
+          # gets its own digest; no broad restore-key or stale-binary fallback.
+          key: portable-v1-${{ matrix.arch }}-jdk21.0.12+8.0.LTS-${{ hashFiles('config/tdlib.json', 'config/macos-distribution.json', 'scripts/build-portable-tdlib.sh', 'scripts/build-tdlib-macos.sh', 'scripts/prepare-tdlib-java.py', 'scripts/check-tdlib-bindings.py', 'scripts/verify-tdlib-macos.sh', 'scripts/package-tdlib-artifact.py') == '21af41ac319c3cf595bdf105241f4e555855f2b6e154cae38807863bdcc78ce9' && '0aae31cd7a4c3fee04f7255dd2866140b8f5df090cbda66b040dc0a2c1aa12cd' || hashFiles('config/tdlib.json', 'config/macos-distribution.json', 'scripts/build-portable-tdlib.sh', 'scripts/build-tdlib-macos.sh', 'scripts/prepare-tdlib-java.py', 'scripts/check-tdlib-bindings.py', 'scripts/verify-tdlib-macos.sh', 'scripts/package-tdlib-artifact.py') }}
       - name: Build pinned portable JNI (cache miss only)
         if: steps.bundle.outputs.cache-hit != 'true'
         run: |
