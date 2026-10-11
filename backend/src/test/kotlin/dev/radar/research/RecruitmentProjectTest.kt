@@ -100,7 +100,7 @@ class RecruitmentProjectTest {
             assertEquals(1, service(repo).add(service(repo).save(input()).id, AddPublication(source.id, 1)).message.id)
         }
     }
-    @Test fun boundedPaginationAndSearchReusesCriteriaWithoutDesiredGate() = runBlocking {
+    @Test fun boundedPaginationAndSearchReusesCriteriaWithoutDesiredGate() = runBlocking<Unit> {
         Repositories(Files.createTempDirectory("recruitment-pagination").resolve("research.sqlite")).use { repo ->
             seed(repo); val s = service(repo); val p = s.save(input())
             repo.saveHistoryPage(HistorySyncRecord(source.id, source.username, source.title), (2L..62L).map { TelegramMessage(it, 1700000000, "Java Spring Boot PostgreSQL synthetic publication $it", source.id) })

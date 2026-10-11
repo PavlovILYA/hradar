@@ -17,6 +17,15 @@ import kotlinx.serialization.Serializable
 @Serializable data class ProjectMatchesPage(val messages: List<ResearchMessage>, val nextCursor: Long? = null)
 @Serializable data class ProjectSearch(val mode: String = "archive", val query: String, val cursor: String = "")
 
+/** Counts describe unique publications checked in this response, not all Telegram results. */
+@Serializable data class ProjectSearchPage(
+    val messages: List<ResearchMessage> = emptyList(), val cursor: String = "",
+    val state: String = "ok", val notice: String? = null,
+    val scanned: Int = 0, val matched: Int = 0, val pagesScanned: Int = 0,
+    val limitReached: Boolean = false, val exhausted: Boolean = false,
+    val alreadyAdded: List<String> = emptyList()
+)
+
 /** Conservative phrase rules. Technology names alone never identify a person's intent. */
 class PublicationClassifier(private val matching: MatchingService = MatchingService()) {
     fun classify(text: String?): Classification {

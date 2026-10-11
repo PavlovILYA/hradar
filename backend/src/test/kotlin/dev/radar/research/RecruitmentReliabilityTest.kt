@@ -62,8 +62,9 @@ class RecruitmentReliabilityTest {
                 SearchPage(listOf(message))
             })
             val s = RecruitmentProjectService(repo, matching, SubscriptionService(repo, matching), recruiter)
-            assertEquals(2, s.search(p.id, ProjectSearch("telegram", "java")).messages.single().id)
-            assertEquals(message, s.add(p.id, AddPublication(source.id, 2)).message)
+            val found = s.search(p.id, ProjectSearch("telegram", "java")).messages.single()
+            assertEquals(2, found.id)
+            assertEquals(message.copy(explanation = found.explanation), s.add(p.id, AddPublication(source.id, 2)).message)
             change = true
             assertFailsWith<IllegalArgumentException> { s.search(p.id, ProjectSearch("telegram", "java")) }
         }

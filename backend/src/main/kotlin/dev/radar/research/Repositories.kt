@@ -287,6 +287,19 @@ class Repositories(path: Path) : AutoCloseable {
         val count = rows("SELECT COUNT(*) FROM imported_messages WHERE channel_id=?", listOf(state.channelId)) { it.getInt(1) }.single()
         state.copy(messageCount = count, updatedAt = System.currentTimeMillis()).also(::writeHistoryState)
     }
+    /** One aggregate query for the selected sources; never loads the archive. */
+    @Synchronized fun recruitmentArchiveSize(sources: List<Long>): Long {
+        if (sources.isEmpty()) return 0
+        return rows("SELECT COUNT(*) FROM imported_messages WHERE channel_id IN (${sources.joinToString(",") { "?" }})", sources) { it.getLong(1) }.single()
+    }
+    /** A bounded batch lookup, independent of the number of cards on the board. */
+    @Synchronized fun recruitmentAddedKeys(projectId: String, messages: List<ResearchMessage>): List<String> {
+        require(messages.size <= 10)
+        if (messages.isEmpty()) return emptyList()
+        val clauses = messages.joinToString(" OR ") { "(channel_id=? AND message_id=?)" }
+        val args = listOf<Any>(projectId) + messages.flatMap { listOf(it.channelId, it.id) }
+        return rows("SELECT channel_id,message_id FROM recruitment_cards WHERE project_id=? AND ($clauses)", args) { "${it.getLong(1)}:${it.getLong(2)}" }
+    }
     @Synchronized fun historyMessages(channelId: Long, limit: Int, before: Long?, query: String): HistoryPage {
         require(limit in 1..100)
         val normalized = MatchingService().normalize(query)

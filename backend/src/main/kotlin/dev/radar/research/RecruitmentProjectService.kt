@@ -1,6 +1,28 @@
 package dev.radar.research
 
-class RecruitmentProjectService(private val repo: Repositories, private val matching: MatchingService, private val subscriptions: SubscriptionService, private val recruiter: RecruiterService) {
+import dev.radar.telegram.TelegramRequestException
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.coroutineContext
+import java.util.UUID
+
+class RecruitmentProjectService(private val repo: Repositories, private val matching: MatchingService, private val subscriptions: SubscriptionService, private val recruiter: RecruiterService, private val searchTimeoutMs: Long = 20_000) {
+    // Ephemeral, opaque continuations: bounded memory, no user data or migration in cursors.
+    private data class Continuation(val project: RecruitmentProject, val query: String, val mode: String,
+        val sourceCursor: String, val seen: Set<Pair<Long, Long>>, val expiresAt: Long)
+    private val continuations = object : LinkedHashMap<String, Continuation>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Continuation>?) = size > 128
+    }
+    @Synchronized private fun continuation(token: String): Continuation {
+        require(token.length <= 100) { "Начните поиск заново: некорректное продолжение" }
+        val now = System.currentTimeMillis()
+        continuations.entries.removeIf { it.value.expiresAt <= now }
+        return continuations[token] ?: throw IllegalArgumentException("Поиск устарел. Начните поиск заново")
+    }
+    @Synchronized private fun remember(state: Continuation): String {
+        continuations.entries.removeIf { it.value.expiresAt <= System.currentTimeMillis() }
+        return UUID.randomUUID().toString().also { continuations[it] = state }
+    }
     private val classifier = PublicationClassifier(matching)
     private fun page(limit: Int, offset: Int) { require(limit in 1..50 && offset in 0..1_000_000) { "Некорректная страница" } }
     fun get(id: String) = repo.project(id) ?: throw ResourceNotFound()
@@ -40,12 +62,65 @@ class RecruitmentProjectService(private val repo: Repositories, private val matc
     }
     fun remove(id: String, card: String) { get(id); if (!repo.deleteRecruitmentCard(id, card)) throw ResourceNotFound() }
     private fun rule(project: RecruitmentProject) = SearchTemplate(name = project.criteria.name, required = project.criteria.required, excluded = project.criteria.excluded, telegramQuery = project.criteria.required.firstOrNull() ?: project.criteria.name, sourceMode = "selected", sources = project.criteria.sources)
-    suspend fun search(id: String, request: ProjectSearch): SearchPage {
+    suspend fun search(id: String, request: ProjectSearch): ProjectSearchPage {
         val project = get(id)
-        val results = recruiter.find(request.query, request.mode, project.criteria.sources, request.cursor)
+        require(request.query.trim().length in 1..256 && request.mode in setOf("telegram", "archive")) { "Введите запрос и выберите место поиска" }
+        val previous = request.cursor.takeIf { it.isNotEmpty() }?.let(::continuation)
+        require(previous == null || previous.project == project && previous.query == request.query && previous.mode == request.mode) { "Условия изменились. Начните поиск заново" }
+        val savedSources = repo.channels().map { it.id }.toSet()
+        if (project.criteria.sources.isEmpty() || project.criteria.sources.none { it in savedSources })
+            return ProjectSearchPage(state = "no_sources", notice = "Сохраните Telegram-источники и выберите их в настройках проекта.")
+        require(project.criteria.sources.all { it in savedSources }) { "Один из источников удалён. Обновите источники проекта" }
+        if (request.mode == "archive" && repo.recruitmentArchiveSize(project.criteria.sources) == 0L)
+            return ProjectSearchPage(state = "archive_empty", exhausted = true)
+
+        var sourceCursor = previous?.sourceCursor.orEmpty()
+        val seen = previous?.seen.orEmpty().toMutableSet()
+        val visited = mutableSetOf<String>()
+        val messages = mutableListOf<ResearchMessage>()
+        var scanned = 0; var pages = 0; var exhausted = false
+        var state = "ok"; var notice: String? = null
+        val deadline = System.nanoTime() + searchTimeoutMs * 1_000_000
+        while (messages.size < 10 && pages < 5 && seen.size < 10_000) {
+            coroutineContext.ensureActive()
+            val remainingMs = (deadline - System.nanoTime()) / 1_000_000
+            if (remainingMs <= 0) { state = "search_timeout"; break }
+            visited.add(sourceCursor)
+            val result = try {
+                withTimeoutOrNull(remainingMs) {
+                    recruiter.find(request.query, request.mode, project.criteria.sources, sourceCursor,
+                        minOf(10 - messages.size, 10_000 - seen.size))
+                }
+            } catch (e: TelegramRequestException) {
+                state = if (e.code == 429 || e.reason.startsWith("FLOOD_WAIT")) "rate_limited" else "telegram_error"
+                // No immediate retry, no cursor advancement for an unsuccessful page.
+                break
+            }
+            if (result == null) { state = "search_timeout"; break }
+            require(get(id) == project) { "Критерии изменились; начните поиск заново" }
+            pages++
+            for (message in result.messages) {
+                if (!seen.add(message.channelId to message.id)) continue
+                scanned++
+                val explanation = matching.check(rule(project), message.text)
+                if (explanation.matches) messages.add(message.copy(explanation = explanation.copy(
+                    foundAny = matching.check(rule(project).copy(any = project.criteria.desired), message.text).foundAny)))
+            }
+            sourceCursor = result.cursor
+            if (result.state != "ok") { state = result.state; notice = result.notice; break }
+            if (sourceCursor.isEmpty()) { exhausted = true; break }
+            if (sourceCursor in visited) { state = "cursor_stalled"; break }
+        }
+        coroutineContext.ensureActive()
         require(get(id) == project) { "Критерии изменились; начните поиск заново" }
-        repo.rememberRecruitmentResults(project, results.messages)
-        return results.copy(messages = results.messages.map { it.copy(explanation = matching.check(rule(project), it.text).copy(foundAny = matching.check(rule(project).copy(any = project.criteria.desired), it.text).foundAny)) }.filter { it.explanation?.matches == true })
+        val limitReached = !exhausted && (pages == 5 && messages.size < 10 || state == "search_timeout" || seen.size >= 10_000)
+        if (state == "ok" && limitReached) state = "budget"
+        // Persist only actual matching evidence, transactionally bound to the criteria snapshot.
+        repo.rememberRecruitmentResults(project, messages)
+        val cursor = if (exhausted || seen.size >= 10_000) "" else remember(Continuation(project, request.query, request.mode,
+            sourceCursor, seen.toSet(), System.currentTimeMillis() + 10 * 60_000))
+        return ProjectSearchPage(messages, cursor, state, notice, scanned, messages.size, pages, limitReached, exhausted,
+            repo.recruitmentAddedKeys(id, messages))
     }
     /** Explicitly requested subscription; desired terms never become mandatory OR conditions. */
     fun subscribe(id: String): SearchTemplate {
