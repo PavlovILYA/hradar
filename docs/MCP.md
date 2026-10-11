@@ -167,5 +167,6 @@ or create subscriptions. Removed/rejected result IDs return ACCESS_DENIED. Text 
 clipped to 2,000 characters, Telegram links are validated, unknown arguments rejected
 and the existing enabled-policy/result recheck, body/response bounds and audit apply.
 There are now 14 tools: 13 reads and the existing constrained publication request.
-The read-only registry proposed for `/ask` explicitly excludes publication and any
+The separate implemented `/ask` registry contains only bounded archive search, online
+source search and selected-message context. It explicitly excludes publication and any
 settings/import/subscription mutation; see [AGENT_BRIDGE.md](AGENT_BRIDGE.md).

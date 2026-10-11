@@ -51,7 +51,7 @@ Build a local-first recruiting workspace centered on **explicitly permitted Tele
 
 - Enhance MCP with high-level **recruiting** use cases (e.g. search project matches, list review queue, prepare candidate notes), scoped to approved sources and existing records.
 - [x] `bot_publish_matches` requests bounded saved matches from permitted sources, with separate recipient permission and per-request human confirmation. No generic arbitrary-chat sender.
-- Agent Bridge proposal: [AGENT_BRIDGE.md](docs/AGENT_BRIDGE.md); no executor implemented. Explore a separately bounded agent runtime for free-text bot requests; MCP exposes tools but does not start or execute an AI model itself.
+- Implemented bounded `/ask` runtime: [AGENT_BRIDGE.md](docs/AGENT_BRIDGE.md), separate SQLite jobs, Responses API adapter, typed read tools, operator/source consent, Bot outbox and React history. Offline verification is separate from the still-required authorized live provider/phone check. MCP itself remains a capability protocol.
 - Require explicit, out-of-band approval for user-account writes, candidate outreach, new data sources and privileged agent actions. No default autonomous personal-chat access or shell execution.
 - Before using external AI on Telegram content, review platform terms, privacy basis/consent, data retention and what is transmitted to a model provider.
 
@@ -82,7 +82,8 @@ choice and bounded cards; `/watch` form/preview/confirmation through shared temp
 services; per-operator saved/rejected publications with minimal React review; and
 period-based real-match `/digest`. Shared read-only saved-result MCP operations
 support later Agent Bridge work. The previous `bot_publish_matches` gate is preserved
-but no longer drives the product milestone. `/ask` runtime is specified, not enabled.
+but no longer drives the product milestone. `/ask` is now implemented and remains disabled
+until production provider configuration and independent operator consent.
 
 Acceptance is the phone path find → review → save → watch → React template → fresh
 notification → digest. Automated fake-port checks cover this application path; real

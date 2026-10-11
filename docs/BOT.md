@@ -172,7 +172,7 @@ request; verify actual phone delivery. Revoke permission/source before another
 confirmation and verify denial. Do not launch a second backend or send a test post
 from hradar. Live steps have not been performed by automated tests.
 
-Agent runtime proposal: [AGENT_BRIDGE.md](AGENT_BRIDGE.md). Inline keyboard protocol:
+Agent runtime and production configuration: [AGENT_BRIDGE.md](AGENT_BRIDGE.md). Inline keyboard protocol:
 [official Bot API](https://core.telegram.org/bots/api#inlinekeyboardbutton).
 
 ## Mobile recruiter workflow (`/find`, `/watch`, `/saved`)
@@ -269,5 +269,7 @@ Fake-port tests establish application behavior, not actual phone delivery or sea
 availability on a live Telegram account.
 
 MCP additions are **read-only** `list_saved_results` and `get_saved_result`, clipped
-and filtered by the separate MCP source allowlist. `/ask` reports that agent execution
-is not connected. Its scoped runtime specification is in [AGENT_BRIDGE.md](AGENT_BRIDGE.md).
+and filtered by the separate MCP source allowlist. `/ask` now starts a bounded AI job after separate source/provider consent;
+`/ask_status`, `/ask_cancel` and `/ask_history` manage the initiating operator’s jobs.
+Use `/ask_consent` and `/ask_access` to read the terms and authorize selected sources
+in the React AI section. Production setup and the runtime contract are in [AGENT_BRIDGE.md](AGENT_BRIDGE.md).
