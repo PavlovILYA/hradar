@@ -41,6 +41,7 @@ fun main() {
     val lease = SessionLease.acquire(paths.session)
     if (lease == null) {
         if (!DesktopRuntime.reopen(paths)) DesktopRuntime.conflict("hradar уже использует эту Telegram-сессию. Закройте работающий экземпляр.")
+        if (DesktopRuntime.enabled && !DesktopRuntime.smoke) kotlin.system.exitProcess(0)
         return
     }
     // Older development installs don't take our lock: reject occupied port before TDLib starts.
@@ -51,7 +52,13 @@ fun main() {
     }
     val credentials = if (DesktopRuntime.smoke) null else paths.loadCredentials()
     val telegram = TdlibGateway(credentials?.apiId, credentials?.apiHash, paths.session)
-    val repositories = Repositories(paths.database)
+    val repositories = try { Repositories(paths.database) } catch (ex: Exception) {
+        lease.close()
+        DesktopRuntime.conflict(if (ex is IllegalStateException && ex.message == "Database schema is newer than this application")
+            "База данных создана более новой версией hradar. Используйте совместимую новую сборку; данные не удалены."
+        else "Не удалось открыть пользовательскую базу hradar. Проверьте доступ к профилю и завершите старый экземпляр.")
+        return
+    }
     val csrf = DesktopRuntime.token()
     val launchToken = if (DesktopRuntime.enabled) DesktopRuntime.token() else null
     val matching = MatchingService()

@@ -18,7 +18,8 @@ fun Application.configureDesktopSecurity(token: String?, csrf: String) {
             val origin = call.request.headers["Origin"]
             val validHost = host in setOf("127.0.0.1:${DesktopRuntime.port}", "127.0.0.1:5173")
             val validOrigin = origin == null || origin in setOf("http://127.0.0.1:${DesktopRuntime.port}", "http://127.0.0.1:5173")
-            val api = path.startsWith("/api/") || path == "/mcp"
+            // MCP retains its separate explicit enable/source grants and exact Host/Origin guard.
+            val api = path.startsWith("/api/")
             val login = path.startsWith("/api/onboarding") || path == "/api/desktop/shutdown"
             val mutation = call.request.httpMethod !in setOf(HttpMethod.Get, HttpMethod.Head)
             if (!validHost || !validOrigin || (token != null && api && call.request.cookies["hradar-desktop"] != token) ||

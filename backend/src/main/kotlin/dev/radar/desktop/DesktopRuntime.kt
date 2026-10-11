@@ -54,10 +54,17 @@ object DesktopRuntime {
     val port = if (smoke) System.getProperty("hradar.smokePort", "8080").toInt().also { require(it in 1024..65535) } else 8080
     fun token(): String = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32).also { SecureRandom().nextBytes(it) })
     fun portOccupied(): Boolean = try { Socket().use { it.connect(java.net.InetSocketAddress("127.0.0.1", port), 300) }; true } catch (_: java.io.IOException) { false }
-    fun open(url: String) { if (enabled && !smoke) ProcessBuilder("/usr/bin/open", url).start().waitFor() }
+    fun open(url: String) {
+        // Use LaunchServices via java.desktop: don't expose the private launch token in child argv.
+        if (enabled && !smoke) java.awt.Desktop.getDesktop().browse(URI(url))
+    }
     fun conflict(message: String) {
         System.err.println(message)
-        if (enabled && !smoke) javax.swing.JOptionPane.showMessageDialog(null, message, "hradar", javax.swing.JOptionPane.WARNING_MESSAGE)
+        if (enabled && !smoke) {
+            javax.swing.JOptionPane.showMessageDialog(null, message, "hradar", javax.swing.JOptionPane.WARNING_MESSAGE)
+            // No client has been created on conflict paths; don't retain an AWT-only process.
+            kotlin.system.exitProcess(0)
+        }
     }
     fun reopen(paths: RuntimePaths): Boolean {
         val marker = paths.data.resolve("desktop-instance.json")

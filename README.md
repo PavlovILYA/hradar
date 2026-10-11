@@ -31,7 +31,7 @@ wrapper. The wrapper downloads Gradle on first use and verifies its SHA-256.
 For build commands, set `JAVA_HOME="$(/usr/libexec/java_home -v 21)"` and use
 `./gradlew :backend:build` after compiling TDLib.
 
-The terminal will request your phone number, Telegram login code, and if applicable 2FA password or email code. This project never asks you to put login codes in a public webpage or commit them. After authorization, the TDLib session is stored under `~/.recruitment-radar/tdlib` and can be reused on later starts. **Protect that directory: it contains account session data.**
+The local UI handles your phone number, Telegram login code, and if applicable 2FA password or email code. Use the localhost onboarding form; never put login codes in a public webpage or commit them. After authorization, the TDLib session is stored under `~/.recruitment-radar/tdlib` and can be reused on later starts. **Protect that directory: it contains account session data.**
 
 TDLib native binaries and generated bindings are intentionally excluded from Git. Never commit `.env`, account sessions or candidate personal information.
 
@@ -56,7 +56,7 @@ browser memory; templates and notification matches are persisted locally in SQLi
 
 The frontend serves only on localhost and proxies `/api` to the existing Ktor
 backend on port 8080 (see [Vite proxy documentation](https://vite.dev/config/server-options#server-proxy)).
-Authentication remains in the backend terminal. No API keys are passed to the browser.
+Authentication uses the local UI. Existing API settings are never returned to the browser; missing API ID/hash can be entered in the guarded onboarding form.
 
 ```bash
 cd frontend

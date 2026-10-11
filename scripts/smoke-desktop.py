@@ -74,4 +74,12 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
             listener.bind(('127.0.0.1',port)); listener.listen()
             subprocess.run([str(launcher)],env=env,stdout=log,stderr=log,check=True,timeout=20)
             assert not marker.exists()
-print('Production UI, origin/cookie/CSRF denial, duplicate/legacy-port refusal, restart persistence and graceful shutdown passed')
+        # No downgrade of a database created by a newer local feature build.
+        with sqlite3.connect(home/'.hradar/research.sqlite') as db:
+            db.execute('PRAGMA user_version=8')
+        subprocess.run([str(launcher)],env=env,stdout=log,stderr=log,check=True,timeout=20)
+        assert not marker.exists()
+        with sqlite3.connect(home/'.hradar/research.sqlite') as db:
+            assert db.execute('PRAGMA user_version').fetchone() == (8,)
+            assert db.execute('SELECT value FROM distribution_smoke').fetchone() == ('preserved',)
+print('Production UI, origin/cookie/CSRF denial, duplicate/legacy-port refusal, restart persistence, newer-schema refusal and graceful shutdown passed')

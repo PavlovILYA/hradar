@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 
 type Status = { state: string; csrfToken: string; link?: string; notice?: string };
+const waiting: Record<string, string> = { Initializing: 'Подключение TDLib…', WaitTdlibParameters: 'Настройка TDLib…', Closing: 'Telegram завершает работу…', Closed: 'Сессия закрыта. Завершите hradar и откройте приложение снова.', LoggingOut: 'Выход из Telegram…', WaitOtherDeviceConfirmation: 'Подтвердите вход на другом устройстве Telegram.' };
 const labels: Record<string, string> = { WaitPhoneNumber: 'Номер телефона', WaitCode: 'Код Telegram', WaitPassword: 'Пароль 2FA', WaitEmailAddress: 'Email для входа', WaitEmailCode: 'Код из email' };
 export function Onboarding({ onReady }: { onReady: () => void }) {
   const ready = useRef(onReady); ready.current = onReady;
@@ -43,7 +44,7 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
       <label>API hash<input required type="password" autoComplete="off" value={apiHash} onChange={e => setApiHash(e.target.value)} /></label>
       <button disabled={busy}>Сохранить и продолжить</button></form> : status && labels[status.state] ? <form onSubmit={e => { e.preventDefault(); void submit('/api/onboarding/login', { state: status.state, value }); }}>
       <label>{labels[status.state]}<input required autoComplete="off" type={status.state === 'WaitPassword' ? 'password' : status.state === 'WaitEmailAddress' ? 'email' : 'text'} value={value} onChange={e => setValue(e.target.value)} placeholder={status.state === 'WaitPhoneNumber' ? '+79991234567' : ''} maxLength={512} /></label>
-      <button disabled={busy}>Продолжить</button></form> : <p role="status">{status?.notice ?? (status?.state === 'WaitOtherDeviceConfirmation' ? 'Подтвердите вход на другом устройстве Telegram.' : 'Ожидание Telegram…')}</p>}
+      <button disabled={busy}>Продолжить</button></form> : <p role="status">{status?.notice ?? (waiting[status?.state ?? ''] ?? 'Ожидание Telegram…')}</p>}
     {status?.link?.startsWith('tg://') && <a href={status.link}>Открыть подтверждение в Telegram</a>}
     {isDesktop() && <button disabled={busy || !status} onClick={() => void submit('/api/desktop/shutdown')}>Завершить hradar</button>}
   </main>;

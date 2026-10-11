@@ -55,6 +55,12 @@ this task leaves it untouched. Older binaries launched afterward do not honor th
 application lock; never deliberately run a legacy client against the same session.
 TDLib's own SQLite locking is an additional constraint, not a replacement for this rule.
 
+This branch currently supports SQLite schemas through v7. A database created by a
+newer feature build is refused with a visible message, without a downgrade or
+deletion; use a build containing that newer schema/features. Existing Bot API
+credentials remain optional environment configuration and are not included in this
+Telegram user-account onboarding.
+
 Updating/replacing the `.app` does not remove these directories. There is no automatic
 updater or downgrade migration. Back up a stopped database/session before testing a
 new schema; restore a stopped backup for rollback to an older binary.
@@ -77,17 +83,22 @@ and no-referrer headers keep setup out of HTTP caches/referrers. No bearer is em
 in the production bundle. These controls do not protect against an already compromised
 macOS user account or arbitrary code running as that user.
 
-Existing MCP source allowlists/default disabled state are retained. In desktop mode
-MCP also requires the desktop cookie; generic MCP clients cannot connect using only
-the visible endpoint URL. A separate explicitly approved client-token UX is not part
-of this first installer. Development MCP behavior is unchanged.
+MCP retains its separate default-disabled and explicitly granted public-source
+boundary with exact Host/Origin checks, so existing local MCP clients continue to
+work when the user enables it. The desktop cookie gates the general REST UI API;
+it does not replace MCP's own consent/source checks or introduce a generic Telegram
+executor. As in development, local MCP process identity is not authenticated merely
+by being on localhost; enabling MCP deliberately grants its approved source scope
+to local clients.
 
 ## Build and CI
 
 `config/tdlib.json` remains the official source/JAR Release pin for Fast CI. The
 published ARM64 release is untouched. Portable builds use the same TDLib source SHA,
 a separate source/cache namespace and a reviewed optional CMake patch: omit the
-stale demonstration and the unnecessary libjvm link (JNI uses the JVM function table).
+stale demonstration and the demonstration target's redundant explicit JVM link. The upstream static TDLib
+link interface still names `@rpath/libjvm.dylib`, resolved by the bundled JVM; no
+absolute JDK/Homebrew library paths are permitted.
 Pinned OpenSSL 3.5.9 is built static from its checksum-verified official tarball.
 Both dependency licenses are included. `otool` rejects external Homebrew/JDK linkage.
 

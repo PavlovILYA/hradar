@@ -9,6 +9,7 @@ MAC_VERSION=1.0.0
 APP="$WORK/hradar.app"
 ditto -x -k "$WORK/hradar-$VERSION-$ARCH.app.zip" "$WORK"
 bash scripts/sign-macos.sh "$APP"
+python3 -B scripts/verify-macos-image.py "$APP" "$ARCH"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$WORK/notary-app.zip"
 xcrun notarytool submit "$WORK/notary-app.zip" --keychain-profile "$APPLE_NOTARY_PROFILE" --wait
 xcrun stapler staple "$APP"
