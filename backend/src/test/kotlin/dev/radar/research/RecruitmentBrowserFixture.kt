@@ -22,11 +22,16 @@ object RecruitmentBrowserFixture {
         val source = MonitoredChannel(-1001, "synthetic_jobs", "Synthetic source")
         repo.saveChannel(source)
         val text = "Ищу работу Senior Java Spring Boot PostgreSQL Kafka Docker"
-        repo.saveHistoryPage(HistorySyncRecord(source.id, source.username, source.title), listOf(TelegramMessage(1, 1700000000, text, source.id)))
+        repo.saveHistoryPage(HistorySyncRecord(source.id, source.username, source.title), listOf(TelegramMessage(1, 1700000000, text, source.id)) + (2L..31L).map { TelegramMessage(it, 1700000000, "Java Spring Boot synthetic incomplete publication", source.id) })
         repo.configureBot(123, setOf(7)); repo.registerBotRecipient(123, 7, 7, 1700000000000)
         repo.decidePublication(123, 7, ResearchMessage(1, source.id, 1700000000, text, source.title, source.username, "https://t.me/synthetic_jobs/1"), "SAVED")
         val matching = MatchingService()
-        val service = RecruitmentProjectService(repo, matching, SubscriptionService(repo, matching), RecruiterService(repo, RecruiterSearchPort { error("Fixture permits archive reads only") }))
+        val service = RecruitmentProjectService(repo, matching, SubscriptionService(repo, matching), RecruiterService(repo, RecruiterSearchPort { request ->
+            val before = request.cursor.toLongOrNull() ?: 72L
+            val ids = (71L downTo 1L).filter { it < before }.take(request.limit)
+            val messages = ids.map { ResearchMessage(it, source.id, 1700000000, if (it == 1L) text else "Java synthetic incomplete publication", source.title, source.username, "https://t.me/synthetic_jobs/$it") }
+            SearchPage(messages, if (ids.lastOrNull() == 1L || ids.isEmpty()) "" else ids.last().toString())
+        }))
         Runtime.getRuntime().addShutdownHook(Thread { repo.close() })
         embeddedServer(Netty, host = "127.0.0.1", port = 18081) {
             routing { install(ContentNegotiation) { json(Json { encodeDefaults = true }) } }

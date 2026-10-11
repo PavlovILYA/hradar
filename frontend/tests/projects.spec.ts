@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 test('recruiter creates a project, searches, reviews Kanban and restores notes after reload', async ({ page }, testInfo) => {
   let project: any = null;
   const cards: any[] = [];
-  const message = { id: 1, channelId: -1001, date: 1700000000, title: 'Synthetic source', username: 'synthetic_jobs', text: 'Ищу работу Senior Java Spring Boot PostgreSQL Kafka Docker', link: 'https://t.me/synthetic_jobs/1' };
+  const message = { id: 1, channelId: -1001, date: 1700000000, title: 'Synthetic source', username: 'synthetic_jobs', text: 'Ищу работу Senior Java Spring Boot PostgreSQL Kafka Docker', link: 'https://t.me/synthetic_jobs/1', explanation: { matches: true, foundRequired: ['Java', 'Spring Boot', 'PostgreSQL'], foundAny: ['Kafka', 'Docker'], foundExcluded: [], missingRequired: [] } };
   await page.route('**/api/**', async route => {
     const url = new URL(route.request().url()); const path = url.pathname; const method = route.request().method();
     const reply = (json: unknown, status = 200) => route.fulfill({ json, status });
@@ -22,7 +22,7 @@ test('recruiter creates a project, searches, reviews Kanban and restores notes a
       const matches = project && project.criteria.status === url.searchParams.get('status'); return reply({ items: matches ? [project] : [], total: matches ? 1 : 0 });
     }
     if (path === '/api/projects/p1') { if (method === 'PUT') project.criteria = route.request().postDataJSON(); return reply(project); }
-    if (path === '/api/projects/p1/search') return reply({ messages: [message], cursor: '', state: 'ok' });
+    if (path === '/api/projects/p1/search') return reply({ messages: [message], cursor: '', state: 'ok', scanned: 31, matched: 1, exhausted: true });
     if (path === '/api/projects/p1/statistics') return reply({ total: cards.length, stages: Object.fromEntries(['NEW', 'INTERESTING', 'CONTACTED', 'IN_PROGRESS', 'REJECTED'].map(s => [s, cards.filter(c => c.stage === s).length])) });
     if (path === '/api/projects/p1/cards') {
       if (method === 'POST') { if (!cards.length) cards.push({ id: 'c1', projectId: 'p1', message, stage: 'NEW', notes: '', interest: 0, classification: { kind: 'CANDIDATE', reason: 'Признак поиска работы: «ищу работу»' }, manualKind: null, createdAt: 1700000000000, updatedAt: 1700000000000 }); return reply(cards[0], 201); }
@@ -46,6 +46,16 @@ test('recruiter creates a project, searches, reviews Kanban and restores notes a
   expect(project.criteria.required).toEqual(['Java', 'Spring Boot', 'PostgreSQL']);
   await page.getByText('Найти и добавить публикации', { exact: true }).click();
   await page.getByRole('button', { name: 'Найти публикации', exact: true }).click();
+  await expect(page.getByText('Обязательные слова в тексте: Java, Spring Boot, PostgreSQL')).toBeVisible();
+  await expect(page.getByText('За этот шаг проверено публикаций: 31 · Совпадений: 1')).toBeVisible();
+  if (process.env.CRM_FIXTURE_URL) {
+    await page.getByLabel('Где искать').selectOption('telegram');
+    await page.getByRole('button', { name: 'Найти публикации', exact: true }).click();
+    await expect(page.getByText('За этот шаг проверено публикаций: 50 · Совпадений: 0')).toBeVisible();
+    await expect(page.getByText('Поиск ещё не завершён', { exact: false })).toBeVisible();
+    await page.getByRole('button', { name: 'Продолжить поиск' }).click();
+    await expect(page.getByText('За этот шаг проверено публикаций: 21 · Совпадений: 1')).toBeVisible();
+  }
   await page.getByRole('button', { name: 'Добавить на доску' }).click();
   const fresh = page.getByRole('region', { name: 'Новые', exact: true });
   await expect(fresh.locator('.recruitment-card')).toHaveCount(1);

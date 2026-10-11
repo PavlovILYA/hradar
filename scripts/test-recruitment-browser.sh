@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Real recruitment REST + temporary SQLite, with all Telegram APIs mocked in Playwright.
+# Real recruitment REST + temporary SQLite and fake Telegram, with other APIs mocked.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 if lsof -nP -iTCP:18081 -sTCP:LISTEN >/dev/null 2>&1; then
@@ -9,6 +9,11 @@ fi
 mkdir -p .tdlib-build/crm-browser
 crm_log="$PWD/.tdlib-build/crm-browser/fixture.log"
 crm_init="$PWD/.tdlib-build/crm-browser/fixture.gradle"
+# Keep compiled classes away from any running production backend in this checkout.
+crm_build="$PWD/.tdlib-build/crm-browser/source"
+mkdir -p "$crm_build"
+cp build.gradle.kts settings.gradle.kts gradle.properties "$crm_build/"
+rsync -a --exclude=build --exclude=native backend/ "$crm_build/backend/"
 cat > "$crm_init" <<'GRADLE'
 allprojects {
     if (name == 'backend') {
@@ -22,7 +27,7 @@ allprojects {
     }
 }
 GRADLE
-./gradlew -I "$crm_init" :backend:crmBrowserFixture --console=plain > "$crm_log" 2>&1 &
+./gradlew -p "$crm_build" -I "$crm_init" :backend:crmBrowserFixture --console=plain > "$crm_log" 2>&1 &
 crm_gradle_pid=$!
 crm_fixture_pid=''
 cleanup() {
