@@ -67,7 +67,7 @@ jobs:
       - name: Production UI and lifecycle smoke without Telegram/tools
         run: |
           npx --prefix frontend playwright install chromium
-          python3 -B scripts/smoke-desktop.py '.tdlib-build/distribution-${{ matrix.arch }}/hradar.app'
+          bash scripts/verify-macos-dmg.sh '${{ matrix.arch }}' '.tdlib-build/distribution-${{ matrix.arch }}'
       - name: Attest installers
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
@@ -134,7 +134,7 @@ jobs:
         run: |
           npm ci --prefix frontend
           npx --prefix frontend playwright install chromium
-          python3 -B scripts/smoke-desktop.py .tdlib-build/signing/hradar.app
+          bash scripts/verify-macos-dmg.sh '${{ matrix.arch }}' .tdlib-build/signing/signed
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
         with:
           subject-path: |

@@ -16,14 +16,13 @@ xcrun stapler staple "$APP"
 xcrun stapler validate "$APP"
 spctl --assess --type execute --verbose "$APP"
 mkdir -p "$WORK/signed"
-"$JAVA_HOME/bin/jpackage" --type dmg --name hradar --app-version "$MAC_VERSION" --app-image "$APP" --dest "$WORK/signed"
-DMG="$WORK/signed/hradar-$MAC_VERSION.dmg"
+DMG="$WORK/signed/hradar-$VERSION-$ARCH.dmg"
+bash scripts/create-macos-dmg.sh "$APP" "$DMG"
 codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$DMG"
 xcrun notarytool submit "$DMG" --keychain-profile "$APPLE_NOTARY_PROFILE" --wait
 xcrun stapler staple "$DMG"
 xcrun stapler validate "$DMG"
 spctl --assess --type open --context context:primary-signature --verbose "$DMG"
-mv "$DMG" "$WORK/signed/hradar-$VERSION-$ARCH.dmg"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$WORK/signed/hradar-$VERSION-$ARCH.app.zip"
 (cd "$WORK/signed"; shasum -a 256 *.dmg *.app.zip > SHA256SUMS)
 python3 - "$WORK" <<'PY'

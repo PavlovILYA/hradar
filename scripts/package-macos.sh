@@ -39,8 +39,8 @@ if [[ "${HRADAR_SIGN:-false}" = true ]]; then
 fi
 codesign --verify --deep --strict "$OUT/hradar.app"
 python3 -B scripts/verify-macos-image.py "$OUT/hradar.app" "$ARCH"
-"$JAVA_HOME/bin/jpackage" --type dmg --name hradar --app-version "$MAC_VERSION" --app-image "$OUT/hradar.app" --dest "$OUT/dmg"
-DMG="$OUT/dmg/hradar-$MAC_VERSION.dmg"
+DMG="$OUT/hradar-$VERSION-$ARCH.dmg"
+bash scripts/create-macos-dmg.sh "$OUT/hradar.app" "$DMG"
 if [[ "${HRADAR_SIGN:-false}" = true ]]; then
   codesign --force --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$DMG"
   xcrun notarytool submit "$DMG" --keychain-profile "$APPLE_NOTARY_PROFILE" --wait
@@ -48,8 +48,6 @@ if [[ "${HRADAR_SIGN:-false}" = true ]]; then
   xcrun stapler validate "$DMG"
   spctl --assess --type open --context context:primary-signature --verbose "$DMG"
 fi
-mv "$DMG" "$OUT/hradar-$VERSION-$ARCH.dmg"
-rmdir "$OUT/dmg"
 (cd "$OUT"; shasum -a 256 "hradar-$VERSION-$ARCH.dmg" > SHA256SUMS)
 # ZIP preserves executable bits/symlinks better than raw upload-artifact of .app.
 ditto -c -k --sequesterRsrc --keepParent "$OUT/hradar.app" "$OUT/hradar-$VERSION-$ARCH.app.zip"

@@ -109,8 +109,9 @@ Both dependency licenses are included. `otool` rejects external Homebrew/JDK lin
   architecture and fixed JDK; React/Kotlin changes don't invalidate them. Every reuse
   checks hashes, source identity, architecture, linkage and JNI again.
 - `macos-distribution.yml`: PR or manual installer workflow; production React/Kotlin,
-  jpackage/JRE, architecture/linkage/JVM/JNI checks, production-browser and lifecycle
-  smoke, DMG/app ZIP, SHA256, metadata and GitHub provenance. No Release publication.
+  jpackage/JRE, architecture/linkage/JVM/JNI checks, native hdiutil DMG (preserves the
+  verified/signed app), byte-for-byte DMG/ZIP comparison and production-browser/lifecycle
+  smoke executed from the mounted read-only DMG, app ZIP, SHA256, metadata and GitHub provenance. No Release publication.
   ZIP preserves symlinks/executable modes. Raw .app upload is avoided.
 - `macos-release.yml`: future **manual** promotion of both signed artifacts from an
   exact successful workflow-dispatch run and existing reviewed `vX.Y.Z` tag. Checks
@@ -133,7 +134,7 @@ npm ci --prefix frontend
 npm run build --prefix frontend
 ./gradlew :backend:build :backend:stageDesktop -PbundledWeb=true
 bash scripts/package-macos.sh "$(uname -m)"
-python3 -B scripts/smoke-desktop.py ".tdlib-build/distribution-$(uname -m)/hradar.app"
+bash scripts/verify-macos-dmg.sh "$(uname -m)" ".tdlib-build/distribution-$(uname -m)"
 ```
 
 The smoke test uses an isolated temporary home, no account client, a restricted PATH
