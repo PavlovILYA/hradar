@@ -2,6 +2,7 @@ package dev.radar
 
 import dev.radar.api.configureRoutes
 import dev.radar.bot.*
+import dev.radar.agent.*
 import org.drinkless.tdlib.TdApi
 import dev.radar.telegram.TdlibGateway
 import dev.radar.telegram.TelegramRequestException
@@ -49,22 +50,29 @@ fun main() {
     val subscriptions = SubscriptionService(repositories, matching)
     val recruiter = RecruiterService(repositories, RecruiterSearchPort(search::search))
     val workspace = BotWorkspaceService(repositories, recruiter)
-    val bot = BotService(BotConfig.fromEnvironment(), repositories, subscriptions, statusText = {
+    val readPort = TdlibReadPort(telegram, search)
+    val capabilities = CapabilityService(readPort, repositories)
+    val botConfig = BotConfig.fromEnvironment()
+    val agentJobs = AgentJobRepository(Path.of(System.getProperty("user.home"), ".hradar", "agent-jobs.sqlite"))
+    val agent = AgentService(AgentLimits.fromEnvironment(), agentJobs, repositories, capabilities, botConfig,
+        System.getenv("OPENAI_API_KEY")?.takeIf { it.isNotBlank() }?.let(::OpenAiAgentPort), link = { chatId, messageId ->
+            (telegram.executeRead(TdApi.GetMessageLink().apply { this.chatId = chatId; this.messageId = messageId }) as TdApi.MessageLink).link
+        })
+    val bot = BotService(botConfig, repositories, subscriptions, statusText = {
         val status = telegram.getStatus()
         "hradar\nTDLib: ${status.authorizationState} · ${status.connectionState}\nМониторинг: ${repositories.channels().size} источников\nАктивные подписки: ${subscriptions.list().count { it.active && it.subscribed && it.sourceMode != "global" }}"
-    }, workspace = workspace, link = { chatId, messageId ->
+    }, workspace = workspace, agent = agent, link = { chatId, messageId ->
         (telegram.executeRead(TdApi.GetMessageLink().apply { this.chatId = chatId; this.messageId = messageId }) as TdApi.MessageLink).link
     })
     val monitoring = MonitoringService(telegram, repositories, search, notifications)
     val historySync = HistorySyncService(repositories, telegram::getHistoryPage, { telegram.getStatus().let { it.authorized && it.connectionState == "Ready" } })
-    val readPort = TdlibReadPort(telegram, search)
-    val capabilities = CapabilityService(readPort, repositories)
     (org.slf4j.LoggerFactory.getLogger("io.modelcontextprotocol") as ch.qos.logback.classic.Logger).level = ch.qos.logback.classic.Level.OFF
     telegram.start()
     bot.start()
+    agent.start()
     monitoring.start()
     historySync.resumePending()
-    Runtime.getRuntime().addShutdownHook(Thread { historySync.close(); monitoring.close(); bot.close(); telegram.close(); repositories.close() })
+    Runtime.getRuntime().addShutdownHook(Thread { historySync.close(); monitoring.close(); agent.close(); bot.close(); agentJobs.close(); telegram.close(); repositories.close() })
 
     embeddedServer(Netty, host = "127.0.0.1", port = 8080) {
         // Root route installation permits the MCP child route to use its SDK serializer.
@@ -100,6 +108,7 @@ fun main() {
         }
         configureCapabilities(capabilities, readPort, repositories)
         configureBotRoutes(bot)
+        configureAgentRoutes(agent)
         configureSavedRoutes(repositories)
         configureRoutes(telegram)
         configureResearchRoutes(telegram, repositories, matching, search, notifications)

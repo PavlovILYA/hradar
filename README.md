@@ -275,3 +275,19 @@ It sends only as the bot to opted-in operators. Retries honor network failures a
 429/retry_after; a crash after send success can repeat delivery. The Mac/backend
 must remain running; closing the browser is fine. Setup, BotFather, your numeric ID,
 real phone verification and limitations: [Bot guide](docs/BOT.md).
+
+## AI research
+
+The **AI-исследования** section provides source-scoped consent, background requests,
+cancellation, history and verified Telegram evidence links. The optional bot supports
+`/ask <question>`, `/ask_status`, `/ask_cancel`, `/ask_history`, `/ask_consent` and
+`/ask_access`. Register with `/start`, pair the operator in React, select MCP-approved
+public sources and explicitly consent before `/ask` can export any content.
+
+Production uses OpenAI Responses API behind a typed provider port. Set `OPENAI_API_KEY`,
+a real compatible `HRADAR_AI_MODEL` and positive input/output USD tariffs locally;
+model/output-token/total-token/USD limits are configurable. The separate
+`~/.hradar/agent-jobs.sqlite` preserves jobs without modifying the archive/CRM DB.
+Restart never silently repeats paid calls. See [AGENT_BRIDGE.md](docs/AGENT_BRIDGE.md)
+for complete setup, privacy/retention, limits, rollback and manual acceptance. Automated
+checks use fake providers; real AI and phone delivery require authorized live validation.

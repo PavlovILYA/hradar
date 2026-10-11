@@ -1,3 +1,78 @@
+# AI researcher checkpoint — 2026-10-11
+
+Branch `feat/ai-research`, based on master `077c974`. This task does not merge CRM,
+change its protected repositories/routes/UI, alter CI/native scripts, restart the
+existing backend or start another TDLib session.
+
+VERIFIED:
+- AgentService background worker, typed AgentPort and production OpenAI Responses
+  adapter with a fixed HTTPS endpoint, strict read-only tool schemas/structured
+  result, store=false, encrypted reasoning replay, cancellation and sanitized errors.
+  Explicit model/positive tariff configuration is required; no default model invented.
+- Separate AgentJobRepository/migration v1 in `~/.hradar/agent-jobs.sqlite`; one active
+  job per operator, bounded queue/time/tools/token/cost budgets, event deduplication,
+  retention and restart interruption without automatic paid retries (including 429).
+  Each job retains its model/limits. No external read or AI call in a DB transaction.
+- `/ask`, `/ask_status`, `/ask_cancel`, `/ask_history`, `/ask_consent`, `/ask_access`.
+  Immediate acknowledgement, later summary/source cards through existing Bot outbox,
+  operator binding and permission checks immediately before send. Cross-DB enqueue
+  recovery uses unique job/card keys; COMPLETED is not a phone-delivery receipt.
+- Independent per-operator opt-in with a selected subset of public MCP grants.
+  Every read rechecks current grants/snapshot; a watcher cancels revoked running jobs.
+  Fixed tools expose only bounded archive/online-source/context reads. References are
+  assigned to actual returned publications, original links resolved/validated without
+  guessed TDLib post numbers, model links removed. No shell/files/arbitrary HTTP,
+  imports, grants, subscription mutation or candidate sends available to the model.
+- React AI section: own history/status/result/links/cancel, model/budget/source display,
+  explicit consent/revocation, source selection, operator pairing and mobile layout.
+  Bot histories need a rotated private bearer code; the agent DB persists only its
+  hash, while Bot outbox holds the code until delivery/cancellation (permanent failure
+  erases its text). React keeps the code in memory. Host/Origin/CSRF/no-store guards cover the local API.
+- `./gradlew :backend:build --console=plain`, JDK 21: exit 0, 94 tests, zero
+  failures/errors/skips (19 new AI tests). Matching Java JAR reused as an ignored local
+  dependency; no JNI loaded. Tests use temporary databases and fake providers/ports.
+  Includes Bot → AgentService → fake LLM → tools → Bot outbox; denied consent/sources,
+  injection/tool escalation/invalid references, 429/errors, concurrency/queue limits,
+  duplicate updates, cancellation/timeouts/revocation, recovery, pagination and REST
+  security. Production request/response shapes checked with account-free fixtures.
+- `npm run build --prefix frontend`: exit 0. `npm run test:ci --prefix frontend --
+  --config playwright.ai.local.config.ts`: 18 passed, exit 0, including two AI tests.
+  Temporary config used an owned frontend at 127.0.0.1:5174; all APIs mocked. Removed
+  after verification. Desktop/mobile screenshots inspected; filter drawer no longer
+  overlays the AI form when opening the section. Existing runtime remained untouched.
+- Official OpenAI function-calling, reasoning replay and data-control documentation
+  checked; setup, retention/budgets, rollback and manual acceptance in AGENT_BRIDGE.md.
+
+- GitHub Fast CI [38099047323](https://github.com/PavlovILYA/hradar/actions/runs/38099047323)
+  succeeded at implementation/test commit `e64193b20f100f96a40b7742ac3364e079af95d2`:
+  both independent jobs completed successfully. Job logs confirm 18 offline browser
+  tests and Kotlin `BUILD SUCCESSFUL`; the pinned/attested Java JAR fetch and seven
+  TDLib safeguard tests also passed. Earlier feature runs 38098788274 and 38098946131
+  passed before the final JUnit-discovery correction. No native workflow was changed
+  or run by this task; this is account-free Fast CI, not an ARM64/JNI claim.
+- [PR #3](https://github.com/PavlovILYA/hradar/pull/3) is open to master and GitHub
+  reports MERGEABLE. Feature commits: `4e1e85b` (React), `207f521` (backend/Bot),
+  `41c7710` (guide), `9697125` (history-delivery permissions/sensitive-payload cleanup),
+  `e64193b` (all 19 coroutine tests discoverable). Only feat/ai-research was pushed;
+  no merge, Release, real AI request, test recipient or runtime restart.
+
+NOT VERIFIED:
+- Real provider/account model compatibility, actual usage/billing, semantic recruitment
+  quality, genuine Telegram links/phone command/result delivery. No real AI requests,
+  real-recipient test messages or secret changes occurred. store=false does not imply
+  zero service-side retention; consent text links the provider's actual data controls.
+
+NEXT ACTION:
+- Maintainer review of PR #3; no merge is performed by the agent. The final reporting
+  commit changes this handoff only; consult PR checks for its subsequent CI run.
+- For live use: stop/back up the one backend and both DBs, deploy this feature once,
+  configure OPENAI_API_KEY/actual model/positive tariffs locally, authorize synthetic
+  public sources in MCP, /start → /ask_consent → /ask_access → pair/select/consent in
+  React → /ask question. Check phone/web citations, cancellation and restart manually.
+  A paid provider check with source data needs separate authorization; none was run.
+
+---
+
 # hradar — Development status / session handoff
 
 ## Feature/master integration — 2026-10-11

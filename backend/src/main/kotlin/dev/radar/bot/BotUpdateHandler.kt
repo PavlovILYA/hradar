@@ -7,6 +7,7 @@ class BotUpdateHandler(
     private val config: BotConfig, private val repo: Repositories, private val subscriptions: SubscriptionService,
     private val statusText: () -> String, private val now: () -> Long = System::currentTimeMillis,
     private val workspace: BotWorkspaceService? = null,
+    private val agent: dev.radar.agent.AgentService? = null,
 ) {
     private val inbox = BotInboxService(repo)
     suspend fun handle(update: BotUpdate, botUsername: String): String? {
@@ -20,13 +21,21 @@ class BotUpdateHandler(
         val rawInput = update.message?.text?.trim()
         val commandTarget = rawInput?.substringBefore(' ')?.substringBefore('\n')?.substringAfter('@', "").orEmpty()
         if (rawInput?.startsWith('/') == true && commandTarget.isNotEmpty() && !commandTarget.equals(botUsername, true)) return ignore()
-        val prepared = if (repo.botRegistered(botId, sender)) workspace?.prepare(botId, sender, rawInput, update.callback) else null
+        val agentCommand = rawInput?.substringBefore(' ')?.substringBefore('\n')?.substringBefore('@')
+        val isAgent = agentCommand in setOf("/ask", "/ask_status", "/ask_cancel", "/ask_history", "/ask_consent", "/ask_access")
+        val prepared = if (!isAgent && repo.botRegistered(botId, sender)) workspace?.prepare(botId, sender, rawInput, update.callback) else null
         repo.handleBotUpdate(botId, update.id) {
             val user = update.callback?.userId ?: update.message?.userId ?: return@handleBotUpdate
             val chat = update.callback?.chat ?: update.message?.chat ?: return@handleBotUpdate
             val isBot = update.callback?.isBot ?: update.message?.isBot ?: true
             if (isBot || user !in config.allowedUsers || chat.type != "private" || chat.id != user) return@handleBotUpdate
             fun reply(payload: BotPayload) = repo.enqueueBot(botId, "update:${update.id}", user, chat.id, payload)
+            if (isAgent && update.callback == null) {
+                if (repo.botRegistered(botId, user)) reply(agent?.command(dev.radar.agent.AgentOwner(botId, user), agentCommand!!,
+                    rawInput.orEmpty().substringAfter(Regex("\\s").find(rawInput.orEmpty())?.value ?: " ", "").trim(), update.id)
+                    ?: BotPayload("AI-исследования не подключены."))
+                return@handleBotUpdate
+            }
             if (prepared != null && workspace != null) {
                 val result = try { workspace.apply(botId, user, prepared, subscriptions) } catch (_: IllegalArgumentException) { BotPayload("Источник или условия изменились. Начните /find или /watch заново.") }
                 reply(result.copy(editMessageId = update.callback?.messageId))
@@ -80,6 +89,9 @@ class BotUpdateHandler(
                     "/help" -> reply(BotPayload("""/find запрос — поиск в выбранных источниках Telegram или архиве
 /watch — создание подписки с телефона
 /saved — избранное
+/ask вопрос — фоновое AI-исследование
+/ask_status · /ask_cancel · /ask_history — задачи и результаты
+/ask_consent · /ask_access — отдельное согласие и доступ к своей истории в приложении
 /cancel — отменить диалог
 /matches — сохранённые совпадения, кнопки просмотра и отметки прочитанного
 /sources — сохранённые источники

@@ -34,7 +34,9 @@ Telegram Bot API (HTTPS long polling) --> BotService/BotUpdateHandler --> Subscr
 NotificationService --> SQLite bot_outbox --> BotGateway sendMessage
 
 Planned, NOT implemented:
-Optional agent runtime --> allowlisted MCP capabilities / application services
+AgentService --> AgentPort / OpenAiAgentPort (Responses API, opt-in)
+AgentService --> source-scoped CapabilityService
+AgentJobRepository --> separate agent-jobs.sqlite
 ```
 
 The UI, MCP, and bot are **adapters**, not separate implementations of search or monitoring. Higher-level application services own validation and authorization; the gateway owns the underlying Telegram session. Do not use the bot as an indirect way to bypass MCP permissions, or expose a generic `TdApi.Function` executor to agents.
@@ -98,7 +100,7 @@ For sources not joined by the Telegram user, monitoring may depend on bounded hi
 
 `POST /mcp` exposes Streamable HTTP using the official Kotlin MCP SDK. Thirteen read-only tools and one constrained publication-request tool share `CapabilityService` with `POST /api/capabilities/{tool}`. Agents can query status, allowed sources, history, search, message context, local archives, rules, and unsent drafts. They cannot call arbitrary TDLib methods, grant themselves sources, access personal chats, or send from the TDLib user account. Bot publication requests require a separate opted-in recipient permission and confirmation in that private bot chat. Local UI controls the allowlist and enabled state; docs: [`docs/MCP.md`](docs/MCP.md).
 
-MCP is **a tool protocol, not an agent runtime**. The bot calls shared services for deterministic operator commands; it does not call localhost REST or MCP. A future Agent Bridge must retain separate operator authorization, source-scoped agent permissions and out-of-band approval. No natural-language executor exists. The separate proposal is [AGENT_BRIDGE.md](docs/AGENT_BRIDGE.md). BotInboxService reads saved matches with inline navigation and shared read state; MCP reads apply source filters before pagination. Confirmation and result outbox inserts commit atomically. Revoking MCP access cancels pending agent publications, while normal operator Inbox access retains its existing bot allowlist boundary.
+MCP is **a tool protocol, not an agent runtime**. The bot calls shared services for deterministic operator commands; it does not call localhost REST or MCP. AgentService now runs explicit `/ask` jobs with independent operator consent, source snapshots, fixed read-only tools and a separate SQLite repository. OpenAiAgentPort uses Responses tool calling; no shell/CLI executor exists. Its lifecycle and configuration are documented in [AGENT_BRIDGE.md](docs/AGENT_BRIDGE.md). BotInboxService reads saved matches with inline navigation and shared read state; MCP reads apply source filters before pagination. Confirmation and result outbox inserts commit atomically. Revoking MCP access cancels pending agent publications, while normal operator Inbox access retains its existing bot allowlist boundary.
 
 ## Local storage and security boundaries
 
@@ -142,5 +144,21 @@ publication date for exact digest counts/pages. `/saved`, local read-only `/api/
 and source-allowlisted saved-result MCP reads share those records. React shows a
 minimal aggregated review list/status filter without numeric operator IDs. Public
 source revocation/deletion is rechecked after network reads; operator rejection is
-separate from shared match read state. `/ask` remains disabled; only its specification
-was expanded. Existing MCP publication consent operations are preserved.
+separate from shared match read state. `/ask` now starts bounded AI research only after
+separate external-processing consent and production provider configuration. Existing MCP publication consent operations are preserved.
+
+## AI research boundary
+
+AgentService owns one bounded background worker, per-operator concurrency, durable
+job/event identity, cancellation and conservative token/cost reservations. AgentPort
+accepts typed model requests; only OpenAiAgentPort receives the separate API key.
+AgentJobRepository migrates its own `~/.hradar/agent-jobs.sqlite` (v1), leaving the
+research/CRM schema untouched. Restart marks all active jobs INTERRUPTED without
+repeating paid calls. Fixed source-scoped read tools reuse CapabilityService; results
+validate publication references and resolve original links through the existing single
+TDLib client. The initiating operator alone receives result cards through Bot outbox,
+with authorization/source/consent checks again immediately before sending. React uses
+local Host/Origin/CSRF protection and private rotated operator codes for bot histories.
+External consent is independent of `/start`, MCP grants and `/agent_publish`; no AI
+tool can grant access or send messages. Provider and real phone verification remain
+separate from offline evidence in DEV_STATUS.
