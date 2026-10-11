@@ -86,7 +86,7 @@ private class Fixture(limits: AgentLimits = AgentLimits(model = "synthetic-model
 }
 
 class AgentTest {
-    @Test fun queuedHistoryReplyRechecksSourceGrantsAndPermanentFailuresEraseAiPayload() = runBlocking {
+    @Test fun queuedHistoryReplyRechecksSourceGrantsAndPermanentFailuresEraseAiPayload(): Unit = runBlocking {
         Fixture().use { f ->
             f.consent(); f.submit(); f.run()
             repeat(2) { f.time += 2000; f.bot.deliverOnce() }
@@ -115,7 +115,7 @@ class AgentTest {
         assertFailsWith<IllegalArgumentException> { AgentLimits(maxToolCalls = 21) }
         assertFalse(AgentService.safeText("telegram.me/unverified/1 evil.invalid tg://resolve?x=1").contains("telegram.me"))
     }
-    @Test fun toolCallAndTimeLimitsStopResearchAndNeverSendPartialOutput() = runBlocking {
+    @Test fun toolCallAndTimeLimitsStopResearchAndNeverSendPartialOutput(): Unit = runBlocking {
         Fixture(AgentLimits(model = "synthetic", tokenBudget = 100000, inputUsdPerMillion = 0.1, outputUsdPerMillion = 0.1, maxToolCalls = 1)).use { f ->
             f.consent(); f.model.repeatTool = true; f.submit(); f.run()
             assertEquals("TOOL_LIMIT", f.agent.history(owner).single().error)
@@ -128,7 +128,7 @@ class AgentTest {
             assertNull(f.agent.history(owner).single().result)
         }
     }
-    @Test fun periodicWatcherCancelsProviderAfterMcpRevocation() = runBlocking {
+    @Test fun periodicWatcherCancelsProviderAfterMcpRevocation(): Unit = runBlocking {
         Fixture().use { f ->
             f.consent(); val entered = CompletableDeferred<Unit>(); val cancelled = CompletableDeferred<Unit>()
             f.model.before = { entered.complete(Unit); try { awaitCancellation() } finally { cancelled.complete(Unit) } }
@@ -139,7 +139,7 @@ class AgentTest {
             assertTrue(f.fakeBot.sent.isEmpty())
         }
     }
-    @Test fun savedHistorySurvivesRenewedConsentButQueuedDeliveryDoesNot() = runBlocking {
+    @Test fun savedHistorySurvivesRenewedConsentButQueuedDeliveryDoesNot(): Unit = runBlocking {
         Fixture().use { f ->
             f.consent(); f.submit(); f.run()
             val previous = f.agent.history(owner).single()
@@ -158,7 +158,7 @@ class AgentTest {
             assertEquals(55, (first + next).map { it.id }.distinct().size)
         }
     }
-    @Test fun fullBotAgentFakeToolsOutboxScenarioAndUpdateReplay() = runBlocking {
+    @Test fun fullBotAgentFakeToolsOutboxScenarioAndUpdateReplay(): Unit = runBlocking {
         Fixture().use { f ->
             f.consent()
             f.fakeBot.pending = listOf(BotUpdate(1, BotMessage(7, BotChat(7, "private"), "/ask Проанализируй Java remote за последние 7 дней")))
@@ -182,7 +182,7 @@ class AgentTest {
             assertEquals(AgentState.COMPLETED, f.agent.history(owner).single().state)
         }
     }
-    @Test fun denialBeforeConsentAndBeforeAnyPublicationExport() = runBlocking {
+    @Test fun denialBeforeConsentAndBeforeAnyPublicationExport(): Unit = runBlocking {
         Fixture().use { f ->
             assertEquals("CONSENT_REQUIRED", assertFailsWith<AgentFailure> { f.submit() }.code)
             assertEquals("SOURCES_DENIED", assertFailsWith<AgentFailure> { f.agent.setConsent(owner, true, listOf(-2002)) }.code)
@@ -191,7 +191,7 @@ class AgentTest {
             assertTrue(f.model.requests.isEmpty()); assertEquals(0, f.read.reads)
         }
     }
-    @Test fun injectionCannotInvokeUnknownToolsChangeGrantsOrInventLinks() = runBlocking {
+    @Test fun injectionCannotInvokeUnknownToolsChangeGrantsOrInventLinks(): Unit = runBlocking {
         for (tool in listOf("shell", "bot_publish_matches", "prepare_message", "import_history", "set_consent")) Fixture().use { f ->
             f.consent(); f.model.tool = tool; f.submit(); f.run()
             assertEquals("TOOL_DENIED", f.agent.history(owner).single().error)
@@ -204,7 +204,7 @@ class AgentTest {
         }
         assertFalse(AgentService.safeText("See https://evil.invalid/action and t.me/invented/1").contains("https://"))
     }
-    @Test fun sourceScopeIsIntersectedWithSnapshotAndEveryReadRechecksGrants() = runBlocking {
+    @Test fun sourceScopeIsIntersectedWithSnapshotAndEveryReadRechecksGrants(): Unit = runBlocking {
         Fixture().use { f ->
             f.consent(); f.model.arguments = args(chat = "-2002"); f.submit(); f.run()
             assertEquals("SOURCES_DENIED", f.agent.history(owner).single().error)
@@ -216,7 +216,7 @@ class AgentTest {
             assertEquals(0, f.read.reads); assertEquals(0, f.bot.status().delivery.pending)
         }
     }
-    @Test fun concurrentRequestsOnePerOperatorAndBoundedQueue() = runBlocking {
+    @Test fun concurrentRequestsOnePerOperatorAndBoundedQueue(): Unit = runBlocking {
         Fixture().use { f ->
             f.consent()
             val attempts = (1..8).map { async(Dispatchers.Default) { runCatching { f.submit() } } }.awaitAll()
@@ -228,7 +228,7 @@ class AgentTest {
             assertTrue(f.agent.cancel(owner)); assertFalse(f.agent.cancel(owner))
         }
     }
-    @Test fun cancellingProviderCoroutineAndNoDelayedResult() = runBlocking {
+    @Test fun cancellingProviderCoroutineAndNoDelayedResult(): Unit = runBlocking {
         Fixture().use { f ->
             f.consent(); val job = f.submit()
             val entered = CompletableDeferred<Unit>(); val cancelled = CompletableDeferred<Unit>()
@@ -242,7 +242,7 @@ class AgentTest {
             assertEquals(0, f.bot.status().delivery.pending)
         }
     }
-    @Test fun consentRevocationAndOperatorRemovalBlockPendingBotDelivery() = runBlocking {
+    @Test fun consentRevocationAndOperatorRemovalBlockPendingBotDelivery(): Unit = runBlocking {
         Fixture().use { f ->
             f.consent(); f.submit(); f.run(); assertEquals(2, f.bot.status().delivery.pending)
             f.agent.setConsent(owner, false, emptyList())
@@ -255,7 +255,7 @@ class AgentTest {
             assertFailsWith<AgentFailure> { f.agent.history(owner) }
         }
     }
-    @Test fun queuedAndRunningJobsRecoverWithoutRebillingAndPersistHistory() = runBlocking {
+    @Test fun queuedAndRunningJobsRecoverWithoutRebillingAndPersistHistory(): Unit = runBlocking {
         Fixture().use { f ->
             f.consent(); val job = f.submit()
             f.jobs.transition(job.id, setOf(AgentState.QUEUED), AgentState.RUNNING, f.time)
@@ -274,7 +274,7 @@ class AgentTest {
             assertEquals(second.id, f.submit("synthetic-replay").id)
         }
     }
-    @Test fun providerFailuresAreSafeNotRetriedAndBudgetsBoundExecution() = runBlocking {
+    @Test fun providerFailuresAreSafeNotRetriedAndBudgetsBoundExecution(): Unit = runBlocking {
         for (code in listOf("PROVIDER_RATE_LIMITED", "MODEL_UNAVAILABLE", "PROVIDER_AUTH", "PROVIDER_UNAVAILABLE")) Fixture().use { f ->
             f.consent(); f.model.fail = code; f.submit(); f.run(); f.agent.processNext()
             assertEquals(code, f.agent.history(owner).single().error); assertEquals(1, f.model.requests.size)
@@ -288,7 +288,7 @@ class AgentTest {
             assertEquals(1, f.read.reads); assertEquals(AgentState.COMPLETED, f.agent.history(owner).single().state)
         }
     }
-    @Test fun ownerHistoryAccessCodeRotationAndBotAuthorizationAreIsolated() = runBlocking {
+    @Test fun ownerHistoryAccessCodeRotationAndBotAuthorizationAreIsolated(): Unit = runBlocking {
         Fixture().use { f ->
             f.consent(); f.submit(); f.run()
             f.repo.registerBotRecipient(123, 8, 8, f.time)

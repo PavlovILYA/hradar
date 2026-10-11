@@ -28,8 +28,8 @@ VERIFIED:
   Bot histories need a rotated private bearer code; the agent DB persists only its
   hash, while Bot outbox holds the code until delivery/cancellation (permanent failure
   erases its text). React keeps the code in memory. Host/Origin/CSRF/no-store guards cover the local API.
-- `./gradlew :backend:build --console=plain`, JDK 21: exit 0, 93 tests, zero
-  failures/errors/skips (18 new AI tests). Matching Java JAR reused as an ignored local
+- `./gradlew :backend:build --console=plain`, JDK 21: exit 0, 94 tests, zero
+  failures/errors/skips (19 new AI tests). Matching Java JAR reused as an ignored local
   dependency; no JNI loaded. Tests use temporary databases and fake providers/ports.
   Includes Bot → AgentService → fake LLM → tools → Bot outbox; denied consent/sources,
   injection/tool escalation/invalid references, 429/errors, concurrency/queue limits,
