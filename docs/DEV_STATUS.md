@@ -1,5 +1,159 @@
 # hradar — Development status / session handoff
 
+## CRM technical QA audit — 2026-10-11
+
+Branch `feat/recruiting-crm`; PR #4 OPEN. Full report: [CRM_QA_REPORT.md](CRM_QA_REPORT.md).
+
+VERIFIED:
+- Reproduced and fixed actual search defects: swallowed link 429, lost completed
+  sources on later 429, optional-link timeout, linked-template duplicates across
+  pages, stale list template IDs and cross-project matching explanations.
+- Atomic monitoring writes recheck current rules/saved sources. Removing a source
+  during history RPC no longer writes revoked evidence or crashes recovery with FK.
+- React regressions fixed: lost visible unsaved notes/rating, stale monitoring link,
+  criteria caret mutation, delayed open overwriting another project, ineffective
+  column retry, pending-save navigation/repeated submit and misleading link errors.
+- Final isolated JDK 21 backend build: **114 tests, zero failures/errors/skips**,
+  exit 0. v1–v7 migration/reopen matrix, failed-v8 DDL rollback, ten-source full
+  bounded traversal, concurrent continuation and criteria-change races covered.
+- Frontend build exit 0; offline Playwright **31 passed**; real REST/temporary SQLite/
+  production SearchService with fake RPC browser workflow **1 passed** (desktop/mobile).
+- 10k/50k archive and card data: bounded pages/filter/stats/search measured 300/1318 ms
+  aggregate; 50k publications/100k linked notifications: two pages 1206 ms aggregate.
+  These local Intel measurements are not a production latency/ARM64 guarantee.
+- Pushed code head `4c2d018`: [Fast CI 38145471459](https://github.com/PavlovILYA/hradar/actions/runs/38145471459)
+  completed successfully, both jobs green; logs confirm backend build and 31 browser tests.
+- Schema remains v8, no user database operations or live Telegram tests. Live backend
+  class files were not rebuilt; CI/native/AI/MCP/Bot production files unchanged.
+
+NOT VERIFIED: live Telegram cursor changes/rate limits and original links; actual
+in-flight TDLib RPC cancellation. Backend PID 72388 remains `0e833b7`, not restarted.
+Search tokens remain ephemeral and limited to 10k inspected identities per chain;
+matching uses existing 4000-character excerpts. See report for other practical limits.
+
+NEXT ACTION: Review audit commits and final-head Actions in PR #4. Merge is
+recommended only with green final CI; no merge is performed.
+Manual testing needs a normal restart of the single backend, not a competing session.
+
+## Project search and UX checkpoint — 2026-10-11
+
+Branch `feat/recruiting-crm`; PR #4 remains OPEN against master. AI branch/module,
+MCP security, native TDLib and CI workflows were not changed.
+
+VERIFIED:
+- Project search fills up to ten matches by traversing at most five raw pages /
+  fifty publications per step, with a twenty-second source-fetch budget. Required
+  terms remain AND, exclusions NOT, desired terms do not gate matches.
+- Opaque continuations retain the last completed source cursor and seen publication
+  identities. Overlapping pages, unchanged cursors, source/query/project changes,
+  foreign/malformed/restarted continuations, partial failures, 429/FLOOD_WAIT,
+  timeout and parent cancellation have automated coverage.
+- Per-step unique scanned/matched counts, limit/exhaustion state, actual required /
+  desired words and a bounded SQL lookup for already-added publications. Empty
+  selected archive and missing saved sources have distinct states. No schema change:
+  v8 remains current, existing migration/rollback/10,000-card regressions pass.
+- UI orders sources before requirements, explains the next step, distinguishes
+  archive/Telegram and failure/empty/budget states, offers continuation and cancellation,
+  links actual originals and disables duplicate additions. Navigation remains unchanged.
+- JDK 21 `./gradlew -p .tdlib-build/crm-search-check :backend:build`:
+  **96 tests, zero failures/errors/skips**, exit 0. Source copy excludes native,
+  credentials and user databases; live backend class files were not rebuilt.
+- `npm run build --prefix frontend`: exit 0. Offline Playwright on owned port 5175:
+  **23 passed**, including six search UX scenarios and existing sections.
+- `scripts/test-recruitment-browser.sh`: real Ktor routes + temporary SQLite + fake
+  Telegram, **1 passed**. Traverses thirty incomplete archive publications, then
+  fifty Telegram non-matches followed by continuation to the real synthetic match;
+  adds/reviews/moves the card, reloads notes, exercises mobile and archiving.
+  Fixture compilation is now isolated from running backend classes; owned processes
+  exit cleanly. No live Telegram/account/database operation was used for these checks.
+
+NOT VERIFIED: Fresh live Telegram behavior under the new pagination. The existing
+backend PID 72388 still runs the earlier `0e833b7` deployment; it was not restarted
+or queried during this task. Frontend dev server serves working-tree UI changes.
+Continuations are ephemeral (10 minutes, 128 cached states, max 10,000 inspected
+identities per chain), not durable search snapshots. Evidence uses existing 4,000-
+character excerpts; counts are not channel totals. See PR #4 checks for pushed-head CI.
+
+NEXT ACTION: Review PR #4 and its checks. To manually try the new server behavior,
+restart the single existing backend from this branch without starting a competing
+TDLib client, then follow RECRUITMENT_PROJECTS.md. This task deliberately did not
+redeploy against the user's database or merge master.
+
+## CRM runtime deployment — 2026-10-11
+
+VERIFIED: At the user's explicit request, stopped the old backend (PID 54482,
+feat/bot-workspace `2e3f336`, adjacent hradar-feature checkout) and old frontend.
+Confirmed both ports released before starting feat/recruiting-crm `0e833b7` from
+hradar-crm. Reused the existing matching Java/JNI pair and private runtime environment;
+no native rebuild, credential output, session deletion or competing TDLib client.
+
+Created private-permission stopped-database backup
+`~/.hradar/research.pre-crm-v8-20261011-135535.sqlite`; backup integrity check is `ok`.
+Actual v7→v8 migration preserved 8942 imported_messages, one search_template,
+zero matches, one bot_recipient and two publication_decisions. Projects endpoint
+returns HTTP 200 with zero existing projects. Backend PID 72388 listens only on
+127.0.0.1:8080; frontend PID 72372 serves this checkout on 127.0.0.1:5173, including
+Projects.tsx. Health 200; TDLib authorized / connection Ready. No test project,
+Telegram send, join or history import was initiated during deployment.
+
+NOT VERIFIED: User's real project creation/review workflow and fresh live subscription
+notification remain for manual testing. Automated CRM/SQLite/Kanban evidence is below.
+
+NEXT ACTION: Open http://127.0.0.1:5173/, hard-refresh, choose Projects and follow
+RECRUITMENT_PROJECTS.md. Create Senior Java Backend, find/add an existing publication,
+save notes/rating/stage, refresh and verify persistence; compare stages in two projects.
+Do not restore the pre-v8 backup without stopping the backend; restoration would remove
+project work created after this deployment.
+
+## Recruitment CRM checkpoint — 2026-10-11
+
+Branch `feat/recruiting-crm`, based on master `077c974` (Bot PR #2 already merged).
+
+VERIFIED:
+- Typed RecruitmentProjectService and local REST CRUD, ACTIVE/ARCHIVED projects,
+  mandatory/desired/excluded terms, saved source selection and template associations.
+  Shared RecruiterService/SearchService, MatchingService and SubscriptionService;
+  one stable explicit subscription per project, synchronized criteria and archive pause.
+- React Projects list/form/settings and five-stage publication Kanban, notes, rating,
+  manual classification correction with automatic reason, source/technology filters,
+  text/notes search, sorting, statistics and bounded independent column pagination.
+  Archive/Telegram discovery, saved publications and linked-template matches remain
+  distinct; add is manual and duplicate-safe. Same publication has independent project state.
+- SQLite v8 adds four tables and indexes; existing v1/v4/v5/v6/v7 fixtures survive
+  forward migration. Temporary-database restart persistence, injected transaction rollback,
+  duplicate identity, wrong-project/missing-resource denial and 10,000-card pagination pass.
+  Source removal preserves existing cards and blocks new additions from removed sources.
+- Final `./gradlew :backend:build --console=plain` exit 0: **86 tests, 0 failures,
+  0 errors, 0 skipped**, JDK 21 test/toolchain. Existing Java bindings reused locally;
+  no native build or live account used. `npm run build --prefix frontend` exit 0.
+- `npm run test:ci --prefix frontend -- --config playwright.projects.config.ts`
+  exit 0: **17 passed**, with all APIs mocked and owned frontend on 127.0.0.1:5175.
+  `./scripts/test-recruitment-browser.sh` exit 0: **1 passed** against actual Ktor
+  project REST and temporary SQLite, other APIs mocked. Scenario covers create/search/add,
+  notes/rating/classification/stage change, filters, reload, 390px phone controls and archive.
+  Script stops its fixture on 18081 and frontend on 5175; ports verified released.
+- No BotService/BotUpdateHandler/MCP/Agent Bridge/LLM/agent-jobs.sqlite, CI or TDLib build
+  script changes. Existing backend/session and user database were not modified/restarted.
+  `git diff --check` passes. Guide: docs/RECRUITMENT_PROJECTS.md.
+- Feature commit `8972aeb` pushed only to feat/recruiting-crm. [PR #4](https://github.com/PavlovILYA/hradar/pull/4)
+  targets master. [Fast CI 38098840366](https://github.com/PavlovILYA/hradar/actions/runs/38098840366)
+  completed **success** for `8972aeb3664abed288e926b78e96dc3d9f563beb`: frontend production
+  build / 17 offline browser tests and backend pinned/attested Java JAR bootstrap,
+  safeguard tests / Kotlin build and account-free tests. No merge or release.
+
+NOT VERIFIED:
+- Production v7→v8 startup and live project Telegram search/monitoring were deliberately
+  not run against the user's existing session. Live delivery is not established by fixtures.
+- Online/saved excerpts keep the shared 4,000-character limit; full text is in the original.
+  Classification is conservative phrase matching, not semantic understanding. Offset pages
+  can shift under concurrent edits. No drag and drop; accessible select/save controls exist.
+
+NEXT ACTION:
+- Review PR #4; no merge/release is performed or authorized. The documentation follow-up records the verified feature commit/run above.
+- For manual deployment stop the single existing backend, make a stopped-database/SQLite
+  backup, then start this checkout once. Follow docs/RECRUITMENT_PROJECTS.md. Rollback
+  requires restoring the pre-v8 backup, not changing user_version in place.
+
 ## Feature/master integration — 2026-10-11
 
 VERIFIED: Clean feature worktree before `git fetch origin`; merged `origin/master`

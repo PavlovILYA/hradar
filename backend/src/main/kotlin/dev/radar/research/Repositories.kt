@@ -25,7 +25,7 @@ class Repositories(path: Path) : AutoCloseable {
             s.execute("PRAGMA busy_timeout=5000")
             s.execute("PRAGMA journal_mode=WAL")
             val version = s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) }
-            check(version <= 7) { "Database schema is newer than this application" }
+            check(version <= 8) { "Database schema is newer than this application" }
             if (version == 0) transaction {
                 s.execute("CREATE TABLE monitored_channels(id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, data TEXT NOT NULL)")
                 s.execute("CREATE TABLE search_templates(id TEXT PRIMARY KEY, data TEXT NOT NULL)")
@@ -76,6 +76,17 @@ class Repositories(path: Path) : AutoCloseable {
                 s.execute("CREATE INDEX matches_date ON matched_messages(message_date)")
                 s.execute("PRAGMA user_version=7")
             }
+            if (version < 8) transaction {
+                s.execute("CREATE TABLE IF NOT EXISTS recruitment_projects(id TEXT PRIMARY KEY,status TEXT NOT NULL CHECK(status IN ('ACTIVE','ARCHIVED')),name TEXT NOT NULL,data TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL)")
+                s.execute("CREATE TABLE IF NOT EXISTS recruitment_templates(project_id TEXT NOT NULL REFERENCES recruitment_projects(id) ON DELETE CASCADE,template_id TEXT NOT NULL REFERENCES search_templates(id) ON DELETE CASCADE,PRIMARY KEY(project_id,template_id))")
+                s.execute("CREATE TABLE IF NOT EXISTS recruitment_cards(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES recruitment_projects(id) ON DELETE CASCADE,channel_id INTEGER NOT NULL,message_id INTEGER NOT NULL,stage TEXT NOT NULL CHECK(stage IN ('NEW','INTERESTING','CONTACTED','IN_PROGRESS','REJECTED')),interest INTEGER NOT NULL CHECK(interest BETWEEN 0 AND 5),normalized_text TEXT NOT NULL,normalized_notes TEXT NOT NULL,data TEXT NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,UNIQUE(project_id,channel_id,message_id))")
+                s.execute("CREATE INDEX IF NOT EXISTS recruitment_board ON recruitment_cards(project_id,stage,updated_at,id)")
+                s.execute("CREATE INDEX IF NOT EXISTS recruitment_source ON recruitment_cards(project_id,channel_id)")
+                s.execute("CREATE INDEX IF NOT EXISTS recruitment_project_status ON recruitment_projects(status,updated_at,id)")
+                s.execute("CREATE TABLE IF NOT EXISTS recruitment_publications(channel_id INTEGER NOT NULL,message_id INTEGER NOT NULL,data TEXT NOT NULL,PRIMARY KEY(channel_id,message_id))")
+                s.execute("PRAGMA user_version=8")
+            }
+
         }
     }
     private fun <T> transaction(block: () -> T): T {
@@ -123,9 +134,25 @@ class Repositories(path: Path) : AutoCloseable {
         return saved
     }
     @Synchronized fun deleteTemplate(id: String): Boolean = update("DELETE FROM search_templates WHERE id=?", id) > 0
-    @Synchronized fun recordMatch(template: SearchTemplate, message: ResearchMessage): Boolean = transaction {
-        if (this.template(template.id) == null) return@transaction false
-        val record = NotificationRecord(UUID.randomUUID().toString(), template.id, template.name, message)
+    @Synchronized fun recordMatch(template: SearchTemplate, message: ResearchMessage, monitoring: MatchingService? = null): Boolean = transaction {
+        val current = this.template(template.id) ?: return@transaction false
+        val effectiveTemplate = if (monitoring == null) {
+            if (current != template) return@transaction false
+            template
+        } else {
+            // Recheck live rules and source permission in the same transaction as the
+            // notification/outbox write. UI edits/removal may race the worker's snapshot.
+            if (!current.active || !current.subscribed || current.sourceMode == "global" ||
+                message.date < current.subscriptionSince || channels().none { it.id == message.channelId } ||
+                current.sourceMode == "selected" && message.channelId !in current.sources) return@transaction false
+            current
+        }
+        val evidence = if (monitoring == null) message else {
+            val explanation = monitoring.check(effectiveTemplate, message.text)
+            if (!explanation.matches) return@transaction false
+            message.copy(explanation = explanation)
+        }
+        val record = NotificationRecord(UUID.randomUUID().toString(), effectiveTemplate.id, effectiveTemplate.name, evidence)
         val inserted = update("INSERT INTO matched_messages(id,template_id,channel_id,message_id,data,message_date) VALUES(?,?,?,?,?,?) ON CONFLICT(template_id,channel_id,message_id) DO NOTHING", record.id, template.id, message.channelId, message.id, json.encodeToString(record), message.date)
         if (inserted > 0) {
             update("INSERT INTO notifications VALUES(?,0,?)", record.id, System.currentTimeMillis())
@@ -248,7 +275,12 @@ class Repositories(path: Path) : AutoCloseable {
     @Synchronized fun markRead(id: String): Boolean = update("UPDATE notifications SET is_read=1 WHERE id=?", id) > 0
     @Synchronized fun markAllRead() { update("UPDATE notifications SET is_read=1") }
     @Synchronized fun state(channelId: Long): MonitoringState? = rows("SELECT data FROM monitoring_state WHERE channel_id=?", listOf(channelId)) { json.decodeFromString<MonitoringState>(it.getString(1)) }.firstOrNull()
-    @Synchronized fun saveState(state: MonitoringState) { update("INSERT INTO monitoring_state VALUES(?,?) ON CONFLICT(channel_id) DO UPDATE SET data=excluded.data", state.channelId, json.encodeToString(state)) }
+    @Synchronized fun saveState(state: MonitoringState) {
+        // A source can disappear while an IO operation is suspended. Late checkpoints
+        // must neither recreate it nor kill the polling worker with a foreign-key error.
+        update("INSERT INTO monitoring_state SELECT ?,? WHERE EXISTS(SELECT 1 FROM monitored_channels WHERE id=?) ON CONFLICT(channel_id) DO UPDATE SET data=excluded.data",
+            state.channelId, json.encodeToString(state), state.channelId)
+    }
 
     @Synchronized fun historySyncs(): List<HistorySyncRecord> = rows("SELECT data FROM history_sync ORDER BY username") { json.decodeFromString<HistorySyncRecord>(it.getString(1)) }
     @Synchronized fun historySync(channelId: Long): HistorySyncRecord? = rows("SELECT data FROM history_sync WHERE channel_id=?", listOf(channelId)) { json.decodeFromString<HistorySyncRecord>(it.getString(1)) }.firstOrNull()
@@ -275,6 +307,19 @@ class Repositories(path: Path) : AutoCloseable {
         }
         val count = rows("SELECT COUNT(*) FROM imported_messages WHERE channel_id=?", listOf(state.channelId)) { it.getInt(1) }.single()
         state.copy(messageCount = count, updatedAt = System.currentTimeMillis()).also(::writeHistoryState)
+    }
+    /** One aggregate query for the selected sources; never loads the archive. */
+    @Synchronized fun recruitmentArchiveSize(sources: List<Long>): Long {
+        if (sources.isEmpty()) return 0
+        return rows("SELECT COUNT(*) FROM imported_messages WHERE channel_id IN (${sources.joinToString(",") { "?" }})", sources) { it.getLong(1) }.single()
+    }
+    /** A bounded batch lookup, independent of the number of cards on the board. */
+    @Synchronized fun recruitmentAddedKeys(projectId: String, messages: List<ResearchMessage>): List<String> {
+        require(messages.size <= 10)
+        if (messages.isEmpty()) return emptyList()
+        val clauses = messages.joinToString(" OR ") { "(channel_id=? AND message_id=?)" }
+        val args = listOf<Any>(projectId) + messages.flatMap { listOf(it.channelId, it.id) }
+        return rows("SELECT channel_id,message_id FROM recruitment_cards WHERE project_id=? AND ($clauses)", args) { "${it.getLong(1)}:${it.getLong(2)}" }
     }
     @Synchronized fun historyMessages(channelId: Long, limit: Int, before: Long?, query: String): HistoryPage {
         require(limit in 1..100)
@@ -364,6 +409,118 @@ class Repositories(path: Path) : AutoCloseable {
     @Synchronized fun botDeliveryCounts(botId: Long): BotDeliveryCounts {
         val counts = rows("SELECT state,COUNT(*) FROM bot_outbox WHERE bot_id=? GROUP BY state", listOf(botId)) { it.getString(1) to it.getInt(2) }.toMap()
         return BotDeliveryCounts(counts["PENDING"] ?: 0, counts["SENT"] ?: 0, counts["FAILED"] ?: 0)
+    }
+
+    @Synchronized fun recruitmentSubscribe(id: String, expected: RecruitmentProject, subscriptions: SubscriptionService, rule: SearchTemplate): SearchTemplate = atomic {
+        require(project(id) == expected) { "Проект изменился" }
+        val template = subscriptions.save(rule)
+        writeProject(expected.criteria.copy(templateIds = (expected.criteria.templateIds + template.id).distinct()), id)
+        template
+    }
+    @Synchronized fun project(id: String): RecruitmentProject? = rows("SELECT data FROM recruitment_projects WHERE id=?", listOf(id)) { json.decodeFromString<RecruitmentProject>(it.getString(1)) }.firstOrNull()?.let {
+        it.copy(criteria = it.criteria.copy(templateIds = rows("SELECT template_id FROM recruitment_templates WHERE project_id=? ORDER BY template_id", listOf(id)) { r -> r.getString(1) }))
+    }
+    @Synchronized fun projects(limit: Int, offset: Int, status: ProjectStatus?, query: String): ProjectPage {
+        val where = "(? IS NULL OR status=?) AND instr(name,?)>0"
+        val args = listOf(status?.name, status?.name, MatchingService().normalize(query))
+        val total = rows("SELECT COUNT(*) FROM recruitment_projects WHERE $where", args) { it.getInt(1) }.single()
+        val page = rows("SELECT data FROM recruitment_projects WHERE $where ORDER BY updated_at DESC,id LIMIT ? OFFSET ?", args + listOf(limit, offset)) { json.decodeFromString<RecruitmentProject>(it.getString(1)) }
+        // Resolve live links in one bounded batch: cascaded template deletion must not
+        // leave stale IDs in list DTOs that cannot subsequently be saved.
+        val links = if (page.isEmpty()) emptyMap() else rows(
+            "SELECT project_id,template_id FROM recruitment_templates WHERE project_id IN (${page.joinToString(",") { "?" }}) ORDER BY template_id",
+            page.map { it.id }) { it.getString(1) to it.getString(2) }.groupBy({ it.first }, { it.second })
+        return ProjectPage(page.map { it.copy(criteria = it.criteria.copy(templateIds = links[it.id].orEmpty())) }, total)
+    }
+    @Synchronized fun writeProject(input: ProjectInput, id: String? = null): RecruitmentProject = atomic {
+        val old = id?.let { project(it) ?: throw ResourceNotFound() }
+        require(input.sources.all { source -> channels().any { it.id == source } }) { "Источник не сохранён" }
+        require(input.templateIds.all { template(it) != null }) { "Шаблон не найден" }
+        template(recruitmentSubscriptionId(id ?: ""))?.let { owned ->
+            val active = input.status == ProjectStatus.ACTIVE
+            saveValidatedTemplate(owned.copy(name = input.name, required = input.required, any = emptyList(), excluded = input.excluded, telegramQuery = input.required.firstOrNull() ?: input.name, sources = input.sources, active = active && owned.active), MatchingService(), true)
+        }
+        val now = System.currentTimeMillis()
+        val value = RecruitmentProject(id ?: UUID.randomUUID().toString(), input, old?.createdAt ?: now, now)
+        update("INSERT INTO recruitment_projects VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,name=excluded.name,data=excluded.data,updated_at=excluded.updated_at", value.id, input.status.name, MatchingService().normalize(input.name), json.encodeToString(value), value.createdAt, now)
+        update("DELETE FROM recruitment_templates WHERE project_id=?", value.id)
+        input.templateIds.forEach { update("INSERT INTO recruitment_templates VALUES(?,?)", value.id, it) }
+        value
+    }
+    @Synchronized fun deleteProject(id: String): Boolean = atomic {
+        val deleted = update("DELETE FROM recruitment_projects WHERE id=?", id) > 0
+        if (deleted) {
+            val ownedId = recruitmentSubscriptionId(id)
+            val linkedElsewhere = rows("SELECT 1 FROM recruitment_templates WHERE template_id=? LIMIT 1", listOf(ownedId)) { true }.isNotEmpty()
+            if (!linkedElsewhere) template(ownedId)?.let { saveTemplate(it.copy(active = false)) }
+        }
+        deleted
+    }
+    @Synchronized fun recruitmentCard(projectId: String, id: String): RecruitmentCard? = rows("SELECT data FROM recruitment_cards WHERE project_id=? AND id=?", listOf(projectId, id)) { json.decodeFromString<RecruitmentCard>(it.getString(1)) }.firstOrNull()
+    @Synchronized fun addRecruitmentCard(projectId: String, message: ResearchMessage, classification: Classification, expected: RecruitmentProject? = null): RecruitmentCard = atomic {
+        val project = project(projectId) ?: throw ResourceNotFound()
+        require(expected == null || project == expected) { "Проект изменился. Повторите добавление" }
+        require(project.criteria.status == ProjectStatus.ACTIVE) { "Проект архивирован" }
+        require(message.channelId in project.criteria.sources && channels().any { it.id == message.channelId }) { "Источник не разрешён в проекте" }
+        val now = System.currentTimeMillis()
+        val card = RecruitmentCard(UUID.randomUUID().toString(), projectId, message, classification = classification, createdAt = now, updatedAt = now)
+        update("INSERT INTO recruitment_cards VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(project_id,channel_id,message_id) DO NOTHING", card.id, projectId, message.channelId, message.id, card.stage.name, 0, MatchingService().normalize(message.text.orEmpty()), "", json.encodeToString(card), now, now)
+        rows("SELECT data FROM recruitment_cards WHERE project_id=? AND channel_id=? AND message_id=?", listOf(projectId, message.channelId, message.id)) { json.decodeFromString<RecruitmentCard>(it.getString(1)) }.single()
+    }
+    @Synchronized fun updateRecruitmentCard(projectId: String, id: String, input: CardUpdate): RecruitmentCard = atomic {
+        val project = project(projectId) ?: throw ResourceNotFound()
+        require(project.criteria.status == ProjectStatus.ACTIVE) { "Проект архивирован" }
+        val old = recruitmentCard(projectId, id) ?: throw ResourceNotFound()
+        val card = old.copy(stage = input.stage, notes = input.notes, interest = input.interest, manualKind = input.manualKind, updatedAt = System.currentTimeMillis())
+        update("UPDATE recruitment_cards SET stage=?,interest=?,normalized_notes=?,data=?,updated_at=? WHERE project_id=? AND id=?", card.stage.name, card.interest, MatchingService().normalize(card.notes), json.encodeToString(card), card.updatedAt, projectId, id)
+        card
+    }
+    @Synchronized fun deleteRecruitmentCard(projectId: String, id: String): Boolean = atomic {
+        val p = project(projectId) ?: throw ResourceNotFound()
+        require(p.criteria.status == ProjectStatus.ACTIVE) { "Проект архивирован" }
+        update("DELETE FROM recruitment_cards WHERE project_id=? AND id=?", projectId, id) > 0
+    }
+    @Synchronized fun recruitmentCards(projectId: String, limit: Int, offset: Int, stage: RecruitmentStage?, source: Long?, query: String, technology: String, sort: String): CardPage {
+        project(projectId) ?: throw ResourceNotFound()
+        val where = "project_id=? AND (? IS NULL OR stage=?) AND (? IS NULL OR channel_id=?) AND instr(normalized_text || ' ' || normalized_notes,?)>0 AND instr(normalized_text,?)>0"
+        val args = listOf(projectId, stage?.name, stage?.name, source, source, MatchingService().normalize(query), MatchingService().normalize(technology))
+        val total = rows("SELECT COUNT(*) FROM recruitment_cards WHERE $where", args) { it.getInt(1) }.single()
+        val order = when(sort) { "interest" -> "interest DESC,updated_at DESC"; "oldest" -> "created_at ASC"; else -> "updated_at DESC" }
+        val cards = rows("SELECT data FROM recruitment_cards WHERE $where ORDER BY $order,id LIMIT ? OFFSET ?", args + listOf(limit, offset)) { json.decodeFromString<RecruitmentCard>(it.getString(1)) }
+        return CardPage(cards, total)
+    }
+    @Synchronized fun recruitmentMatches(projectId: String, sources: List<Long>, limit: Int, before: Long): ProjectMatchesPage {
+        if (sources.isEmpty()) return ProjectMatchesPage(emptyList())
+        val scope = sources.joinToString(",") { "?" }
+        // Deduplicate before applying the cursor: otherwise an older notification for
+        // another linked template resurfaces the same publication on a later page.
+        val page = rows("""WITH publications AS (
+            SELECT MAX(n.rowid) AS sequence FROM notifications n
+            JOIN matched_messages m ON m.id=n.id JOIN recruitment_templates t ON t.template_id=m.template_id
+            WHERE t.project_id=? AND m.channel_id IN ($scope) GROUP BY m.channel_id,m.message_id
+        ) SELECT m.data,p.sequence FROM publications p JOIN notifications n ON n.rowid=p.sequence
+          JOIN matched_messages m ON m.id=n.id WHERE p.sequence<? ORDER BY p.sequence DESC LIMIT ?""",
+            listOf(projectId) + sources + listOf(before, limit + 1)) { json.decodeFromString<NotificationRecord>(it.getString(1)).message to it.getLong(2) }
+        return ProjectMatchesPage(page.take(limit).map { it.first }, page.take(limit).lastOrNull()?.second?.takeIf { page.size > limit })
+    }
+    @Synchronized fun recruitmentStatistics(projectId: String): ProjectStatistics {
+        project(projectId) ?: throw ResourceNotFound()
+        val counts = rows("SELECT stage,COUNT(*) FROM recruitment_cards WHERE project_id=? GROUP BY stage", listOf(projectId)) { RecruitmentStage.valueOf(it.getString(1)) to it.getInt(2) }.toMap()
+        return ProjectStatistics(counts.values.sum(), RecruitmentStage.entries.associateWith { counts[it] ?: 0 })
+    }
+    @Synchronized fun rememberRecruitmentResults(project: RecruitmentProject, messages: List<ResearchMessage>) = atomic {
+        require(project(project.id) == project) { "Критерии изменились" }
+        require(messages.size <= 10 && messages.all { it.channelId in project.criteria.sources && it.id > 0 })
+        messages.forEach { update("INSERT INTO recruitment_publications VALUES(?,?,?) ON CONFLICT(channel_id,message_id) DO UPDATE SET data=excluded.data", it.channelId, it.id, json.encodeToString(it)) }
+    }
+    /** Resolve only existing local evidence, never accept user-supplied publication text. */
+    @Synchronized fun recruitmentPublication(channelId: Long, messageId: Long): ResearchMessage? {
+        val channel = channels().find { it.id == channelId } ?: return null
+        val archived = rows("SELECT date,text FROM imported_messages WHERE channel_id=? AND message_id=?", listOf(channelId, messageId)) { ResearchMessage(messageId, channelId, it.getInt(1), it.getString(2), channel.title, channel.username) }.firstOrNull()
+        val saved = rows("SELECT data FROM publication_decisions WHERE channel_id=? AND message_id=? ORDER BY sequence DESC LIMIT 1", listOf(channelId, messageId)) { json.decodeFromString<ResearchMessage>(it.getString(1)) }.firstOrNull()
+        val matched = rows("SELECT data FROM matched_messages WHERE channel_id=? AND message_id=? LIMIT 1", listOf(channelId, messageId)) { json.decodeFromString<NotificationRecord>(it.getString(1)).message }.firstOrNull()
+        val found = rows("SELECT data FROM recruitment_publications WHERE channel_id=? AND message_id=?", listOf(channelId, messageId)) { json.decodeFromString<ResearchMessage>(it.getString(1)) }.firstOrNull()
+        return archived?.copy(link = saved?.link ?: matched?.link ?: found?.link) ?: saved ?: matched ?: found
     }
     @Synchronized override fun close() { db.close() }
 }

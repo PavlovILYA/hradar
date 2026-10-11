@@ -48,7 +48,7 @@ class BotTest {
     private fun messageUpdate(id: Long, text: String, user: Long = 7, chat: BotChat = BotChat(user, "private")) = BotUpdate(id, message = BotMessage(user, chat, text))
     private fun callback(id: Long, data: String, user: Long = 7, chat: BotChat = BotChat(user, "private")) = BotUpdate(id, callback = BotCallback("callback-$id", user, chat, data))
     private inner class Fixture(path: Path = database(), cfg: BotConfig = config()) : AutoCloseable {
-        val repo = Repositories(path)
+        val repo = Repositories(path).also { it.saveChannel(channel) }
         val fake = FakeBot()
         var time = System.currentTimeMillis()
         var returnedLink: String? = "https://t.me/synthetic_channel/17"

@@ -23,7 +23,7 @@ data class MatchExplanation(val matches: Boolean, val foundRequired: List<String
 @Serializable
 data class ResearchMessage(val id: Long, val channelId: Long, val date: Int, val text: String?, val title: String, val username: String?, val link: String? = null, val explanation: MatchExplanation? = null)
 @Serializable
-data class SearchRequest(val mode: String = "channel", val query: String = "", val usernames: List<String> = emptyList(), val templateId: String? = null, val limit: Int = 20, val cursor: String = "")
+data class SearchRequest(val mode: String = "channel", val query: String = "", val usernames: List<String> = emptyList(), val templateId: String? = null, val limit: Int = 20, val cursor: String = "", val withLinks: Boolean = true)
 @Serializable
 data class SearchPage(val messages: List<ResearchMessage> = emptyList(), val cursor: String = "", val state: String = "ok", val notice: String? = null)
 @Serializable

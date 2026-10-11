@@ -15,13 +15,13 @@ fun interface RecruiterSearchPort { suspend fun search(request: SearchRequest): 
 
 class RecruiterService(private val repo: Repositories, private val search: RecruiterSearchPort) {
     private val json = Json { encodeDefaults = true }
-    suspend fun find(query: String, mode: String, sources: List<Long>, cursor: String = "", limit: Int = 10): SearchPage {
+    suspend fun find(query: String, mode: String, sources: List<Long>, cursor: String = "", limit: Int = 10, withLinks: Boolean = true): SearchPage {
         require(query.trim().length in 1..256 && limit in 1..10 && cursor.length <= 10000)
         require(mode in setOf("telegram", "archive"))
         val channels = repo.channels().filter { it.id in sources }.sortedBy { it.id }
         require(sources.distinct().size in 1..10 && channels.size == sources.distinct().size)
         require(channels.all { it.id < 0 && it.username.matches(Regex("[a-zA-Z0-9_]{5,32}")) })
-        val result = if (mode == "telegram") search.search(SearchRequest(mode = "tracked", query = query, usernames = channels.map { it.username }, limit = limit, cursor = cursor))
+        val result = if (mode == "telegram") search.search(SearchRequest(mode = "tracked", query = query, usernames = channels.map { it.username }, limit = limit, cursor = cursor, withLinks = withLinks))
         else {
             val ids = channels.map { it.id }
             val state = if (cursor.isEmpty()) ArchiveCursor(query, ids) else try {
