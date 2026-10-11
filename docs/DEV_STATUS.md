@@ -43,15 +43,28 @@ VERIFIED:
 - Official OpenAI function-calling, reasoning replay and data-control documentation
   checked; setup, retention/budgets, rollback and manual acceptance in AGENT_BRIDGE.md.
 
+- GitHub Fast CI [38099047323](https://github.com/PavlovILYA/hradar/actions/runs/38099047323)
+  succeeded at implementation/test commit `e64193b20f100f96a40b7742ac3364e079af95d2`:
+  both independent jobs completed successfully. Job logs confirm 18 offline browser
+  tests and Kotlin `BUILD SUCCESSFUL`; the pinned/attested Java JAR fetch and seven
+  TDLib safeguard tests also passed. Earlier feature runs 38098788274 and 38098946131
+  passed before the final JUnit-discovery correction. No native workflow was changed
+  or run by this task; this is account-free Fast CI, not an ARM64/JNI claim.
+- [PR #3](https://github.com/PavlovILYA/hradar/pull/3) is open to master and GitHub
+  reports MERGEABLE. Feature commits: `4e1e85b` (React), `207f521` (backend/Bot),
+  `41c7710` (guide), `9697125` (history-delivery permissions/sensitive-payload cleanup),
+  `e64193b` (all 19 coroutine tests discoverable). Only feat/ai-research was pushed;
+  no merge, Release, real AI request, test recipient or runtime restart.
+
 NOT VERIFIED:
 - Real provider/account model compatibility, actual usage/billing, semantic recruitment
   quality, genuine Telegram links/phone command/result delivery. No real AI requests,
   real-recipient test messages or secret changes occurred. store=false does not imply
   zero service-side retention; consent text links the provider's actual data controls.
-- GitHub PR/Actions at this checkpoint: pending feature push/PR creation.
 
 NEXT ACTION:
-- Push only feat/ai-research, create PR to master, inspect Fast CI to completion. No merge.
+- Maintainer review of PR #3; no merge is performed by the agent. The final reporting
+  commit changes this handoff only; consult PR checks for its subsequent CI run.
 - For live use: stop/back up the one backend and both DBs, deploy this feature once,
   configure OPENAI_API_KEY/actual model/positive tariffs locally, authorize synthetic
   public sources in MCP, /start → /ask_consent → /ask_access → pair/select/consent in
