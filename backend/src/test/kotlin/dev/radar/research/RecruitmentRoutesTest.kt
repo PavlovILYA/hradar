@@ -40,6 +40,7 @@ class RecruitmentRoutesTest {
             assertEquals(400, client.get("/api/projects/$id/cards?stage=WRONG") { header("Host", "127.0.0.1:8080") }.status.value)
             assertEquals(403, client.post("/api/projects") { header("Host", "127.0.0.1:8080"); contentType(ContentType.Application.Json); setBody(body) }.status.value)
             assertEquals(403, client.get("/api/projects") { header("Host", "evil.example"); header("Origin", "https://evil.example") }.status.value)
+            assertEquals(1, service.list().total, "Denied mutations must not create projects")
             assertEquals(400, client.post("/api/projects") { header("Host", "127.0.0.1:8080"); header("Origin", "http://127.0.0.1:5173"); contentType(ContentType.Application.Json); setBody("{") }.status.value)
             assertEquals(404, client.post("/api/projects/$id/cards") { header("Host", "127.0.0.1:8080"); header("Origin", "http://127.0.0.1:5173"); contentType(ContentType.Application.Json); setBody("""{"channelId":-1001,"messageId":999}""") }.status.value)
             suspend fun search(body: String) = client.post("/api/projects/$id/search") {

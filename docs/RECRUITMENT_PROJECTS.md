@@ -98,7 +98,10 @@ never discarded beyond a full output page. Deduplication uses `(channelId,messag
 across the continuation chain. Stalled/cycling cursors and partial responses stop the
 step immediately. 429/FLOOD_WAIT causes no automatic retry. Fetch timeouts return
 completed matches and retain the last completed cursor; parent cancellation propagates.
-The twenty-second budget bounds source fetches; final SQLite writes are separate.
+Project searches skip automatic optional link RPCs; use the existing original-link button.
+A rate limit on another source preserves completed pages and retries only unfinished
+sources on an explicit continuation. The twenty-second budget bounds source fetches;
+final SQLite writes are separate.
 
 Cursors are opaque random tokens bound to project snapshot, query and mode, with
 10-minute TTL and a cache of at most 128 continuations. Restart, expiration, eviction
@@ -145,7 +148,7 @@ The separate Agent Bridge database is untouched.
   frontend dependencies, matching TDLib Java JAR, JDK 21 toolchain, curl and lsof.
   Compiles in an isolated ignored directory so a running backend’s classes stay untouched.
   Starts a test fixture on loopback 18081 and a frontend on 5175, checks occupied ports,
-  and stops owned fixture processes on exit. It never constructs TdlibGateway.
+  and stops owned fixture processes on exit. It never starts TdlibGateway or loads JNI; SearchService receives fake RPCs.
 
 The integration browser scenario creates the Java project, skips thirty incomplete archive publications,
 then traverses fake Telegram past fifty non-matches using the continuation, finds
@@ -153,3 +156,6 @@ the matching publication, adds a card, changes stage/notes/rating/classification
 on a 390px viewport and archives. Backend tests separately reopen SQLite to verify
 restart persistence and page 10,000 synthetic cards. Live Telegram search/notification
 behavior remains a separate authorized operational check.
+
+See [CRM_QA_REPORT.md](CRM_QA_REPORT.md) for the 2026-10-11 audit, regression evidence
+and verified migration/performance coverage through 50,000 synthetic publications.

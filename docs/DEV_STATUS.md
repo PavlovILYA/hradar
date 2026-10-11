@@ -1,5 +1,38 @@
 # hradar — Development status / session handoff
 
+## CRM technical QA audit — 2026-10-11
+
+Branch `feat/recruiting-crm`; PR #4 OPEN. Full report: [CRM_QA_REPORT.md](CRM_QA_REPORT.md).
+
+VERIFIED:
+- Reproduced and fixed actual search defects: swallowed link 429, lost completed
+  sources on later 429, optional-link timeout, linked-template duplicates across
+  pages, stale list template IDs and cross-project matching explanations.
+- Atomic monitoring writes recheck current rules/saved sources. Removing a source
+  during history RPC no longer writes revoked evidence or crashes recovery with FK.
+- React regressions fixed: lost visible unsaved notes/rating, stale monitoring link,
+  criteria caret mutation, delayed open overwriting another project, ineffective
+  column retry, pending-save navigation/repeated submit and misleading link errors.
+- Final isolated JDK 21 backend build: **114 tests, zero failures/errors/skips**,
+  exit 0. v1–v7 migration/reopen matrix, failed-v8 DDL rollback, ten-source full
+  bounded traversal, concurrent continuation and criteria-change races covered.
+- Frontend build exit 0; offline Playwright **31 passed**; real REST/temporary SQLite/
+  production SearchService with fake RPC browser workflow **1 passed** (desktop/mobile).
+- 10k/50k archive and card data: bounded pages/filter/stats/search measured 300/1318 ms
+  aggregate; 50k publications/100k linked notifications: two pages 1206 ms aggregate.
+  These local Intel measurements are not a production latency/ARM64 guarantee.
+- Schema remains v8, no user database operations or live Telegram tests. Live backend
+  class files were not rebuilt; CI/native/AI/MCP/Bot production files unchanged.
+
+NOT VERIFIED: live Telegram cursor changes/rate limits and original links; actual
+in-flight TDLib RPC cancellation. Backend PID 72388 remains `0e833b7`, not restarted.
+Search tokens remain ephemeral and limited to 10k inspected identities per chain;
+matching uses existing 4000-character excerpts. See report for other practical limits.
+
+NEXT ACTION: Review audit commits and final-head Actions in PR #4. Merge is
+recommended only with green final CI; no merge is performed.
+Manual testing needs a normal restart of the single backend, not a competing session.
+
 ## Project search and UX checkpoint — 2026-10-11
 
 Branch `feat/recruiting-crm`; PR #4 remains OPEN against master. AI branch/module,
