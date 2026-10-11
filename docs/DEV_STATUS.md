@@ -1,5 +1,50 @@
 # hradar — Development status / session handoff
 
+## Recruitment CRM checkpoint — 2026-10-11
+
+Branch `feat/recruiting-crm`, based on master `077c974` (Bot PR #2 already merged).
+
+VERIFIED:
+- Typed RecruitmentProjectService and local REST CRUD, ACTIVE/ARCHIVED projects,
+  mandatory/desired/excluded terms, saved source selection and template associations.
+  Shared RecruiterService/SearchService, MatchingService and SubscriptionService;
+  one stable explicit subscription per project, synchronized criteria and archive pause.
+- React Projects list/form/settings and five-stage publication Kanban, notes, rating,
+  manual classification correction with automatic reason, source/technology filters,
+  text/notes search, sorting, statistics and bounded independent column pagination.
+  Archive/Telegram discovery, saved publications and linked-template matches remain
+  distinct; add is manual and duplicate-safe. Same publication has independent project state.
+- SQLite v8 adds four tables and indexes; existing v1/v4/v5/v6/v7 fixtures survive
+  forward migration. Temporary-database restart persistence, injected transaction rollback,
+  duplicate identity, wrong-project/missing-resource denial and 10,000-card pagination pass.
+  Source removal preserves existing cards and blocks new additions from removed sources.
+- Final `./gradlew :backend:build --console=plain` exit 0: **86 tests, 0 failures,
+  0 errors, 0 skipped**, JDK 21 test/toolchain. Existing Java bindings reused locally;
+  no native build or live account used. `npm run build --prefix frontend` exit 0.
+- `npm run test:ci --prefix frontend -- --config playwright.projects.config.ts`
+  exit 0: **17 passed**, with all APIs mocked and owned frontend on 127.0.0.1:5175.
+  `./scripts/test-recruitment-browser.sh` exit 0: **1 passed** against actual Ktor
+  project REST and temporary SQLite, other APIs mocked. Scenario covers create/search/add,
+  notes/rating/classification/stage change, filters, reload, 390px phone controls and archive.
+  Script stops its fixture on 18081 and frontend on 5175; ports verified released.
+- No BotService/BotUpdateHandler/MCP/Agent Bridge/LLM/agent-jobs.sqlite, CI or TDLib build
+  script changes. Existing backend/session and user database were not modified/restarted.
+  `git diff --check` passes. Guide: docs/RECRUITMENT_PROJECTS.md.
+
+NOT VERIFIED:
+- Production v7→v8 startup and live project Telegram search/monitoring were deliberately
+  not run against the user's existing session. Live delivery is not established by fixtures.
+- GitHub Actions for this branch: pending PR creation and checks at this checkpoint.
+  Online/saved excerpts keep the shared 4,000-character limit; full text is in the original.
+  Classification is conservative phrase matching, not semantic understanding. Offset pages
+  can shift under concurrent edits. No drag and drop; accessible select/save controls exist.
+
+NEXT ACTION:
+- Push only feat/recruiting-crm, create PR to master and inspect its checks; no merge/release.
+- For manual deployment stop the single existing backend, make a stopped-database/SQLite
+  backup, then start this checkout once. Follow docs/RECRUITMENT_PROJECTS.md. Rollback
+  requires restoring the pre-v8 backup, not changing user_version in place.
+
 ## Feature/master integration — 2026-10-11
 
 VERIFIED: Clean feature worktree before `git fetch origin`; merged `origin/master`
