@@ -13,10 +13,11 @@ class BotService(
     private val link: suspend (Long, Long) -> String? = { _, _ -> null },
     private val now: () -> Long = System::currentTimeMillis,
     gatewayFactory: (String) -> BotGateway = ::HttpsBotGateway,
+    workspace: BotWorkspaceService? = null,
 ) : AutoCloseable {
     private val gateway = if (config.enabled) gatewayFactory(config.token!!) else null
     private val botId = config.botId
-    private val handler = BotUpdateHandler(config, repo, subscriptions, statusText, now)
+    private val handler = BotUpdateHandler(config, repo, subscriptions, statusText, now, workspace)
     private val job = SupervisorJob()
     private val scope = CoroutineScope(job + Dispatchers.IO)
     private val started = AtomicBoolean()
@@ -93,12 +94,19 @@ class BotService(
             fail(ex); repo.setBotRetryAt(id, true, now() + retryDelay(ex, pollFailures++))
         }
     }
+    private fun deliveryPermitted(item: BotOutboxItem): Boolean {
+        val payload = item.payload
+        if (!repo.botDeliveryPending(item.id)) return false
+        if (payload.publishRequestId != null && !repo.publishPreviewValid(botId!!, item.userId, payload.publishRequestId, now())) return false
+        return payload.mcpSourceId == null || (repo.botPublishPermitted(item.userId) && repo.mcpEnabled() && repo.mcpSources().any { it.id == payload.mcpSourceId })
+    }
     internal suspend fun deliverOnce() = deliveryLock.withLock {
         val api = gateway ?: return@withLock
         val id = botId ?: return@withLock
         if (fatal || maxOf(repo.botRetryAt(id, false), repo.botRateRetryAt(id)) > now() || repo.botRetryAt(id, true) > now() && identity == null) return@withLock
         val item = repo.nextBotDelivery(id, now()) ?: return@withLock
         if (item.userId !in config.allowedUsers || item.chatId != item.userId) return@withLock
+        if (!deliveryPermitted(item)) { repo.cancelBotDelivery(item.id); return@withLock }
         try {
             verifiedIdentity()
             var payload = item.payload
@@ -107,10 +115,12 @@ class BotService(
                 catch (_: TimeoutCancellationException) { null }
                 catch (ex: CancellationException) { throw ex }
                 catch (_: Exception) { null }
-                payload = payload.copy(text = payload.text + (original?.let { "\n\n$it" } ?: ""), needsLink = false)
+                payload = payload.copy(buttons = payload.buttons + (original?.let { listOf(listOf(BotButton("Оригинал", url = it))) } ?: emptyList()), text = payload.text + (original?.let { "\n\n$it" } ?: ""), needsLink = false)
                 repo.prepareBotDelivery(item.id, payload)
+                if (original != null) repo.rememberPublicationLink(id, item.userId, payload.channelId!!, payload.messageId!!, original)
             }
             currentCoroutineContext().ensureActive()
+            if (!deliveryPermitted(item)) { repo.cancelBotDelivery(item.id); return@withLock }
             val sentId = api.send(item.chatId, payload)
             // Crash after send success but before this commit can redeliver (Bot API has no idempotency key).
             repo.confirmBotDelivery(item.id, sentId)

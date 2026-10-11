@@ -71,16 +71,17 @@ class HttpsBotGateway(private val token: String) : BotGateway {
             }
             val callback = update["callback_query"]?.jsonObject?.let { c ->
                 val from = c.getValue("from").jsonObject
-                BotCallback(c.getValue("id").jsonPrimitive.content, from.getValue("id").jsonPrimitive.long, chat(c["message"]?.jsonObject?.get("chat")?.jsonObject), c["data"]?.jsonPrimitive?.contentOrNull, from["is_bot"]?.jsonPrimitive?.booleanOrNull ?: false)
+                BotCallback(c.getValue("id").jsonPrimitive.content, from.getValue("id").jsonPrimitive.long, chat(c["message"]?.jsonObject?.get("chat")?.jsonObject), c["data"]?.jsonPrimitive?.contentOrNull, from["is_bot"]?.jsonPrimitive?.booleanOrNull ?: false, c["message"]?.jsonObject?.get("message_id")?.jsonPrimitive?.longOrNull?.takeIf { it > 0 })
             }
             BotUpdate(id, message, callback)
         }
     }
-    override suspend fun send(chatId: Long, payload: BotPayload): Long = call("sendMessage", buildJsonObject {
+    override suspend fun send(chatId: Long, payload: BotPayload): Long = call(if (payload.editMessageId == null) "sendMessage" else "editMessageText", buildJsonObject {
+        payload.editMessageId?.let { put("message_id", it) }
         put("chat_id", chatId); put("text", payload.text.take(3500))
         put("link_preview_options", buildJsonObject { put("is_disabled", true) })
-        if (payload.buttons.isNotEmpty()) put("reply_markup", buildJsonObject { put("inline_keyboard", buildJsonArray {
-            payload.buttons.forEach { row -> add(buildJsonArray { row.forEach { b -> add(buildJsonObject { put("text", b.text); put("callback_data", b.callback) }) } }) }
+        if (payload.buttons.isNotEmpty() || payload.editMessageId != null) put("reply_markup", buildJsonObject { put("inline_keyboard", buildJsonArray {
+            payload.buttons.forEach { row -> add(buildJsonArray { row.forEach { b -> add(buildJsonObject { put("text", b.text); if (b.url != null) put("url", verifiedTelegramLink(b.url) ?: throw BotApiException(400)) else put("callback_data", b.callback) }) } }) }
         }) })
     }).jsonObject.getValue("message_id").jsonPrimitive.long
     override suspend fun answerCallback(id: String, text: String) { call("answerCallbackQuery", buildJsonObject { put("callback_query_id", id); put("text", text.take(150)) }) }

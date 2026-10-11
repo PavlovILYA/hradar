@@ -12,7 +12,7 @@ Build a local-first recruiting workspace centered on **explicitly permitted Tele
 - [x] Online Telegram channel search and SQLite-only archive search with separate UI modes.
 - [x] Rule templates (AND/OR/NOT), selected sources, persisted subscriptions, monitored matches and in-app/browser notifications.
 - [x] Controlled full-history import: limits, pause/resume, cursor persistence, deduplication and rate-limit handling.
-- [x] Read-only, source-allowlisted MCP server with nine tools and corresponding typed REST capabilities.
+- [x] Source-allowlisted MCP server with thirteen reads and one constrained publication-request tool and corresponding typed REST capabilities.
 - [x] Optional Bot API notifications and `/start`, `/status`, `/subscriptions`, `/pause`, `/resume` operator controls; fake-API verified, real phone delivery still requires manual verification.
 - [x] Split GitHub workflows for fast CI and native macOS ARM64 TDLib/JNI builds.
 
@@ -41,7 +41,7 @@ Build a local-first recruiting workspace centered on **explicitly permitted Tele
 **First stage implemented:** separate **Bot API** adapter alongside TDLib, with `getUpdates` long polling, durable SQLite outbox and explicit allowlisted private-chat opt-in. Manual real-bot verification is still pending; see [BOT.md](docs/BOT.md).
 
 - Deliver rule-match notifications to an **opted-in, allowlisted Telegram user ID** in a private bot chat, with publication link/short excerpt and deduplication.
-- Implemented `/start`, `/status`, `/subscriptions`, `/pause`, `/resume` and paginated inline controls through shared SubscriptionService. `/sources` and `/matches` remain future work.
+- Implemented `/start`, `/status`, `/subscriptions`, `/pause`, `/resume` and paginated inline controls through shared SubscriptionService. `/sources`, `/matches`, `/digest`, `/help`, inline publication navigation/read/original-link controls and separately consented MCP publication requests are implemented; live verification remains pending.
 - Use durable delivery queue/retry/backoff; never leak unapproved private conversations or secrets through bot messages.
 - Enforce operator identity; bot tokens are separate from the TDLib user session. If the Mac is asleep/offline, there is **no live delivery** until it comes back.
 
@@ -50,8 +50,8 @@ Build a local-first recruiting workspace centered on **explicitly permitted Tele
 ## Later — P3 AI-enabled workflows
 
 - Enhance MCP with high-level **recruiting** use cases (e.g. search project matches, list review queue, prepare candidate notes), scoped to approved sources and existing records.
-- Add `bot_send_notification` or `bot_publish_results` as constrained application operations, **not** a generic arbitrary-chat sender.
-- Explore a separately bounded agent runtime for free-text bot requests; MCP exposes tools but does not start or execute an AI model itself.
+- [x] `bot_publish_matches` requests bounded saved matches from permitted sources, with separate recipient permission and per-request human confirmation. No generic arbitrary-chat sender.
+- Agent Bridge proposal: [AGENT_BRIDGE.md](docs/AGENT_BRIDGE.md); no executor implemented. Explore a separately bounded agent runtime for free-text bot requests; MCP exposes tools but does not start or execute an AI model itself.
 - Require explicit, out-of-band approval for user-account writes, candidate outreach, new data sources and privileged agent actions. No default autonomous personal-chat access or shell execution.
 - Before using external AI on Telegram content, review platform terms, privacy basis/consent, data retention and what is transmitted to a model provider.
 
@@ -74,3 +74,18 @@ Build a local-first recruiting workspace centered on **explicitly permitted Tele
 ## How to choose the next task
 
 Prefer the **smallest vertical slice** with an observable user outcome. For each milestone: write acceptance criteria, implement behind shared domain services, test with fakes first, perform a limited real integration check if authorized, and record what was actually verified. Split unrelated features into separate commits/PRs. New ideas go here only after review, not automatically into the next Codex prompt.
+
+## Current priority — mobile recruiter workflow
+
+Implemented in `feat/bot-workspace`: `/find` with explicit Telegram/SQLite source
+choice and bounded cards; `/watch` form/preview/confirmation through shared template
+services; per-operator saved/rejected publications with minimal React review; and
+period-based real-match `/digest`. Shared read-only saved-result MCP operations
+support later Agent Bridge work. The previous `bot_publish_matches` gate is preserved
+but no longer drives the product milestone. `/ask` runtime is specified, not enabled.
+
+Acceptance is the phone path find → review → save → watch → React template → fresh
+notification → digest. Automated fake-port checks cover this application path; real
+Telegram search, actual phone notification/display and OS/browser behavior require
+separate manual evidence in DEV_STATUS. No broad ATS, AI matching, shell bridge or
+private-chat access is introduced.

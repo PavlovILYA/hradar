@@ -38,9 +38,9 @@ class McpCapabilityTest {
     private fun args(text: String) = Json.parseToJsonElement(text).jsonObject
     private fun allow(repo: Repositories) { repo.setMcpEnabled(true); repo.allowMcpSource(channel) }
 
-    @Test fun registrationAndSchemasExposeExactlyNineBoundedReadOnlyOperations() {
-        assertEquals(9, McpTools.definitions.size)
-        assertEquals(9, McpTools.definitions.map { it.name }.toSet().size)
+    @Test fun registrationAndSchemasExposeBoundedOperationsWithOneConfirmationRequest() {
+        assertEquals(14, McpTools.definitions.size)
+        assertEquals(14, McpTools.definitions.map { it.name }.toSet().size)
         McpTools.definitions.forEach {
             assertEquals("object", it.schema["type"]!!.jsonPrimitive.content)
             it.schema["required"]!!.jsonArray.forEach { field -> assertTrue(field.jsonPrimitive.content in it.schema["properties"]!!.jsonObject) }
@@ -48,6 +48,60 @@ class McpCapabilityTest {
             assertTrue(it.description.contains("untrusted"))
         }
         assertFalse(McpTools.definitions.any { it.name.contains("send") || it.name.contains("execute") || it.name.contains("grant") })
+    }
+    @Test fun recentMatchesDetailsAndPublishRespectAllowlistAndSeparatePermission() = runBlocking {
+        repo().use { repo ->
+            val denied = MonitoredChannel(-1002, "synthetic_denied", "Denied")
+            val rule = repo.saveTemplate(SearchTemplate(name = "Synthetic rule", telegramQuery = "Java"))
+            repo.recordMatch(rule, ResearchMessage(1, channel.id, 1700000000, "Synthetic Java", channel.title, channel.username))
+            repo.recordMatch(rule, ResearchMessage(2, denied.id, 1700000000, "Denied content", denied.title, denied.username))
+            val records = repo.notifications()
+            val permitted = records.single { it.message.channelId == channel.id }.id
+            val hidden = records.single { it.message.channelId == denied.id }.id
+            val fake = Fake(channel); val service = CapabilityService(fake, repo)
+            allow(repo)
+            val page = service.call("list_recent_matches", args("{}"))
+            assertTrue(page.ok); assertFalse(page.data.toString().contains("Denied"))
+            assertEquals(1, page.data!!["matches"]!!.jsonArray.size)
+            assertEquals("ACCESS_DENIED", service.call("get_match_details", args("""{"matchId":"$hidden"}""")).error!!.code)
+            assertTrue(service.call("get_match_details", args("""{"matchId":"$permitted"}""")).ok)
+            assertEquals("INVALID_ARGUMENTS", service.call("list_recent_matches", args("""{"limit":51}""")).error!!.code)
+            val publishArgs = args("""{"recipientUserId":7,"matchIds":["$permitted"]}""")
+            assertEquals("ACCESS_DENIED", service.call("bot_publish_matches", publishArgs).error!!.code)
+            repo.configureBot(123, setOf(7)); repo.registerBotRecipient(123, 7, 7, 1700000000000)
+            repo.allowBotPublish(123, 7, true)
+            val request = service.call("bot_publish_matches", publishArgs)
+            assertTrue(request.ok); assertEquals("AWAITING_USER_CONFIRMATION", request.data!!["state"]!!.jsonPrimitive.content)
+            assertEquals(1, repo.botDeliveryCounts(123).pending)
+            assertEquals("ACCESS_DENIED", service.call("bot_publish_matches", args("""{"recipientUserId":7,"matchIds":["$hidden"]}""")).error!!.code)
+            assertEquals("INVALID_ARGUMENTS", service.call("bot_publish_matches", args("""{"recipientUserId":7,"matchIds":["$permitted"],"text":"arbitrary"}""")).error!!.code)
+            repo.revokeMcpSource(channel.id)
+            assertEquals(0, repo.botDeliveryCounts(123).pending)
+            assertEquals("ACCESS_DENIED", service.call("get_match_details", args("""{"matchId":"$permitted"}""")).error!!.code)
+            assertEquals(0, fake.calls)
+        }
+    }
+    @Test fun savedResultsRemainReadOnlySourceScopedAndHideOperatorIdentity() = runBlocking {
+        repo().use { repo ->
+            repo.saveChannel(channel)
+            val other = MonitoredChannel(-1002, "synthetic_hidden", "Hidden source"); repo.saveChannel(other)
+            repo.configureBot(123, setOf(7)); repo.registerBotRecipient(123, 7, 7, 1700000000000)
+            val message = ResearchMessage(1, channel.id, 1700000000, "Synthetic saved java", channel.title, channel.username)
+            repo.decidePublication(123, 7, message, "SAVED")
+            repo.decidePublication(123, 7, message, "SAVED")
+            repo.decidePublication(123, 7, message.copy(id = 2, channelId = other.id, text = "Hidden saved"), "SAVED")
+            allow(repo)
+            val fake = Fake(channel); val service = CapabilityService(fake, repo)
+            val page = service.call("list_saved_results", args("""{"limit":1}"""))
+            assertTrue(page.ok); assertFalse(page.data.toString().contains("Hidden")); assertFalse(page.data.toString().contains("userId"))
+            val id = page.data!!["items"]!!.jsonArray.single().jsonObject["id"]!!.jsonPrimitive.content
+            assertTrue(service.call("get_saved_result", args("""{"resultId":"$id"}""")).ok)
+            repo.decidePublication(123, 7, message, "REJECTED")
+            assertEquals("ACCESS_DENIED", service.call("get_saved_result", args("""{"resultId":"$id"}""")).error!!.code)
+            assertTrue(service.call("list_saved_results", args("{}")).data!!["items"]!!.jsonArray.isEmpty())
+            assertEquals("INVALID_ARGUMENTS", service.call("list_saved_results", args("""{"status":"REJECTED"}""")).error!!.code)
+            assertEquals(0, fake.calls)
+        }
     }
     @Test fun disabledUnlistedAndPrivateChatsCannotReachTelegram() = runBlocking {
         repo().use { repo ->
@@ -116,7 +170,15 @@ class McpCapabilityTest {
             val initialized = rpc("initialize","""{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1"}}""")
             assertEquals(HttpStatusCode.OK,initialized.status)
             val listed = args(rpc("tools/list").bodyAsText())["result"]!!.jsonObject["tools"]!!.jsonArray
-            assertEquals(9,listed.size)
+            assertEquals(14,listed.size)
+            listed.forEach { item ->
+                val tool = item.jsonObject
+                assertEquals(tool["name"]!!.jsonPrimitive.content != "bot_publish_matches", tool["annotations"]!!.jsonObject["readOnlyHint"]!!.jsonPrimitive.boolean)
+            }
+            val emptyMatches = args(rpc("tools/call", """{"name":"list_recent_matches","arguments":{}}""").bodyAsText())["result"]!!.jsonObject
+            assertTrue(emptyMatches["structuredContent"]!!.jsonObject["ok"]!!.jsonPrimitive.boolean)
+            val blockedPublish = args(rpc("tools/call", """{"name":"bot_publish_matches","arguments":{"recipientUserId":7,"matchIds":["00000000-0000-0000-0000-000000000000"]}}""").bodyAsText())["result"]!!.jsonObject
+            assertTrue(blockedPublish["isError"]!!.jsonPrimitive.boolean)
             val mcp = args(rpc("tools/call","""{"name":"get_telegram_status","arguments":{}}""").bodyAsText())["result"]!!.jsonObject["structuredContent"]!!.jsonObject
             val rest = client.post("/api/capabilities/get_telegram_status") { header(HttpHeaders.Host,"127.0.0.1:8080"); contentType(ContentType.Application.Json); setBody("{}") }
             assertEquals(mcp,args(rest.bodyAsText()))

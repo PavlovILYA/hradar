@@ -377,7 +377,7 @@ test('MCP settings require explicit enable and source grants and reuse the capab
       enabled = route.request().postDataJSON().enabled;
       return route.fulfill({ json: { enabled } });
     }
-    return route.fulfill({ json: { enabled, endpoint: 'http://127.0.0.1:8080/mcp', tools: [{ name: 'get_telegram_status', description: 'Read safe status' }, { name: 'prepare_message', description: 'Never sends' }], allowedSources: allowed ? [source] : [], availableSources: [source], csrfToken: 'synthetic-csrf', readOnly: true } });
+    return route.fulfill({ json: { enabled, endpoint: 'http://127.0.0.1:8080/mcp', tools: [{ name: 'get_telegram_status', description: 'Read safe status' }, { name: 'prepare_message', description: 'Never sends' }, { name: 'bot_publish_matches', description: 'Requires recipient permission and confirmation' }], allowedSources: allowed ? [source] : [], availableSources: [source], csrfToken: 'synthetic-csrf', readOnly: false } });
   });
   await page.route('**/api/integrations/mcp/sources', route => {
     expect(route.request().headers()['x-hradar-csrf']).toBe('synthetic-csrf');
@@ -397,7 +397,8 @@ test('MCP settings require explicit enable and source grants and reuse the capab
   await page.getByRole('button', { name: 'Проверить Telegram через общий API' }).click();
   await expect(page.getByText('Telegram: Ready · Ready')).toBeVisible(); expect(statusCalls).toBe(1);
   await expect(page.locator('.mcp-integration pre')).toContainText('codex mcp add hradar --url http://127.0.0.1:8080/mcp');
-  await expect(page.locator('.mcp-integration summary')).toHaveCount(2);
+  await expect(page.locator('.mcp-integration summary')).toHaveCount(3);
+  await expect(page.getByText(/Чтение и запросы публикации с подтверждением/)).toBeVisible();
   await page.getByRole('button', { name: 'Отключить MCP-доступ' }).click();
   await expect(page.getByText('MCP выключен', { exact: true })).toBeVisible();
 });
@@ -420,4 +421,42 @@ test('bot integration shows optional configuration and persistent delivery statu
   await expect(panel.getByText(/Повторная попытка не раньше/)).toBeVisible();
   await page.getByRole('button', { name: 'Поиск в Telegram', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Поиск в Telegram', exact: true })).toBeVisible();
+});
+
+
+test('saved publications display bot decisions, statuses and bounded pagination', async ({ page }) => {
+  let pages = 0;
+  await page.route('**/api/saved?**', route => {
+    const url = new URL(route.request().url());
+    const status = url.searchParams.get('status');
+    const older = url.searchParams.has('before');
+    pages++;
+    return route.fulfill({ json: { items: [{ id: older ? 'synthetic-older' : 'synthetic-new', status, sequence: older ? 1 : 2, updatedAt: 1700000000000, message: { id: older ? 1 : 2, channelId: -1001, date: 1700000000, text: status === 'REJECTED' ? 'Synthetic rejected publication' : older ? 'Synthetic older saved publication' : 'Synthetic saved publication', title: 'Synthetic jobs', username: 'synthetic_jobs', link: 'https://t.me/synthetic_jobs/2' } }], nextCursor: !older && status === 'SAVED' ? 2 : null } });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Избранное', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Избранное и решения' })).toBeVisible();
+  await expect(page.getByText('Synthetic saved publication', { exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Открыть оригинал ↗' })).toHaveAttribute('href', 'https://t.me/synthetic_jobs/2');
+  await page.getByRole('button', { name: 'Ещё сохранённые публикации' }).click();
+  await expect(page.getByText('Synthetic older saved publication', { exact: true })).toBeVisible();
+  await page.getByLabel('Статус публикаций').selectOption('REJECTED');
+  await expect(page.getByText('Synthetic rejected publication', { exact: true })).toBeVisible();
+  await expect(page.getByText('Synthetic older saved publication', { exact: true })).not.toBeVisible();
+  expect(pages).toBe(3);
+  await page.getByRole('button', { name: 'Поиск в Telegram', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Избранное и решения' })).not.toBeVisible();
+});
+
+
+test('subscriptions created in the bot become visible through the shared template refresh', async ({ page }) => {
+  let created = false;
+  await page.route('**/api/templates', route => route.fulfill({ json: created ? [{ id: 'synthetic-bot-rule', name: 'Synthetic phone subscription', required: ['java'], any: [], excluded: ['junior'], telegramQuery: 'java', sourceMode: 'selected', sources: [-1001], active: true, subscribed: true }] : [] }));
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Шаблоны', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Обновить подписки' })).toBeVisible();
+  created = true;
+  await page.getByRole('button', { name: 'Обновить подписки' }).click();
+  await expect(page.getByText('Synthetic phone subscription', { exact: true })).toBeVisible();
+  await expect(page.getByText(/Мониторинг включён/)).toBeVisible();
 });

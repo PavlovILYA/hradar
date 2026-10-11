@@ -16,7 +16,7 @@ import kotlinx.serialization.json.*
 import java.security.SecureRandom
 import java.util.Base64
 
-@Serializable data class IntegrationConfig(val enabled: Boolean, val endpoint: String, val tools: List<ToolInfo>, val allowedSources: List<MonitoredChannel>, val availableSources: List<MonitoredChannel>, val csrfToken: String, val readOnly: Boolean = true)
+@Serializable data class IntegrationConfig(val enabled: Boolean, val endpoint: String, val tools: List<ToolInfo>, val allowedSources: List<MonitoredChannel>, val availableSources: List<MonitoredChannel>, val csrfToken: String, val readOnly: Boolean = false)
 @Serializable data class EnableInput(val enabled: Boolean)
 @Serializable data class GrantInput(val username: String, val allowed: Boolean)
 

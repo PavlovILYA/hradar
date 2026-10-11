@@ -1,5 +1,29 @@
 # hradar — Development status / session handoff
 
+## Feature/master integration — 2026-10-11
+
+VERIFIED: Clean feature worktree before `git fetch origin`; merged `origin/master`
+(`44828cf`, maintainer merge of CI PR #1) into `feat/bot-workspace` only. The sole
+conflict was this handoff; both CI bootstrap and current mobile Bot/MCP reports are
+preserved below. Historical deployment, missing-pin and approval statements refer
+to their original checkpoints. Imported workflow/config/CI documentation match
+master exactly; no TDLib build scripts were edited.
+
+Local checks: `git diff --check` and staged check pass; no unmerged files or conflict
+markers. `./gradlew -p .tdlib-build/merge-check :backend:build --console=plain` exited
+0: 75 tests, zero failures/errors/skips. Source copy stays inside this worktree,
+uses the existing Java JAR and excludes credentials, JNI and sessions; it avoids
+recompiling classes used by the running backend. React production build exited 0;
+offline Playwright passed all 16 tests using an owned frontend on port 5174 and
+mocked APIs. Temporary Playwright config removed. Existing backend was not restarted;
+no second backend, TDLib rebuild, user SQLite/session changes or merge into master.
+
+NOT VERIFIED at commit time: PR #2 Actions for this merge commit; pending push.
+Phone verification gaps from the mobile checkpoint remain unchanged.
+
+NEXT ACTION: Push only the feature branch, verify PR #2 is mergeable and inspect
+its Fast CI frontend/backend jobs to completion. No PR merge is authorized.
+
 ## CI bootstrap checkpoint — 2026-10-11
 
 Worktree `/Users/pavlov/Projects/hradar-ci`, branch `ci/tdlib-bootstrap` only.
@@ -7,7 +31,7 @@ Worktree `/Users/pavlov/Projects/hradar-ci`, branch `ci/tdlib-bootstrap` only.
 - **VERIFIED:** GitHub native run [38045478478](https://github.com/PavlovILYA/hradar/actions/runs/38045478478)
   succeeded at `ce6363e9da5d1d7bf2069241f8738ad4303b18ce` on master, including
   ARM64/JNI checks, Kotlin tests, provenance creation and artifact upload.
-  Artifact `11667860623` is available until 2027-01-08. Latest Fast run
+  Artifact `11667860623` is available until 2027-01-08. Earlier Fast run
   [38050957209](https://github.com/PavlovILYA/hradar/actions/runs/38050957209)
   passed frontend; backend log shows bootstrap guard exit 1 before Kotlin build.
   Downloaded artifact via authenticated CLI. Both SHA256 values match SHA256SUMS/metadata;
@@ -35,16 +59,152 @@ Worktree `/Users/pavlov/Projects/hradar-ci`, branch `ci/tdlib-bootstrap` only.
   concluded success: frontend production build and 14 offline Playwright tests;
   backend verified Release fetch, seven Python safeguard tests, Kotlin build and
   account-free unit tests (`BUILD SUCCESSFUL in 1m 15s`). No check was bypassed.
-- **NOT VERIFIED:** master Fast CI with these pins (no merge performed).
+- **NOT VERIFIED at the CI checkpoint:** master Fast CI with these pins (no merge performed in that task).
   Intel local checks do not replace the GitHub ARM64 JNI smoke test; ARM64 JNI
   was not loaded locally. No TDLib rebuild, backend startup, master modification
   or merge occurred. Application processes in other worktrees were left untouched.
-- **NEXT ACTION:** maintainer review of [PR #1](https://github.com/PavlovILYA/hradar/pull/1)
+- **NEXT ACTION at that checkpoint:** maintainer review of [PR #1](https://github.com/PavlovILYA/hradar/pull/1)
   from ci/tdlib-bootstrap to master. Bootstrap is verified on the feature branch;
   merge remains a separate maintainer action, outside agent authorization.
 
-The product runtime handoff below is preserved; its previous native-CI blocker
-is superseded by the evidence above.
+PR #1 has since been merged by the maintainer into master (`44828cf`). Its changes
+are being integrated into the Bot feature branch; no merge into master is performed
+by this task. Historical bootstrap guards and missing-pin statements below are
+superseded by the published Release and committed hashes above.
+
+## Mobile recruiter checkpoint — 2026-10-11
+
+This checkpoint supersedes runtime and task status below. Branch `feat/bot-workspace`;
+previous Inbox work preserved in `dfa8aa0` and `b5fbcdd`. Feature push authorized;
+no master merge, CI configuration or TDLib build-script changes.
+
+VERIFIED:
+- `/find` reuses SearchService/TDLib for saved public sources and existing SQLite
+  archive reads. Explicit mode/source selection, ten results per page, five-page
+  budget, navigation, original links, per-operator save/reject and watch creation.
+  No claim of global Telegram coverage. Archive query is a literal phrase.
+- `/watch` persists the dialog, previews and confirms a genuine SearchTemplate via
+  SubscriptionService. React refreshes shared templates on opening its tab and with
+  “Обновить подписки”. `/saved` and React “Избранное” expose durable decisions.
+- SQLite v7 preserves archive/templates/recipients, adds unique operator/publication
+  decisions, expiring bot workspace and match publication dates. Rejects suppress
+  untreated results and future notification of that publication for that operator.
+  Digest uses actual matches for today/rolling seven days; read state remains shared.
+- Read-only MCP `list_saved_results`/`get_saved_result` enforce the existing source
+  grants. There are 14 tools including the preserved separately consented publication
+  tool. `/ask` remains unconnected; isolated-runtime specification in AGENT_BRIDGE.md.
+- Backend build exit 0: 75 tests, zero failures/errors. Built an isolated copy with
+  identical backend sources and existing matching TDLib JAR, without credentials,
+  native session or a second backend. Tests use fake BotGateway/Telegram and temporary
+  SQLite, covering migrations, bounded pagination, duplicate save/events, rejection,
+  stale callbacks, cancellation/restart, denied access and transaction rollback.
+- React production build exit 0. Offline Playwright: 16 passed. Temporary config used
+  an owned frontend at 127.0.0.1:5174 with mocked APIs; removed after verification.
+- Stopped old backend/frontend before deployment, backed up SQLite privately at
+  `~/.hradar/research.pre-mobile-v7-*.sqlite`, then started this checkout. Exactly one
+  backend listens at 127.0.0.1:8080 (PID 54482); frontend at 127.0.0.1:5173.
+  Health 200, TDLib authorized/Ready, Bot API running with successful polling.
+  Actual v6→v7 migration preserved 8942 archive messages, one template and one bot
+  recipient. Real bounded `java` search in one saved public source returned five
+  Telegram results with next cursor; archive returned five of 1681 matches.
+  Live saved endpoint and browser view respond correctly with empty saved state.
+
+NOT VERIFIED:
+- No real phone command/callback or outgoing test message was initiated. Complete
+  phone workflow, newly created real subscription, fresh matching publication delivery
+  and period digest navigation require operator verification. Current match count is
+  zero; fake-port notification evidence does not establish real phone delivery.
+- No Codex/AI runtime is executed from Telegram. Agent Bridge remains a specification.
+
+NEXT ACTION:
+- In the registered private bot chat send `/find java`, choose Telegram and a saved
+  public source, navigate and save a card; check `/saved` and React “Избранное”.
+- Use `/watch`, complete the fields/source selection and confirm the preview. Open
+  React “Шаблоны” or press “Обновить подписки”; verify the same active subscription.
+- Personally publish a new matching post in an authorized monitored test source;
+  verify the existing notification arrives, then `/digest` today/seven days and open
+  the match. Use `/help` and docs/BOT.md for cancellation and limits.
+- For rollback stop the backend and restore the stopped-database backup before
+  running an older binary; do not downgrade v7 in place or run a second TDLib client.
+
+## Runtime follow-up — 2026-10-11 (historical)
+
+VERIFIED: User reported new commands unavailable. Listener PID 68501 was still the
+old adjacent `hradar` checkout; its live MCP listing had nine tools. Stopped that
+backend with SIGTERM, verified port release, created a private-permission SQLite
+backup (`~/.hradar/research.pre-inbox-*.sqlite`) and started exactly one backend from
+`feat/bot-workspace` at `dfa8aa0` (listener PID 50722). Existing ignored local config
+and compatible JNI were reused; no native build or tracked scripts were changed.
+`/health`=200; live MCP lists 12 tools including the three new operations; Bot API
+state=running, no notice, successful poll recorded; TDLib authorization/connection
+Ready. Production migration to v6 preserved 8,942 archive messages, one template,
+one bot recipient and the prior match/source counts. There are currently zero saved
+matches and zero MCP source grants; empty Inbox is expected, not a search failure.
+
+NOT VERIFIED: Phone display and new command/callback responses still require the
+operator to send commands. No ad-hoc outgoing message or competing getUpdates was
+issued during diagnosis. Earlier statements below that this branch was not deployed
+refer to the preceding checkpoint and are superseded by this runtime follow-up.
+
+NEXT ACTION: In the existing registered private bot chat, resend `/help`, `/sources`,
+`/matches`. To populate Inbox, enable monitoring and personally publish a fresh
+matching post in an authorized test source. MCP match reads additionally need explicit
+source grants. No push or merge.
+
+
+Historical checkpoint: 2026-10-11, Telegram Inbox and safe MCP publication, branch
+`feat/bot-workspace`, based on `ae7b322`. No push, merge, CI/script changes or backend
+restart. Previous checkpoint evidence is retained below as historical context.
+
+## VERIFIED — previous Inbox task (historical)
+- `/matches`, `/sources`, `/digest`, `/help`, inline saved-publication navigation,
+  read marking shared with React, and verified original-link buttons implemented.
+  Normal navigation edits the current bot card through the existing durable outbox;
+  proposal review opens separate cards to preserve confirmation controls.
+- MCP has 12 registered operations: eleven reads, including `list_recent_matches`
+  and `get_match_details`, plus non-read-only `bot_publish_matches`. Reads filter
+  saved matches by the existing source allowlist before pagination; no Telegram
+  call is needed. Structured match text is clipped to 2000 characters.
+- Publication accepts only 1–10 existing allowed match IDs for a registered operator.
+  Separate `/agent_publish on` and per-request private-chat confirmation required.
+  Ten-minute expiry, recipient binding, three-request budget, transactional outbox
+  creation, replay protection and restart persistence verified with fake ports.
+  Permission/source revocation cancels pending publications. Delivery rechecks before
+  optional original-link lookup and immediately before Bot API send.
+- SQLite v6 migration adds publication consent/request tables and expiry index.
+  v1/v4/v5 migration fixtures preserve existing research and bot queue/cursor records.
+  Confirmation/outbox rollback tested with a rejecting SQLite trigger. Recovery and
+  older-binary rollback require a stopped-database backup, documented in BOT.md.
+- Final `./gradlew :backend:build --console=plain`: exit 0, **62 tests, 0 failures,
+  0 errors**, JDK 21 toolchain. Existing TDLib Java JAR reused from adjacent checkout;
+  no JNI/native build. Tests use isolated temporary databases and fake Telegram ports.
+- `npm run build --prefix frontend`: exit 0. Offline Playwright: **14 passed** via
+  `npm run test:ci --prefix frontend -- --config playwright.inbox.local.config.ts`.
+  Temporary config used an owned frontend on 127.0.0.1:5174 to avoid the running
+  checkout's UI; all test APIs mocked, no second backend. Config removed afterwards.
+- Agent Bridge proposal in `docs/AGENT_BRIDGE.md` defines consent, source scope,
+  isolated bounded worker, cancellation/restart and review stages. No model/CLI/shell
+  execution is connected to Telegram.
+
+## NOT VERIFIED — previous Inbox task (historical)
+- Real bot command/edit/phone delivery and MCP publication confirmation were not
+  exercised against Telegram. Fake API success does not prove phone display.
+- Existing backend PID 68501 was identified in the adjacent `/Users/pavlov/Projects/hradar`
+  checkout and left running. This branch has not been deployed; production SQLite
+  was not migrated. No messages were sent to real recipients.
+- Bot API has no exactly-once send guarantee; a send already in flight cannot be
+  recalled by revocation. Deleted/uneditable bot cards can produce a permanent edit
+  failure; reopening `/matches` provides a fresh card.
+
+## NEXT ACTION — previous Inbox task (historical)
+Stop the one existing backend; back up its SQLite database; deploy this branch with
+compatible existing TDLib artifacts and start exactly one backend. Follow the manual
+Inbox, original-link, consent/cancel/confirm/revoke and phone checks in `docs/BOT.md`.
+Do not run a competing getUpdates consumer. Push requires separate user approval.
+
+---
+
+## Previous checkpoint — 2026-10-10 (historical)
 
 Verified 2026-10-10. Milestone: optional Telegram Bot API notifications and controls.
 Existing documentation changes preserved separately in checkpoint `b3440d0`.

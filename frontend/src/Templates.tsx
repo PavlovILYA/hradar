@@ -19,6 +19,7 @@ export function Templates({ templates, channels, refresh, onRun, onError }: {
   }
   return <div className="templates">
     <h2>Шаблоны и подписки</h2><p className="helper">Выберите сохранённый источник, задайте условия и включите «Уведомлять». Пауза шаблона временно отключает мониторинг. Публичные каналы проверяются раз в минуту без вступления; обновления TDLib используются, когда доступны. При закрытой вкладке browser notifications не гарантированы.</p>
+    <button className="secondary-button" disabled={busy} onClick={() => void refresh().catch(e => onError((e as Error).message))}>Обновить подписки</button>
     <p className="helper">Telegram-запрос отбирает кандидатов. Локальные AND / OR / NOT проверяют текст отдельно.</p>
     {!draft ? <>
       <button className="secondary-button" onClick={() => setDraft({ ...empty })}>+ Создать шаблон</button>
