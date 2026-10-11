@@ -1,5 +1,75 @@
 # hradar — Development status / session handoff
 
+## Project search and UX checkpoint — 2026-10-11
+
+Branch `feat/recruiting-crm`; PR #4 remains OPEN against master. AI branch/module,
+MCP security, native TDLib and CI workflows were not changed.
+
+VERIFIED:
+- Project search fills up to ten matches by traversing at most five raw pages /
+  fifty publications per step, with a twenty-second source-fetch budget. Required
+  terms remain AND, exclusions NOT, desired terms do not gate matches.
+- Opaque continuations retain the last completed source cursor and seen publication
+  identities. Overlapping pages, unchanged cursors, source/query/project changes,
+  foreign/malformed/restarted continuations, partial failures, 429/FLOOD_WAIT,
+  timeout and parent cancellation have automated coverage.
+- Per-step unique scanned/matched counts, limit/exhaustion state, actual required /
+  desired words and a bounded SQL lookup for already-added publications. Empty
+  selected archive and missing saved sources have distinct states. No schema change:
+  v8 remains current, existing migration/rollback/10,000-card regressions pass.
+- UI orders sources before requirements, explains the next step, distinguishes
+  archive/Telegram and failure/empty/budget states, offers continuation and cancellation,
+  links actual originals and disables duplicate additions. Navigation remains unchanged.
+- JDK 21 `./gradlew -p .tdlib-build/crm-search-check :backend:build`:
+  **96 tests, zero failures/errors/skips**, exit 0. Source copy excludes native,
+  credentials and user databases; live backend class files were not rebuilt.
+- `npm run build --prefix frontend`: exit 0. Offline Playwright on owned port 5175:
+  **23 passed**, including six search UX scenarios and existing sections.
+- `scripts/test-recruitment-browser.sh`: real Ktor routes + temporary SQLite + fake
+  Telegram, **1 passed**. Traverses thirty incomplete archive publications, then
+  fifty Telegram non-matches followed by continuation to the real synthetic match;
+  adds/reviews/moves the card, reloads notes, exercises mobile and archiving.
+  Fixture compilation is now isolated from running backend classes; owned processes
+  exit cleanly. No live Telegram/account/database operation was used for these checks.
+
+NOT VERIFIED: Fresh live Telegram behavior under the new pagination. The existing
+backend PID 72388 still runs the earlier `0e833b7` deployment; it was not restarted
+or queried during this task. Frontend dev server serves working-tree UI changes.
+Continuations are ephemeral (10 minutes, 128 cached states, max 10,000 inspected
+identities per chain), not durable search snapshots. Evidence uses existing 4,000-
+character excerpts; counts are not channel totals. See PR #4 checks for pushed-head CI.
+
+NEXT ACTION: Review PR #4 and its checks. To manually try the new server behavior,
+restart the single existing backend from this branch without starting a competing
+TDLib client, then follow RECRUITMENT_PROJECTS.md. This task deliberately did not
+redeploy against the user's database or merge master.
+
+## CRM runtime deployment — 2026-10-11
+
+VERIFIED: At the user's explicit request, stopped the old backend (PID 54482,
+feat/bot-workspace `2e3f336`, adjacent hradar-feature checkout) and old frontend.
+Confirmed both ports released before starting feat/recruiting-crm `0e833b7` from
+hradar-crm. Reused the existing matching Java/JNI pair and private runtime environment;
+no native rebuild, credential output, session deletion or competing TDLib client.
+
+Created private-permission stopped-database backup
+`~/.hradar/research.pre-crm-v8-20261011-135535.sqlite`; backup integrity check is `ok`.
+Actual v7→v8 migration preserved 8942 imported_messages, one search_template,
+zero matches, one bot_recipient and two publication_decisions. Projects endpoint
+returns HTTP 200 with zero existing projects. Backend PID 72388 listens only on
+127.0.0.1:8080; frontend PID 72372 serves this checkout on 127.0.0.1:5173, including
+Projects.tsx. Health 200; TDLib authorized / connection Ready. No test project,
+Telegram send, join or history import was initiated during deployment.
+
+NOT VERIFIED: User's real project creation/review workflow and fresh live subscription
+notification remain for manual testing. Automated CRM/SQLite/Kanban evidence is below.
+
+NEXT ACTION: Open http://127.0.0.1:5173/, hard-refresh, choose Projects and follow
+RECRUITMENT_PROJECTS.md. Create Senior Java Backend, find/add an existing publication,
+save notes/rating/stage, refresh and verify persistence; compare stages in two projects.
+Do not restore the pre-v8 backup without stopping the backend; restoration would remove
+project work created after this deployment.
+
 ## Recruitment CRM checkpoint — 2026-10-11
 
 Branch `feat/recruiting-crm`, based on master `077c974` (Bot PR #2 already merged).

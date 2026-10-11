@@ -9,12 +9,18 @@ No profile creation, outreach, joins, external models or extra Telegram client a
 1. Save an authorized public source in the existing Telegram search section.
    Archive search requires previously imported history; project creation never imports it.
 2. Open **Проекты → Создать проект**. Name it `Senior Java Backend`, enter the vacancy
-   description, required `Java, Spring Boot, PostgreSQL`, desired `Kafka, Docker`,
-   exclusions such as `junior`, and select permitted sources. Optionally link existing templates.
+   description, select permitted Telegram sources, then required `Java, Spring Boot, PostgreSQL`,
+   desired `Kafka, Docker` and exclusions such as `junior`. Optionally link existing templates.
 3. Save. Open **Найти и добавить публикации**, choose local archive or Telegram and
    search `Java`. The shared matching rules require all required terms and reject
-   exclusions. Desired terms are explained but do not gate results. Each search page
-   examines at most ten publications; an empty filtered page can still have a next page.
+   exclusions. Desired terms are explained but do not gate results. Each step
+   returns up to ten matches after checking at most five source pages (up to fifty
+   publications) within a twenty-second fetch budget. “Продолжить поиск” resumes
+   after the last completed source page. Zero matches with a continuation means
+   this part of the search has no matches, not that no suitable publications exist.
+   Check the actual required/desired words shown for each result; these are textual
+   occurrences, not verified skills. Empty archive, missing sources, restrictive
+   requirements, request failure, rate limiting and budget exhaustion have distinct hints.
 4. Add a result to the board. You can also choose a saved publication or an existing
    match from a linked template. Clicking add again preserves the existing card.
 5. In the card select a stage, add notes, choose an interest rating 0–5 and save.
@@ -77,6 +83,32 @@ Normal card pages execute one count query and one bounded row query, with no per
 publication/source/template lookups. Stable ID tie-breaks make equal-time sorts deterministic.
 Offset pagination can shift under concurrent edits; reload the column after moving cards.
 
+## Filtered search continuation
+
+`POST /api/projects/{id}/search` returns ProjectSearchPage: `messages`, `cursor`,
+`state`, `notice`, `scanned`, `matched`, `pagesScanned`, `limitReached`, `exhausted`,
+`alreadyAdded`. Counts describe **unique publications checked in this response**,
+returned by the underlying query; they are not totals for the entire channel/archive.
+An empty source archive is checked with one SQL aggregate. Board membership is checked
+with one bounded SQL query, not a request/query per result. Existing board cards remain
+independent of search pagination. Matching evidence is saved transactionally.
+
+Raw page size shrinks to the remaining result slots, so a matching publication is
+never discarded beyond a full output page. Deduplication uses `(channelId,messageId)`
+across the continuation chain. Stalled/cycling cursors and partial responses stop the
+step immediately. 429/FLOOD_WAIT causes no automatic retry. Fetch timeouts return
+completed matches and retain the last completed cursor; parent cancellation propagates.
+The twenty-second budget bounds source fetches; final SQLite writes are separate.
+
+Cursors are opaque random tokens bound to project snapshot, query and mode, with
+10-minute TTL and a cache of at most 128 continuations. Restart, expiration, eviction
+or changed criteria require a new search (400 with a readable hint); projects/cards
+remain durable in SQLite. A continuation chain is capped at 10,000 unique inspected
+publications to bound deduplication memory; reaching this cap asks for a narrower new
+search. A successful full result page can still have a continuation. Search is a
+bounded traversal, not a frozen snapshot of live Telegram: edits/new publications
+can change the underlying results. Matching uses existing 4,000-character excerpts.
+
 ## Migration, recovery and retention
 
 Schema **v8** adds `recruitment_projects`, `recruitment_templates`,
@@ -111,11 +143,13 @@ The separate Agent Bridge database is untouched.
 - `./scripts/test-recruitment-browser.sh`: same Kanban scenario against **real Ktor
   project routes and temporary SQLite**, with other APIs mocked. Requires installed
   frontend dependencies, matching TDLib Java JAR, JDK 21 toolchain, curl and lsof.
+  Compiles in an isolated ignored directory so a running backend’s classes stay untouched.
   Starts a test fixture on loopback 18081 and a frontend on 5175, checks occupied ports,
   and stops owned fixture processes on exit. It never constructs TdlibGateway.
 
-The integration browser scenario creates the Java project, finds seeded archive text,
-adds a card, changes stage/notes/rating/classification, filters, reloads, changes stage
+The integration browser scenario creates the Java project, skips thirty incomplete archive publications,
+then traverses fake Telegram past fifty non-matches using the continuation, finds
+the matching publication, adds a card, changes stage/notes/rating/classification, filters, reloads, changes stage
 on a 390px viewport and archives. Backend tests separately reopen SQLite to verify
 restart persistence and page 10,000 synthetic cards. Live Telegram search/notification
 behavior remains a separate authorized operational check.
