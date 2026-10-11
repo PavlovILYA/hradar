@@ -4,7 +4,7 @@
 
 ## Purpose and boundaries
 
-hradar is a **local-first Telegram recruitment research workspace**, currently targeting macOS. It reads explicitly selected Telegram sources, searches publications, imports channel history when requested, evaluates deterministic monitoring rules, and exposes selected read-only capabilities to AI clients over MCP. It is **not** a recruiting ATS or a cloud-hosted service. The macOS distribution adds a bundled browser-based desktop launcher. An optional Bot API adapter provides allowlisted notifications and controls.
+hradar is a **local-first Telegram recruitment research workspace**, currently targeting macOS. It reads explicitly selected Telegram sources, searches publications, imports channel history when requested, evaluates deterministic monitoring rules, and exposes selected read-only capabilities to AI clients over MCP. It includes a lightweight hiring-project and publication-review CRM and is **not** a full recruiting ATS or a cloud-hosted service. The macOS distribution adds a bundled browser-based desktop launcher. An optional Bot API adapter provides allowlisted notifications and controls.
 
 ### Logical view
 
@@ -102,7 +102,7 @@ MCP is **a tool protocol, not an agent runtime**. The bot calls shared services 
 
 ## Local storage and security boundaries
 
-- SQLite: `~/.hradar/research.sqlite` (schema tracked via migrations; currently v7 in the repository, including bot recipients, polling cursors/cooldowns and outbox, plus separate publication permission and expiring confirmation requests).
+- SQLite: `~/.hradar/research.sqlite` (schema tracked via migrations; currently v8 in the repository, including bot recipients, polling cursors/cooldowns and outbox, plus separate publication permission and expiring confirmation requests).
 - TDLib account session: `~/.recruitment-radar/tdlib/`. It is sensitive and never belongs in Git, logs, or MCP results.
 - Credentials: desktop owner-only `~/.hradar/telegram-api.json` for API ID/hash, entered through onboarding; development local `.env`/environment (`TG_API_ID`, `TG_API_HASH`, optional `TG_BOT_TOKEN` and `TG_BOT_ALLOWED_USER_IDS`); stored credentials are never returned to UI, AI tools, or repositories.
 - Ktor binds to **127.0.0.1 only**. Localhost is not user authentication and is not protection against malicious local processes. Do not expose `/api` or `/mcp` through ngrok, public tunnels, LAN, or reverse proxies in the current architecture.
@@ -144,3 +144,21 @@ minimal aggregated review list/status filter without numeric operator IDs. Publi
 source revocation/deletion is rechecked after network reads; operator rejection is
 separate from shared match read state. `/ask` remains disabled; only its specification
 was expanded. Existing MCP publication consent operations are preserved.
+
+## Hiring projects and publication boards
+
+RecruitmentProjectService provides typed local REST project CRUD, criteria validation,
+publication review and explicit monitoring setup. It reuses RecruiterService/SearchService,
+MatchingService and SubscriptionService. Schema v8 adds projects, normalized template links,
+per-project publication cards and server-observed search evidence. Publication identity is
+unique within a project; stages, notes, ratings and manual classification remain independent
+between projects. Cards attach actual saved/archive/search evidence, never inferred people.
+The deterministic PublicationClassifier exposes its reason and uncertainty; no model call occurs.
+
+React Projects has bounded project pages and five independently paginated Kanban columns.
+Card pages use a bounded SQLite query plus count without per-card lookups. Discovery separates
+online search, existing archive, saved decisions and linked-template matches; additions and
+monitoring are explicit. Local Host/Origin checks protect the project routes, with no MCP policy
+changes. Project mutations and owned subscription updates are transactional. Archiving pauses
+the owned subscription; original publications/history survive project deletion. See
+[RECRUITMENT_PROJECTS.md](docs/RECRUITMENT_PROJECTS.md) for API, migration recovery and tests.

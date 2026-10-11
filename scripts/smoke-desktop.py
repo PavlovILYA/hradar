@@ -34,6 +34,8 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
     env = dict(os.environ, PATH='/usr/bin:/bin:/usr/sbin:/sbin', JAVA_HOME='', NODE_PATH='', JAVA_TOOL_OPTIONS=f'-Duser.home={home} -Dhradar.smoke=true -Dhradar.smokePort={port}')
     for name in ['TG_API_ID','TG_API_HASH','TG_BOT_TOKEN','TG_BOT_ALLOWED_USER_IDS']:
         env.pop(name, None)
+    project_id = None
+    crm_snapshot = None
     with (home/'runtime.log').open('w') as log:
         for attempt in range(2):
             process = subprocess.Popen([str(launcher)], env=env, stdout=log, stderr=log)
@@ -46,6 +48,33 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
                 state = http('/api/onboarding', headers=headers)
                 assert state['state'] == 'Credentials'
                 http('/api/onboarding/credentials', {'apiId':1,'apiHash':'0'*32}, headers, expected=403)
+                http('/api/projects', expected=403)
+                http('/api/projects', headers={'Cookie':cookie,'Origin':'https://evil.example'}, expected=403)
+                database = home/'.hradar/research.sqlite'
+                if attempt == 0:
+                    with sqlite3.connect(database) as db:
+                        assert db.execute('PRAGMA user_version').fetchone() == (8,)
+                        source = {'id':-1001,'username':'synthetic_jobs','title':'Synthetic source'}
+                        db.execute('INSERT INTO monitored_channels VALUES (?,?,?)', (-1001,'synthetic_jobs',json.dumps(source)))
+                        db.execute('INSERT INTO imported_messages VALUES (?,?,?,?,?)', (-1001,1,1700000000,'Synthetic Java publication','synthetic java publication'))
+                    project = http('/api/projects', {'name':'Installer CRM sentinel','required':['Java'],'sources':[-1001]}, headers, expected=201)
+                    project_id = project['id']
+                    results = http(f'/api/projects/{project_id}/search', {'mode':'archive','query':'java'}, headers)
+                    assert len(results['messages']) == 1
+                    card = http(f'/api/projects/{project_id}/cards', {'channelId':-1001,'messageId':1}, headers, expected=201)
+                    req = urllib.request.Request(f'http://127.0.0.1:{port}/api/projects/{project_id}/cards/{card["id"]}', data=json.dumps({'stage':'CONTACTED','notes':'Synthetic preserved note','interest':5}).encode(), headers=headers, method='PUT')
+                    with urllib.request.urlopen(req, timeout=3) as response: assert response.status == 200
+                else:
+                    assert http(f'/api/projects/{project_id}', headers=headers)['criteria']['name'] == 'Installer CRM sentinel'
+                    results = http(f'/api/projects/{project_id}/search', {'mode':'archive','query':'java'}, headers)
+                    assert len(results['messages']) == 1
+                    card = http(f'/api/projects/{project_id}/cards', headers=headers)['items'][0]
+                    assert (card['stage'],card['notes'],card['interest']) == ('CONTACTED','Synthetic preserved note',5)
+                    with sqlite3.connect(database) as db:
+                        assert db.execute('PRAGMA user_version').fetchone() == (8,)
+                        assert db.execute('PRAGMA integrity_check').fetchone() == ('ok',)
+                        assert db.execute('PRAGMA foreign_key_check').fetchall() == []
+                        assert crm_snapshot == {table:db.execute(f'SELECT * FROM {table} ORDER BY 1,2').fetchall() for table in crm_snapshot}
                 # Browser executes actual production JS/CSS and the launch handshake.
                 if attempt == 0:
                     browser_env = dict(os.environ, HRADAR_SMOKE_TOKEN=token, HRADAR_SMOKE_PORT=str(port))
@@ -59,6 +88,8 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
                         db.execute("INSERT INTO distribution_smoke VALUES ('preserved')")
                     else:
                         assert db.execute('SELECT value FROM distribution_smoke').fetchone() == ('preserved',)
+                with sqlite3.connect(database) as db:
+                    crm_snapshot = {table:db.execute(f'SELECT * FROM {table} ORDER BY 1,2').fetchall() for table in ['recruitment_projects','recruitment_cards','recruitment_publications','monitored_channels','imported_messages','search_templates','template_sources','recruitment_templates']}
                 headers['X-Hradar-CSRF'] = state['csrfToken']
                 http('/api/desktop/shutdown', {}, headers)
                 process.wait(timeout=20)
@@ -76,10 +107,11 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
             assert not marker.exists()
         # No downgrade of a database created by a newer local feature build.
         with sqlite3.connect(home/'.hradar/research.sqlite') as db:
-            db.execute('PRAGMA user_version=8')
+            db.execute('PRAGMA user_version=9')
         subprocess.run([str(launcher)],env=env,stdout=log,stderr=log,check=True,timeout=20)
         assert not marker.exists()
         with sqlite3.connect(home/'.hradar/research.sqlite') as db:
-            assert db.execute('PRAGMA user_version').fetchone() == (8,)
+            assert db.execute('PRAGMA user_version').fetchone() == (9,)
             assert db.execute('SELECT value FROM distribution_smoke').fetchone() == ('preserved',)
+            assert crm_snapshot == {table:db.execute(f'SELECT * FROM {table} ORDER BY 1,2').fetchall() for table in crm_snapshot}
 print('Production UI, origin/cookie/CSRF denial, duplicate/legacy-port refusal, restart persistence, newer-schema refusal and graceful shutdown passed')

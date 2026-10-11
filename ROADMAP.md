@@ -29,8 +29,8 @@ Build a local-first recruiting workspace centered on **explicitly permitted Tele
 
 ## Next — P1 recruiting workflows
 
-1. **Vacancy/project workspace:** one hiring project per vacancy, role criteria, approved sources, saved searches and review queue. Keep it lightweight rather than building an entire ATS at once.
-2. **Publication classification:** distinguish *candidate seeking work* from *employer posting a vacancy*, irrelevant ads, and unknowns. Start with explainable deterministic rules and explicit uncertainty; never invent skills/experience.
+1. [x] **Vacancy/project workspace:** one hiring project per vacancy, role criteria, approved sources, saved searches and review queue. Implemented with per-project publication Kanban, notes, ratings, filters, pagination and SQLite persistence; see docs/RECRUITMENT_PROJECTS.md.
+2. [x] **Publication classification:** distinguish *candidate seeking work* from *employer posting a vacancy*, irrelevant ads, and unknowns. Implemented with explainable deterministic rules, explicit uncertainty and manual corrections; never invent skills/experience.
 3. **Reviewable candidate records:** create a candidate card **only after manual review**, attaching source links, evidence snippets, notes and processing state. Define deletion, retention and data-minimization rules before persisting personal profiles.
 4. **Matching quality:** aliases/synonyms, negative criteria, per-project exclusions and useful test fixtures. Evaluate relevance and false positives with the recruiter before adding an AI model.
 

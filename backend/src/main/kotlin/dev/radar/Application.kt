@@ -87,6 +87,7 @@ fun main() {
             json(Json { prettyPrint = true; encodeDefaults = true })
         } }
         install(StatusPages) {
+            exception<io.ktor.server.plugins.BadRequestException> { call, _ -> call.respondApiError(HttpStatusCode.BadRequest, ApiError("Некорректный JSON запроса")) }
             exception<ResourceNotFound> { call, _ -> call.respondApiError(HttpStatusCode.NotFound, ApiError("Ресурс не найден")) }
             exception<TelegramRequestException> { call, ex ->
                 val status = when {
@@ -118,6 +119,7 @@ fun main() {
         }
         configureCapabilities(capabilities, readPort, repositories)
         configureBotRoutes(bot)
+        configureRecruitmentRoutes(RecruitmentProjectService(repositories, matching, subscriptions, recruiter))
         configureSavedRoutes(repositories)
         configureRoutes(telegram)
         configureResearchRoutes(telegram, repositories, matching, search, notifications)

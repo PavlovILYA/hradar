@@ -55,5 +55,5 @@ ditto -c -k --sequesterRsrc --keepParent "$OUT/hradar.app" "$OUT/hradar-$VERSION
 python3 - "$OUT" "$ARCH" <<'PY'
 import json,os,pathlib,subprocess,sys
 out=pathlib.Path(sys.argv[1])
-(out/'distribution.json').write_text(json.dumps({'version':'0.1.0', 'macBundleVersion':'1.0.0', 'architecture':sys.argv[2], 'minimumMacOS':'15.0', 'signedAndNotarized':os.environ.get('HRADAR_SIGN')=='true', 'commit':os.environ.get('GITHUB_SHA'), 'run':os.environ.get('GITHUB_RUN_ID'), 'jdk':subprocess.check_output([os.environ['JAVA_HOME']+'/bin/java','--version'],text=True), 'native':json.load(open('.tdlib-build/release/tdlib-artifact.json'))},indent=2)+'\n')
+(out/'distribution.json').write_text(json.dumps({'version':'0.1.0', 'sqliteSchemaVersion':8, 'features':['recruitment-crm'], 'macBundleVersion':'1.0.0', 'architecture':sys.argv[2], 'minimumMacOS':'15.0', 'signedAndNotarized':os.environ.get('HRADAR_SIGN')=='true', 'commit':os.environ.get('GITHUB_SHA'), 'run':os.environ.get('GITHUB_RUN_ID'), 'jdk':subprocess.check_output([os.environ['JAVA_HOME']+'/bin/java','--version'],text=True), 'native':json.load(open('.tdlib-build/release/tdlib-artifact.json'))},indent=2)+'\n')
 PY
