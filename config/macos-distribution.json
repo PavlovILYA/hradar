@@ -1,0 +1,9 @@
+{
+  "version": "0.1.0",
+  "minimumMacOS": "15.0",
+  "jdk": "21.0.12+8",
+  "node": "24.11.1",
+  "cmake": "3.31.10",
+  "openssl": "3.5.9",
+  "opensslSha256": "603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a"
+}

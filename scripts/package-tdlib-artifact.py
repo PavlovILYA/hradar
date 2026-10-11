@@ -24,6 +24,10 @@ for origin in ['backend/libs/tdlib-java.jar', 'backend/native/libtdjni.dylib']:
 metadata = {'tdlibCommit': config['commit'], 'buildSourceDigest': os.environ.get('GITHUB_SHA'),
             'repository': os.environ.get('GITHUB_REPOSITORY'), 'sourceRef': os.environ.get('GITHUB_REF'),
             'runUrl': 'https://github.com/' + os.environ.get('GITHUB_REPOSITORY', '') + '/actions/runs/' + os.environ.get('GITHUB_RUN_ID', ''),
+            'portable': os.environ.get('TDLIB_PORTABLE') == 'true',
+            'minimumMacOS': os.environ.get('MACOSX_DEPLOYMENT_TARGET'),
+            'opensslVersion': '3.5.9' if os.environ.get('TDLIB_PORTABLE') == 'true' else None,
+            'opensslSha256': '603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a' if os.environ.get('TDLIB_PORTABLE') == 'true' else None,
             'architecture': subprocess.check_output(['uname', '-m'], text=True).strip(),
             'tdApiSchemaSha256': hashlib.sha256((source / 'td/generate/scheme/td_api.tl').read_bytes()).hexdigest(),
             'javaCmakePatchedSha256': hashlib.sha256((source / 'example/java/CMakeLists.txt').read_bytes()).hexdigest(), 'assets': assets}

@@ -1,0 +1,72 @@
+name: hradar - portable macOS TDLib
+on:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 110
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - run: test "$(uname -m)" = '${{ matrix.arch }}'
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
+        with:
+          distribution: temurin
+          java-version: '21.0.12+8'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Native bundle cache (source/toolchain only, independent of application)
+        id: bundle
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: .tdlib-build/portable-bundle.tar.gz
+          key: portable-v1-${{ matrix.arch }}-jdk21.0.12+8-${{ hashFiles('config/tdlib.json', 'config/macos-distribution.json', 'scripts/build-portable-tdlib.sh', 'scripts/build-tdlib-macos.sh', 'scripts/prepare-tdlib-java.py', 'scripts/check-tdlib-bindings.py', 'scripts/verify-tdlib-macos.sh', 'scripts/package-tdlib-artifact.py') }}
+      - name: Build pinned portable JNI (cache miss only)
+        if: steps.bundle.outputs.cache-hit != 'true'
+        run: |
+          brew install gperf
+          python3 -m venv .tdlib-build/cmake-tools
+          .tdlib-build/cmake-tools/bin/python -m pip install --only-binary=:all: cmake==3.31.10
+          export PATH="$PWD/.tdlib-build/cmake-tools/bin:$PATH"
+          test "$(cmake --version | head -1)" = 'cmake version 3.31.10'
+          bash scripts/build-portable-tdlib.sh
+          tar -czf .tdlib-build/portable-bundle.tar.gz -C .tdlib-build/release .
+      - name: Verify bundle on every reuse
+        run: |
+          mkdir -p .tdlib-build/release backend/libs backend/native
+          tar -xzf .tdlib-build/portable-bundle.tar.gz -C .tdlib-build/release
+          (cd .tdlib-build/release; shasum -a 256 -c SHA256SUMS)
+          cp .tdlib-build/release/tdlib-java.jar backend/libs/
+          cp .tdlib-build/release/libtdjni.dylib backend/native/
+          python3 -B scripts/check-tdlib-bindings.py backend/libs/tdlib-java.jar
+          bash scripts/verify-tdlib-macos.sh '${{ matrix.arch }}'
+          python3 -c 'import json; m=json.load(open(".tdlib-build/release/tdlib-artifact.json")); assert m["portable"] and m["architecture"] == "${{ matrix.arch }}" and m["tdlibCommit"] == json.load(open("config/tdlib.json"))["commit"]'
+          if otool -L backend/native/libtdjni.dylib | tail -n +2 | grep -E '/(opt/homebrew|usr/local|Users|Library/Java|opt/hostedtoolcache)/'; then exit 1; fi
+      - name: Attest portable bundle
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
+        with:
+          subject-path: .tdlib-build/portable-bundle.tar.gz
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: portable-tdlib-${{ matrix.arch }}
+          path: .tdlib-build/portable-bundle.tar.gz
+          if-no-files-found: error
+          retention-days: 90

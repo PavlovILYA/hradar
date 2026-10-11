@@ -62,3 +62,18 @@ tasks.named<JavaExec>("run") {
 }
 
 tasks.named("compileKotlin") { dependsOn("checkTdlibJava") }
+
+// Production UI becomes a classpath resource; development doesn't need a frontend build.
+val bundledWeb = providers.gradleProperty("bundledWeb").map { it.toBoolean() }.orElse(false)
+tasks.processResources {
+    if (bundledWeb.get()) {
+        from(rootProject.layout.projectDirectory.dir("frontend/dist")) { into("web") }
+        doFirst { check(rootProject.file("frontend/dist/index.html").isFile) { "Build frontend production assets first" } }
+    }
+}
+tasks.register<Copy>("stageDesktop") {
+    dependsOn("jar")
+    into(layout.buildDirectory.dir("desktop-input"))
+    from(tasks.jar)
+    from(configurations.runtimeClasspath)
+}
