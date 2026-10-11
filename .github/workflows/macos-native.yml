@@ -28,7 +28,7 @@ jobs:
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
         with:
           distribution: temurin
-          java-version: '21.0.12+8'
+          java-version: '21.0.12+8.0.LTS'
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.12'
@@ -37,7 +37,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: .tdlib-build/portable-bundle.tar.gz
-          key: portable-v1-${{ matrix.arch }}-jdk21.0.12+8-${{ hashFiles('config/tdlib.json', 'config/macos-distribution.json', 'scripts/build-portable-tdlib.sh', 'scripts/build-tdlib-macos.sh', 'scripts/prepare-tdlib-java.py', 'scripts/check-tdlib-bindings.py', 'scripts/verify-tdlib-macos.sh', 'scripts/package-tdlib-artifact.py') }}
+          key: portable-v1-${{ matrix.arch }}-jdk21.0.12+8.0.LTS-${{ hashFiles('config/tdlib.json', 'config/macos-distribution.json', 'scripts/build-portable-tdlib.sh', 'scripts/build-tdlib-macos.sh', 'scripts/prepare-tdlib-java.py', 'scripts/check-tdlib-bindings.py', 'scripts/verify-tdlib-macos.sh', 'scripts/package-tdlib-artifact.py') }}
       - name: Build pinned portable JNI (cache miss only)
         if: steps.bundle.outputs.cache-hit != 'true'
         run: |
