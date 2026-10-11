@@ -116,8 +116,13 @@ CrmAuditMatrixTest (8), CrmMonitoringAuditTest (3). Новые browser regressio
 projects-audit.spec.ts (8). Существующая browser fixture усилена fake RPC адаптером;
 существующий REST-тест усилен проверкой отсутствия записи после access denial.
 
-GitHub Actions для финального pushed head проверяются отдельно после push; результат
-и ссылка фиксируются в PR и итоговом сообщении. Локальный Intel-прогон не заменяет CI.
+GitHub Actions на коммите с итоговым кодом `4c2d018`:
+[Fast CI 38145471459](https://github.com/PavlovILYA/hradar/actions/runs/38145471459)
+завершился успешно. Обе jobs зелёные; job logs подтверждают backend
+`BUILD SUCCESSFUL in 49s` и 31 offline Playwright passed. Обновление этого отчёта
+не меняет код; checks последнего документационного коммита доступны в
+[PR #4](https://github.com/PavlovILYA/hradar/pull/4/checks) и проверяются перед сдачей.
+Локальный Intel-прогон не заменяет CI.
 
 ## Что остаётся непроверенным и ограничения
 

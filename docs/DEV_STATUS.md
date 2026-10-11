@@ -21,6 +21,8 @@ VERIFIED:
 - 10k/50k archive and card data: bounded pages/filter/stats/search measured 300/1318 ms
   aggregate; 50k publications/100k linked notifications: two pages 1206 ms aggregate.
   These local Intel measurements are not a production latency/ARM64 guarantee.
+- Pushed code head `4c2d018`: [Fast CI 38145471459](https://github.com/PavlovILYA/hradar/actions/runs/38145471459)
+  completed successfully, both jobs green; logs confirm backend build and 31 browser tests.
 - Schema remains v8, no user database operations or live Telegram tests. Live backend
   class files were not rebuilt; CI/native/AI/MCP/Bot production files unchanged.
 
