@@ -1,5 +1,18 @@
 # hradar — Development status / session handoff
 
+## CRM master synchronization — 2026-10-12
+
+VERIFIED: PR #4 was merged by the maintainer as origin/master `0a24f2e`.
+Clean distribution worktree retained local integration `ba417de` and all prepared
+CRM/desktop changes. Merged master into feat/macos-distribution only; four conflicts
+were the previously integrated React navigation, desktop-aware CRM guard and docs.
+Resolved with the verified integration versions; application code remains identical
+to ba417de. Ports 8080/5173 free. No user profile/session/installed app touched.
+
+NOT VERIFIED: new hosted Fast CI and dual-architecture installer jobs for this head.
+NEXT ACTION: authorized push only to distribution, verify both installer artifacts,
+checksums and provenance. No master merge, tag or Release publication.
+
 ## CRM v8 / macOS integration — 2026-10-11
 
 Prepared in `feat/macos-distribution` from distribution `381e4c8` and CRM
