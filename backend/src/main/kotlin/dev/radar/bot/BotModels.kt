@@ -25,7 +25,7 @@ class BotConfig private constructor(internal val token: String?, val allowedUser
 }
 
 @Serializable data class BotButton(val text: String, val callback: String = "", val url: String? = null)
-@Serializable data class BotPayload(val text: String, val buttons: List<List<BotButton>> = emptyList(), val channelId: Long? = null, val messageId: Long? = null, val needsLink: Boolean = false, val mcpSourceId: Long? = null, val editMessageId: Long? = null, val publishRequestId: String? = null, val agentJobId: String? = null)
+@Serializable data class BotPayload(val text: String, val buttons: List<List<BotButton>> = emptyList(), val channelId: Long? = null, val messageId: Long? = null, val needsLink: Boolean = false, val mcpSourceId: Long? = null, val editMessageId: Long? = null, val publishRequestId: String? = null, val agentJobId: String? = null, val agentHistoryJobIds: List<String> = emptyList(), val sensitive: Boolean = false)
 data class BotOutboxItem(val id: Long, val userId: Long, val chatId: Long, val payload: BotPayload, val attempts: Int)
 data class BotChat(val id: Long, val type: String)
 data class BotMessage(val userId: Long, val chat: BotChat, val text: String?, val isBot: Boolean = false)

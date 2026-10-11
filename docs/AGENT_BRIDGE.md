@@ -15,8 +15,9 @@ fake providers only. Real provider execution and phone delivery are NOT VERIFIED
 3. Send `/ask_consent` to read provider, data transfer, cost and retention information.
    Send `/ask_access` and paste the returned private code in **AI-исследования → Код
    оператора**. The code opens only that operator's history/settings. A new code rotates
-   the old code. Codes are kept in memory by React, never URL/localStorage; the database
-   stores only SHA-256 hashes. Treat the code as a bearer credential.
+   the old code. Codes are kept in memory by React, never URL/localStorage; the agent database
+   stores only SHA-256 hashes. The existing Bot outbox temporarily holds the code until
+   delivery/cancellation; permanent delivery failures erase its text. Treat the code as a bearer credential.
 4. Select sources and explicitly check the external-AI consent box, then save consent.
    Bot identity + operator identity own this consent. The local web operator is a
    separate identity; its consent never authorizes a Telegram operator.
@@ -104,8 +105,10 @@ basis and source terms before consenting.
   safely. Delivery rechecks job, current consent, registration and every source before
   BotGateway sends. COMPLETED means research finished, not phone delivery confirmed.
   The internal `delivered` marker means handed to the outbox (or suppressed), not a
-  Telegram delivery receipt. Existing Bot API 429/backoff/permanent-error behavior
-  applies; Telegram lacks exactly-once send semantics.
+  Telegram delivery receipt. Historical `/ask_status` and `/ask_history` summaries also carry job references
+  for a fresh source/owner check before delivery. Permanent AI/code delivery failures
+  erase their payload text; normal sent/cancelled outbox cleanup is retained.
+  Existing Bot API 429/backoff/permanent-error behavior applies; Telegram lacks exactly-once send semantics.
 - Completed/error/interrupted/cancelled jobs are deleted after thirty days by the
   running worker. Consent and hashed pairing codes persist until changed; source
   content stays in the separate existing archive under its retention policy.
@@ -157,4 +160,6 @@ authorization and was not performed by this task.
 
 For rollback stop the backend and preserve/back up both SQLite files. Restore a stopped
 agent-database backup before using an older agent schema; do not downgrade tables or
-remove research/archive/session data. A pre-AI binary ignores the separate agent DB.
+remove research/archive/session data. A pre-AI binary ignores the separate agent DB, but cannot decode new BotPayload JSON
+fields: rolling back its Bot model also requires restoring the stopped research DB
+backup. Preserve both backups before rollout; do not downgrade tables in place.

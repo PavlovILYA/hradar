@@ -79,6 +79,11 @@ class AgentService(
     fun deliveryPermitted(owner: AgentOwner, id: String): Boolean = jobs.job(id)?.let {
         it.owner == owner && it.state in setOf(AgentState.COMPLETED, AgentState.FAILED, AgentState.INTERRUPTED) && valid(owner, it.sources, it.policy)
     } == true
+    fun historyDeliveryPermitted(owner: AgentOwner, ids: List<String>): Boolean {
+        if (!authorized(owner) || ids.size !in 1..10) return false
+        val allowed = sources().map { it.id }.toSet()
+        return ids.all { id -> jobs.job(id)?.let { it.owner == owner && it.result != null && allowed.containsAll(it.sources) } == true }
+    }
     fun start() {
         if (!started.compareAndSet(false, true)) return
         scope.launch {
@@ -237,10 +242,10 @@ class AgentService(
                 if (argument == "off") { setConsent(owner, false, emptyList()); BotPayload("Согласие отозвано; исследования отменены.") }
                 else BotPayload("Внешний AI: OpenAI, модель ${limits.model.ifBlank { "не настроена" }}. Передаются вопрос и фрагменты только выбранных публичных источников (до 2000 символов за публикацию). Лимит ${limits.budgetUsd} USD, ${limits.tokenBudget} токенов, ${limits.timeoutSeconds} с. Локальное хранение ${limits.retentionDays} дней. store=false не исключает служебное хранение провайдером. Проверьте право на обработку данных. Для выбора источников и явного согласия: /ask_access, затем раздел AI-исследования в приложении. /ask_consent off отзывает согласие.")
             }
-            "/ask_access" -> BotPayload("Код доступа к вашей истории AI в локальном приложении (не передавайте другим):\n${access(owner)}\nВставьте в поле «Код оператора» раздела AI-исследования. Новый код заменяет предыдущий.")
+            "/ask_access" -> BotPayload("Код доступа к вашей истории AI в локальном приложении (не передавайте другим):\n${access(owner)}\nВставьте в поле «Код оператора» раздела AI-исследования. Новый код заменяет предыдущий.", sensitive = true)
             else -> {
                 val history = history(owner).take(if (command == "/ask_status") 10 else 5)
-                BotPayload(history.joinToString("\n\n") { "${it.id.take(8)} · ${it.state}\n${it.question.take(150)}\n${it.result?.summary?.take(300) ?: errorText(it.error)}" }.ifBlank { "Исследований пока нет. /ask_consent · /ask вопрос" })
+                BotPayload(history.joinToString("\n\n") { "${it.id.take(8)} · ${it.state}\n${it.question.take(150)}\n${it.result?.summary?.take(300) ?: errorText(it.error)}" }.ifBlank { "Исследований пока нет. /ask_consent · /ask вопрос" }, agentHistoryJobIds = history.filter { it.result != null }.map { it.id })
             }
         }
     } catch (ex: AgentFailure) { BotPayload(errorText(ex.code)) }

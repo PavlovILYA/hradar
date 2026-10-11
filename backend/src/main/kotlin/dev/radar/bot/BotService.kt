@@ -99,6 +99,7 @@ class BotService(
         val payload = item.payload
         if (!repo.botDeliveryPending(item.id)) return false
         if (payload.agentJobId != null && agent?.deliveryPermitted(dev.radar.agent.AgentOwner(botId!!, item.userId), payload.agentJobId) != true) return false
+        if (payload.agentHistoryJobIds.isNotEmpty() && agent?.historyDeliveryPermitted(dev.radar.agent.AgentOwner(botId!!, item.userId), payload.agentHistoryJobIds) != true) return false
         if (payload.publishRequestId != null && !repo.publishPreviewValid(botId!!, item.userId, payload.publishRequestId, now())) return false
         return payload.mcpSourceId == null || (repo.botPublishPermitted(item.userId) && repo.mcpEnabled() && repo.mcpSources().any { it.id == payload.mcpSourceId })
     }
@@ -131,6 +132,9 @@ class BotService(
         catch (ex: BotApiException) {
             fail(ex)
             val at = now() + retryDelay(ex, item.attempts)
+            // Failed AI payloads must not outlive the separate job retention or expose pairing codes.
+            if (ex.code in setOf(400, 403) && (item.payload.agentJobId != null || item.payload.agentHistoryJobIds.isNotEmpty() || item.payload.sensitive))
+                repo.prepareBotDelivery(item.id, item.payload.copy(text = "", buttons = emptyList()))
             repo.retryBotDelivery(item.id, at, "BOT_${ex.code}", ex.code in setOf(400, 403))
             if (ex.code in setOf(429, 401)) repo.setBotRetryAt(id, false, at)
         }

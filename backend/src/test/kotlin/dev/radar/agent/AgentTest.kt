@@ -54,9 +54,10 @@ private class FakeModel : AgentPort {
 private class FakeBot : BotGateway {
     var pending = emptyList<BotUpdate>()
     val sent = mutableListOf<Pair<Long, BotPayload>>()
+    var sendError: BotApiException? = null
     override suspend fun identity() = BotIdentity(123, "synthetic_bot")
     override suspend fun updates(offset: Long) = pending
-    override suspend fun send(chatId: Long, payload: BotPayload): Long { sent.add(chatId to payload); return sent.size.toLong() }
+    override suspend fun send(chatId: Long, payload: BotPayload): Long { sendError?.let { throw it }; sent.add(chatId to payload); return sent.size.toLong() }
     override suspend fun answerCallback(id: String, text: String) {}
 }
 private class Fixture(limits: AgentLimits = AgentLimits(model = "synthetic-model", tokenBudget = 100000, inputUsdPerMillion = 0.1, outputUsdPerMillion = 0.1)) : AutoCloseable {
@@ -85,6 +86,27 @@ private class Fixture(limits: AgentLimits = AgentLimits(model = "synthetic-model
 }
 
 class AgentTest {
+    @Test fun queuedHistoryReplyRechecksSourceGrantsAndPermanentFailuresEraseAiPayload() = runBlocking {
+        Fixture().use { f ->
+            f.consent(); f.submit(); f.run()
+            repeat(2) { f.time += 2000; f.bot.deliverOnce() }
+            f.fakeBot.sent.clear()
+            f.fakeBot.pending = listOf(BotUpdate(1, BotMessage(7, BotChat(7, "private"), "/ask_history")))
+            f.bot.pollOnce(); assertEquals(1, f.bot.status().delivery.pending)
+            f.repo.revokeMcpSource(channel.id)
+            f.time += 2000; f.bot.deliverOnce(); assertTrue(f.fakeBot.sent.isEmpty())
+            assertEquals(0, f.bot.status().delivery.pending)
+        }
+        Fixture().use { f ->
+            f.consent(); f.submit(); f.run(); f.fakeBot.sendError = BotApiException(403)
+            f.bot.deliverOnce()
+            DriverManager.getConnection("jdbc:sqlite:${f.directory.resolve("research.sqlite")}").use { db ->
+                val text = db.createStatement().executeQuery("SELECT payload FROM bot_outbox WHERE state='FAILED'").use { it.next(); it.getString(1) }
+                assertEquals("", Json.parseToJsonElement(text).jsonObject["text"]!!.jsonPrimitive.content)
+            }
+            assertNotNull(f.agent.history(owner).single().result)
+        }
+    }
     @Test fun blankEnvironmentDisablesProviderAndInvalidLimitsAreRejected() {
         val config = AgentLimits.fromEnvironment { "" }
         assertEquals("", config.model); assertEquals(0.0, config.inputUsdPerMillion)
