@@ -71,7 +71,7 @@ tasks.processResources {
         doFirst { check(rootProject.file("frontend/dist/index.html").isFile) { "Build frontend production assets first" } }
     }
 }
-tasks.register<Copy>("stageDesktop") {
+tasks.register<Sync>("stageDesktop") {
     dependsOn("jar")
     into(layout.buildDirectory.dir("desktop-input"))
     from(tasks.jar)

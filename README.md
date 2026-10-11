@@ -275,3 +275,12 @@ It sends only as the bot to opted-in operators. Retries honor network failures a
 429/retry_after; a crash after send success can repeat delivery. The Mac/backend
 must remain running; closing the browser is fine. Setup, BotFather, your numeric ID,
 real phone verification and limitations: [Bot guide](docs/BOT.md).
+
+## Standalone macOS builds
+
+Dual-architecture app/DMG builds are implemented in `feat/macos-distribution` for
+macOS 15.0+. They bundle Java, production UI and TDLib; end users do not need build
+tools. PR artifacts are unsigned internal test builds. See
+[macOS distribution](docs/MACOS_DISTRIBUTION.md) for installation/data/onboarding,
+manual verification and optional Apple signing setup, and [verified status](docs/DEV_STATUS.md)
+for actual Actions results. No public application Release has been published by this task.

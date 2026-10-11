@@ -1,0 +1,56 @@
+name: hradar - manually promote signed installers
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing reviewed vX.Y.Z tag (this workflow never creates tags)
+        required: true
+        type: string
+      run_id:
+        description: Successful signed macOS installers workflow run for that exact commit
+        required: true
+        type: string
+      publish:
+        description: Explicitly publish a new prerelease (requires environment approval)
+        default: false
+        type: boolean
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Validate exact tag, successful build, artifacts and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HRADAR_TAG: ${{ inputs.tag }}
+          HRADAR_RUN: ${{ inputs.run_id }}
+        run: python3 -B scripts/verify-release-input.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: reviewed-release-assets
+          path: .tdlib-build/release-promotion/
+          if-no-files-found: error
+  publish:
+    if: inputs.publish
+    needs: verify
+    environment: macos-release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: reviewed-release-assets
+          path: release-assets
+      - name: Publish existing tag as prerelease without overwrite
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HRADAR_TAG: ${{ inputs.tag }}
+        run: |
+          [[ "$HRADAR_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          gh release create "$HRADAR_TAG" release-assets/* --repo '${{ github.repository }}' --verify-tag --prerelease --title "hradar $HRADAR_TAG" --notes 'Signed and notarized macOS installers. See distribution metadata and checksums.'

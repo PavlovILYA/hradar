@@ -72,13 +72,17 @@ class TdlibGateway(
     private lateinit var client: Client
     @Volatile var messageListener: ((TdApi.Message) -> Unit)? = null
 
-    val onboarding = Onboarding(::request)
+    val onboarding = Onboarding(::rawRequest)
 
-    @Synchronized fun configure(credentials: ApiCredentials) {
+    @Synchronized fun configure(credentials: ApiCredentials, persist: () -> Unit = {}) {
         credentials.validate()
-        check(!::client.isInitialized) { "TDLib уже запущен" }
+        check(!::client.isInitialized || onboarding.status().state in setOf("ParametersFailed")) { "TDLib уже настроен" }
+        persist()
         apiId = credentials.apiId; apiHash = credentials.apiHash
-        start()
+        if (::client.isInitialized) {
+            onboarding.initializing()
+            authExecutor.execute { handleAuthorizationState(TdApi.AuthorizationStateWaitTdlibParameters()) }
+        } else start()
     }
 
     // Never block TDLib's update thread by reading the terminal from callbacks.
@@ -132,18 +136,21 @@ class TdlibGateway(
         check(authorized) { "Завершите вход в Telegram в интерфейсе hradar." }
     }
 
-    private suspend fun request(query: TdApi.Function<*>): TdApi.Object = withTimeout(20_000) {
-        val result = suspendCancellableCoroutine<TdApi.Object> { continuation ->
+    private suspend fun request(query: TdApi.Function<*>): TdApi.Object {
+        val result = rawRequest(query)
+        if (result is TdApi.Error) throw TelegramRequestException(result.code, result.message)
+        return result
+    }
+
+    private suspend fun rawRequest(query: TdApi.Function<*>): TdApi.Object = withTimeout(20_000) {
+        suspendCancellableCoroutine<TdApi.Object> { continuation ->
             client.send(query, { answer ->
                 if (continuation.isActive) continuation.resume(answer)
             }, { exception ->
-                if (continuation.isActive) continuation.resumeWithException(exception)
+                // Authentication exception details are not safe to return or log.
+                if (continuation.isActive) continuation.resumeWithException(IllegalStateException("Telegram временно недоступен"))
             })
         }
-        if (result is TdApi.Error) {
-            throw TelegramRequestException(result.code, result.message)
-        }
-        result
     }
 
     private fun onUpdate(update: TdApi.Object) {
@@ -159,7 +166,7 @@ class TdlibGateway(
         }
     }
 
-    private fun handleAuthorizationState(state: TdApi.AuthorizationState) {
+    @Synchronized private fun handleAuthorizationState(state: TdApi.AuthorizationState) {
         when (state) {
             is TdApi.AuthorizationStateWaitTdlibParameters -> {
                 val params = TdApi.SetTdlibParameters().apply {

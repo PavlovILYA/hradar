@@ -57,10 +57,10 @@ Build a local-first recruiting workspace centered on **explicitly permitted Tele
 
 ## Later — P4 desktop releases and platform support
 
-1. First a **macOS ARM64 internal beta**: bundle React assets, Kotlin backend, compatible TDLib/JNI and Java runtime; move Telegram onboarding out of terminal; implement clean lifecycle and local data migration.
-2. Then macOS Intel; use versioned build artifacts, smoke-tested installers and GitHub Releases with checksums.
-3. Evaluate Windows x64 and Linux x64 with platform-specific native TDLib builds, installation and signing requirements.
-4. Only after installation/recovery is dependable: signing/notarization, updates and public download links.
+1. **Current authorized distribution scope:** standalone ARM64 and Intel macOS 15+ installers, local UI Telegram onboarding, production assets and bundled runtime/JNI. Implementation in `feat/macos-distribution`; require successful real GitHub installer builds for both architectures and explicit physical-Mac verification before claiming distribution acceptance.
+2. Protected optional signing/notarization and manual existing-tag promotion; no publication without separate owner authorization. Apple credentials and physical-Mac acceptance remain owner actions.
+3. Evaluate Windows x64 and Linux x64 separately; no cross-platform support claim from macOS builds.
+4. Automatic updates and broader macOS compatibility require separate testing and design.
 
 `jpackage` can bundle the JVM/launcher, but by itself does not create a native window for React. Choose system-browser launch versus a WebView intentionally.
 

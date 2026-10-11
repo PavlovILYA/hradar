@@ -12,6 +12,10 @@ import org.drinkless.tdlib.TdApi
 }
 @Serializable data class OnboardingStatus(val state: String, val csrfToken: String = "", val link: String? = null, val notice: String? = null)
 
+class OnboardingRejected(val rateLimited: Boolean): IllegalArgumentException(
+    if (rateLimited) "Слишком много попыток. Подождите перед повтором." else "Telegram отклонил ввод. Проверьте данные и повторите попытку."
+)
+
 /** A deliberately finite login API. No generic Telegram executor is exposed. */
 class Onboarding(private val send: suspend (TdApi.Function<*>) -> TdApi.Object) {
     @Volatile private var current = OnboardingStatus("Credentials")
@@ -41,7 +45,7 @@ class Onboarding(private val send: suspend (TdApi.Function<*>) -> TdApi.Object) 
         val result = send(query)
         if (result is TdApi.Error) {
             // TDLib error text may echo user input. Never log/return it.
-            throw IllegalArgumentException(if (result.code == 429) "Слишком много попыток. Подождите перед повтором." else "Telegram отклонил ввод. Проверьте данные и повторите попытку.")
+            throw OnboardingRejected(result.code == 429 || result.message.startsWith("FLOOD_WAIT"))
         }
     }
 }

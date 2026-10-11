@@ -21,12 +21,17 @@ class DesktopTest {
             lease.close()
             SessionLease.acquire(paths.session)!!.close()
             assertTrue(Files.exists(paths.credentials))
+            Files.writeString(paths.credentials, "invalid settings")
+            assertNull(paths.loadCredentials())
+            paths.saveCredentials(creds)
+            assertEquals(creds, paths.loadCredentials())
         } finally { home.toFile().deleteRecursively() }
     }
     @Test fun `finite login states fake TDLib and redacted failures`() = runBlocking {
         val requests = mutableListOf<TdApi.Function<*>>()
         var fail = false
-        val auth = Onboarding { requests += it; if (fail) TdApi.Error(400,"secret-echo") else TdApi.Ok() }
+        var errorCode = 400
+        val auth = Onboarding { requests += it; if (fail) TdApi.Error(errorCode,"secret-echo") else TdApi.Ok() }
         val cases = listOf(
             TdApi.AuthorizationStateWaitPhoneNumber() to "+1234567890",
             TdApi.AuthorizationStateWaitCode() to "12345",
@@ -43,9 +48,17 @@ class DesktopTest {
         fail = true
         val error = assertFailsWith<IllegalArgumentException> { auth.submit(LoginInput("WaitEmailCode","123")) }
         assertFalse(error.message!!.contains("secret-echo"))
+        errorCode = 429
+        val limited = assertFailsWith<OnboardingRejected> { auth.submit(LoginInput("WaitEmailCode","123")) }
+        assertTrue(limited.rateLimited)
         auth.update(TdApi.AuthorizationStateWaitOtherDeviceConfirmation("tg://login?token=fake"))
         assertEquals("tg://login?token=fake",auth.status().link)
         assertFailsWith<IllegalArgumentException> { auth.submit(LoginInput(auth.status().state,"no")) }
+        auth.update(TdApi.AuthorizationStateWaitOtherDeviceConfirmation("https://evil.example")); assertNull(auth.status().link)
+        auth.update(TdApi.AuthorizationStateWaitRegistration()); assertNotNull(auth.status().notice)
+        auth.update(TdApi.AuthorizationStateWaitPremiumPurchase()); assertNotNull(auth.status().notice)
+        auth.update(TdApi.AuthorizationStateWaitPhoneNumber())
+        assertFailsWith<IllegalArgumentException> { auth.submit(LoginInput("WaitPhoneNumber","not-a-number")) }
         auth.update(TdApi.AuthorizationStateReady()); assertEquals("Ready",auth.status().state)
         auth.update(TdApi.AuthorizationStateClosed()); assertEquals("Closed",auth.status().state)
     }

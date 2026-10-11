@@ -3,6 +3,11 @@ on:
   pull_request:
     branches: [master]
   workflow_dispatch:
+    inputs:
+      sign:
+        description: Sign and notarize using the protected macos-signing environment
+        type: boolean
+        default: false
 permissions:
   contents: read
   id-token: write
@@ -80,3 +85,59 @@ jobs:
             .tdlib-build/distribution-${{ matrix.arch }}/distribution.json
           if-no-files-found: error
           retention-days: 90
+
+  sign:
+    if: github.event_name == 'workflow_dispatch' && inputs.sign
+    needs: package
+    environment: macos-signing
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
+        with:
+          distribution: temurin
+          java-version: '21.0.12+8.0.LTS'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: hradar-macos-${{ matrix.arch }}-unsigned
+          path: .tdlib-build/signing
+      - name: Provision ephemeral Developer ID and notarytool credentials
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_NOTARY_KEY_BASE64: ${{ secrets.APPLE_NOTARY_KEY_BASE64 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: bash scripts/provision-apple-signing.sh
+      - name: Sign, notarize and staple app and DMG
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: bash scripts/notarize-distribution.sh '${{ matrix.arch }}' .tdlib-build/signing
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
+        with:
+          subject-path: |
+            .tdlib-build/signing/signed/*.dmg
+            .tdlib-build/signing/signed/*.app.zip
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: hradar-macos-${{ matrix.arch }}-signed
+          path: .tdlib-build/signing/signed/
+          if-no-files-found: error
+          retention-days: 90
+      - name: Remove ephemeral credentials
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/hradar-signing.keychain-db" || true
+          rm -f "$RUNNER_TEMP/hradar-certificate.p12" "$RUNNER_TEMP/hradar-notary.p8"

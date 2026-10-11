@@ -24,7 +24,7 @@ class RuntimePaths(val home: Path = Path.of(System.getProperty("user.home"))) {
         if (id != null && hash != null) return ApiCredentials(id, hash).also { it.validate() }
         if (!Files.exists(credentials)) return null
         Files.setPosixFilePermissions(credentials, PosixFilePermissions.fromString("rw-------"))
-        return Json.decodeFromString<ApiCredentials>(Files.readString(credentials)).also { it.validate() }
+        return runCatching { Json.decodeFromString<ApiCredentials>(Files.readString(credentials)).also { it.validate() } }.getOrNull()
     }
     fun saveCredentials(value: ApiCredentials) {
         value.validate()
@@ -51,8 +51,9 @@ class SessionLease private constructor(private val channel: FileChannel, private
 object DesktopRuntime {
     val enabled = System.getProperty("hradar.desktop") == "true"
     val smoke = System.getProperty("hradar.smoke") == "true"
+    val port = if (smoke) System.getProperty("hradar.smokePort", "8080").toInt().also { require(it in 1024..65535) } else 8080
     fun token(): String = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32).also { SecureRandom().nextBytes(it) })
-    fun portOccupied(): Boolean = try { Socket().use { it.connect(java.net.InetSocketAddress("127.0.0.1", 8080), 300) }; true } catch (_: java.io.IOException) { false }
+    fun portOccupied(): Boolean = try { Socket().use { it.connect(java.net.InetSocketAddress("127.0.0.1", port), 300) }; true } catch (_: java.io.IOException) { false }
     fun open(url: String) { if (enabled && !smoke) ProcessBuilder("/usr/bin/open", url).start().waitFor() }
     fun conflict(message: String) {
         System.err.println(message)
@@ -65,7 +66,7 @@ object DesktopRuntime {
             val pid = (obj["pid"] as kotlinx.serialization.json.JsonPrimitive).content.toLong()
             if (ProcessHandle.of(pid).map { it.isAlive }.orElse(false) && portOccupied()) {
                 val token = (obj["token"] as kotlinx.serialization.json.JsonPrimitive).content
-                open("http://127.0.0.1:8080/#launch=$token"); true
+                open("http://127.0.0.1:$port/#launch=$token"); true
             } else false
         } catch (_: Exception) { false }
     }

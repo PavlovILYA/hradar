@@ -71,7 +71,7 @@ fun main() {
     val readPort = TdlibReadPort(telegram, search)
     val capabilities = CapabilityService(readPort, repositories)
     (org.slf4j.LoggerFactory.getLogger("io.modelcontextprotocol") as ch.qos.logback.classic.Logger).level = ch.qos.logback.classic.Level.OFF
-    val server = embeddedServer(Netty, host = "127.0.0.1", port = 8080) {
+    val server = embeddedServer(Netty, host = "127.0.0.1", port = DesktopRuntime.port) {
         configureDesktopSecurity(launchToken, csrf)
         configureOnboarding(telegram, paths, csrf) { Thread { kotlin.system.exitProcess(0) }.start() }
         routing { staticResources("/", "web", index = "index.html") }
@@ -94,6 +94,9 @@ fun main() {
                     HttpStatusCode.TooManyRequests -> "Telegram rate limit; try again later"
                     else -> "Telegram request failed"
                 }))
+            }
+            exception<dev.radar.telegram.OnboardingRejected> { call, ex ->
+                call.respondApiError(if (ex.rateLimited) HttpStatusCode.TooManyRequests else HttpStatusCode.BadRequest, ApiError(ex.message!!))
             }
             exception<IllegalArgumentException> { call, ex ->
                 call.respondApiError(HttpStatusCode.BadRequest, ApiError(ex.message ?: "Bad request"))
@@ -130,14 +133,17 @@ fun main() {
         server.start(wait = false)
         if (!DesktopRuntime.smoke) { telegram.start(); bot.start(); monitoring.start(); historySync.resumePending() }
         if (launchToken != null) {
-            Files.writeString(marker, "{\"pid\":${ProcessHandle.current().pid()},\"token\":\"$launchToken\"}", java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.TRUNCATE_EXISTING)
-            Files.setPosixFilePermissions(marker, java.nio.file.attribute.PosixFilePermissions.fromString("rw-------"))
+            val temporaryMarker = Files.createTempFile(paths.data, "desktop-", ".tmp", java.nio.file.attribute.PosixFilePermissions.asFileAttribute(java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")))
+            try {
+                Files.writeString(temporaryMarker, "{\"pid\":${ProcessHandle.current().pid()},\"token\":\"$launchToken\"}")
+                Files.move(temporaryMarker, marker, java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            } finally { Files.deleteIfExists(temporaryMarker) }
             // Netty start returns after bind; verify the HTTP route before launching the browser.
             val http = java.net.http.HttpClient.newHttpClient()
             repeat(50) {
                 try {
-                    if (http.send(java.net.http.HttpRequest.newBuilder(java.net.URI("http://127.0.0.1:8080/health")).build(), java.net.http.HttpResponse.BodyHandlers.discarding()).statusCode() == 200) {
-                        DesktopRuntime.open("http://127.0.0.1:8080/#launch=$launchToken")
+                    if (http.send(java.net.http.HttpRequest.newBuilder(java.net.URI("http://127.0.0.1:${DesktopRuntime.port}/health")).build(), java.net.http.HttpResponse.BodyHandlers.discarding()).statusCode() == 200) {
+                        DesktopRuntime.open("http://127.0.0.1:${DesktopRuntime.port}/#launch=$launchToken")
                         stopped.await(); return
                     }
                 } catch (_: java.io.IOException) { }

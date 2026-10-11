@@ -1,5 +1,33 @@
 # hradar — Development status / session handoff
 
+## macOS distribution checkpoint — 2026-10-11
+
+Branch `feat/macos-distribution`, clean starting worktree at `077c974`; no user data,
+existing backend/session or other feature branches modified. Draft
+[PR #5](https://github.com/PavlovILYA/hradar/pull/5). No tag or Release publication.
+
+VERIFIED at this checkpoint: local JDK 21 `:backend:build` exit 0, 78 tests with zero
+failures/errors/skips; production React build exit 0 and 17 offline Playwright tests
+passed, including synthetic onboarding. Local jpackage JVM/browser smoke used an
+isolated temporary home and port 18080, restricted PATH and no TG credentials/client:
+production UI, cookie/Origin/CSRF denials, duplicate/legacy-port refusal, restart
+SQLite/session sentinel persistence and UI shutdown passed. Existing listener PID
+72388 on 127.0.0.1:8080 was left running. Local smoke does not prove portable JNI or
+a CI installer. Existing [Fast CI 38161372557](https://github.com/PavlovILYA/hradar/actions/runs/38161372557)
+succeeded at `456b49d`; subsequent runtime/packaging corrections still need final CI.
+
+NOT VERIFIED: [installer run 38161372825](https://github.com/PavlovILYA/hradar/actions/runs/38161372825)
+is still building both portable native bundles at this checkpoint. Installer fixes
+(version/module arguments/ad-hoc seal) are pending the next commit/run. Real downloaded
+DMG installation on physical Intel/Apple Silicon, browser/Finder activation, existing
+real-session continuation, Telegram auth, signed/notarized Gatekeeper and macOS newer
+than CI's macOS 15 remain unverified. Signing needs owner-provided Apple credentials.
+
+NEXT ACTION: preserve completed native cache, push only this feature branch, inspect
+both actual installer runs to completion and fix failures. Publish artifact links and
+replace this checkpoint with final evidence. Scope/toolchain/owner procedures are in
+[MACOS_DISTRIBUTION.md](MACOS_DISTRIBUTION.md); production minimum is macOS 15.0.
+
 ## Feature/master integration — 2026-10-11
 
 VERIFIED: Clean feature worktree before `git fetch origin`; merged `origin/master`

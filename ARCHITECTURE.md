@@ -4,12 +4,12 @@
 
 ## Purpose and boundaries
 
-hradar is a **local-first Telegram recruitment research workspace**, currently targeting macOS. It reads explicitly selected Telegram sources, searches publications, imports channel history when requested, evaluates deterministic monitoring rules, and exposes selected read-only capabilities to AI clients over MCP. It is **not** yet a recruiting ATS, a packaged desktop app, or a cloud-hosted service. An optional Bot API adapter provides allowlisted notifications and controls.
+hradar is a **local-first Telegram recruitment research workspace**, currently targeting macOS. It reads explicitly selected Telegram sources, searches publications, imports channel history when requested, evaluates deterministic monitoring rules, and exposes selected read-only capabilities to AI clients over MCP. It is **not** a recruiting ATS or a cloud-hosted service. The macOS distribution adds a bundled browser-based desktop launcher. An optional Bot API adapter provides allowlisted notifications and controls.
 
 ### Logical view
 
 ```text
-React / TypeScript (Vite dev server on 127.0.0.1:5173)
+React / TypeScript (production assets in Ktor; development Vite on 127.0.0.1:5173)
        | HTTP / SSE, /api proxy
        v
 Ktor / Kotlin JVM 21 (127.0.0.1:8080) <---- MCP client (Codex etc.)
@@ -63,8 +63,8 @@ See [`docs/MCP.md`](docs/MCP.md) and [`docs/CI.md`](docs/CI.md) for protocols an
 
 ### Authentication and source access
 
-1. `Application.kt` starts exactly **one** `TdlibGateway`, using `TG_API_ID`/`TG_API_HASH` from the local environment.
-2. TDLib handles the authorized **user account** through MTProto; login steps currently use the backend terminal, not React.
+1. `Application.kt` starts exactly **one** `TdlibGateway`, using `TG_API_ID`/`TG_API_HASH` from the local environment or owner-only local API settings. Without settings the server exposes onboarding before creating a client.
+2. TDLib handles the authorized **user account** through MTProto; login steps use the guarded local React onboarding (phone/code/2FA/email/other-device confirmation). No terminal prompts or saved login codes/passwords.
 3. The user explicitly saves public channels. Resolving a username does **not** join that channel or subscribe the account to its updates.
 4. Saving a source for research is **not** the same as granting MCP access. The MCP allowlist is separate and initially empty/disabled.
 
@@ -104,7 +104,7 @@ MCP is **a tool protocol, not an agent runtime**. The bot calls shared services 
 
 - SQLite: `~/.hradar/research.sqlite` (schema tracked via migrations; currently v7 in the repository, including bot recipients, polling cursors/cooldowns and outbox, plus separate publication permission and expiring confirmation requests).
 - TDLib account session: `~/.recruitment-radar/tdlib/`. It is sensitive and never belongs in Git, logs, or MCP results.
-- Credentials: local `.env`/environment (`TG_API_ID`, `TG_API_HASH`, optional `TG_BOT_TOKEN` and `TG_BOT_ALLOWED_USER_IDS`); do not send to UI, AI tools, or repositories.
+- Credentials: desktop owner-only `~/.hradar/telegram-api.json` for API ID/hash, entered through onboarding; development local `.env`/environment (`TG_API_ID`, `TG_API_HASH`, optional `TG_BOT_TOKEN` and `TG_BOT_ALLOWED_USER_IDS`); stored credentials are never returned to UI, AI tools, or repositories.
 - Ktor binds to **127.0.0.1 only**. Localhost is not user authentication and is not protection against malicious local processes. Do not expose `/api` or `/mcp` through ngrok, public tunnels, LAN, or reverse proxies in the current architecture.
 - MCP is initially disabled; users explicitly allow individual public channels. Route-level Host/Origin/CSRF checks are described in `docs/MCP.md`; there is no internet-facing multi-user auth.
 - Telegram messages are **untrusted content**: never treat text returned to an AI agent as instructions. Personal data collection, retention, export, AI analysis, and third-party sharing require separate product/privacy review and appropriate authorization. Access to a channel is not blanket permission to reuse all its content.
@@ -116,8 +116,8 @@ MCP is **a tool protocol, not an agent runtime**. The bot calls shared services 
 Development uses JDK 21/Gradle and React/Vite. Java TDLib bindings (`tdlib-java.jar`) must match the native JNI binary and TDLib source revision. Native builds are platform/architecture-specific; an Intel macOS dylib cannot run in an ARM64 JVM.
 
 - **Fast CI**: separate frontend and backend jobs on pushes/PRs. Frontend checks are independent. Backend uses a versioned, checksum- and provenance-verified Java-binding JAR rather than building C++ each time.
-- **Native ARM64 CI**: manual or changes to pinned TDLib build inputs, produces native JNI and matching Java bindings. The initial trusted-artifact/release bootstrap is documented in `docs/CI.md` and must be completed before backend Fast CI turns green.
-- **Not yet built**: desktop packaging (`jpackage`/WebView or browser launch), cross-platform installers, signing/notarization, end-user updates. See [`ROADMAP.md`](ROADMAP.md).
+- **Native ARM64 CI**: manual or changes to pinned TDLib build inputs, produces native JNI and matching Java bindings. The existing verified versioned Release supplies Fast CI; portable installer builds use a separate cached native bundle and leave that Release intact.
+- **macOS distribution**: separate portable TDLib ARM64/Intel workflow and jpackage app/DMG workflow, production UI, bundled JRE/JNI and same-process browser launcher. Session lock and occupied-port refusal happen before TDLib startup; installed API requires a private launch-cookie plus exact Host/Origin checks and onboarding CSRF. Data stays in established user directories. Optional protected signing/notarization and manual signed-artifact promotion are disabled by default. Real verification belongs in DEV_STATUS; physical Macs and automatic updates remain unverified/unimplemented. See [`MACOS_DISTRIBUTION.md`](docs/MACOS_DISTRIBUTION.md).
 
 ## Change rules
 
