@@ -1,5 +1,77 @@
 # hradar — Development status / session handoff
 
+## Feature/master integration — 2026-10-11
+
+VERIFIED: Clean feature worktree before `git fetch origin`; merged `origin/master`
+(`44828cf`, maintainer merge of CI PR #1) into `feat/bot-workspace` only. The sole
+conflict was this handoff; both CI bootstrap and current mobile Bot/MCP reports are
+preserved below. Historical deployment, missing-pin and approval statements refer
+to their original checkpoints. Imported workflow/config/CI documentation match
+master exactly; no TDLib build scripts were edited.
+
+Local checks: `git diff --check` and staged check pass; no unmerged files or conflict
+markers. `./gradlew -p .tdlib-build/merge-check :backend:build --console=plain` exited
+0: 75 tests, zero failures/errors/skips. Source copy stays inside this worktree,
+uses the existing Java JAR and excludes credentials, JNI and sessions; it avoids
+recompiling classes used by the running backend. React production build exited 0;
+offline Playwright passed all 16 tests using an owned frontend on port 5174 and
+mocked APIs. Temporary Playwright config removed. Existing backend was not restarted;
+no second backend, TDLib rebuild, user SQLite/session changes or merge into master.
+
+NOT VERIFIED at commit time: PR #2 Actions for this merge commit; pending push.
+Phone verification gaps from the mobile checkpoint remain unchanged.
+
+NEXT ACTION: Push only the feature branch, verify PR #2 is mergeable and inspect
+its Fast CI frontend/backend jobs to completion. No PR merge is authorized.
+
+## CI bootstrap checkpoint — 2026-10-11
+
+Worktree `/Users/pavlov/Projects/hradar-ci`, branch `ci/tdlib-bootstrap` only.
+
+- **VERIFIED:** GitHub native run [38045478478](https://github.com/PavlovILYA/hradar/actions/runs/38045478478)
+  succeeded at `ce6363e9da5d1d7bf2069241f8738ad4303b18ce` on master, including
+  ARM64/JNI checks, Kotlin tests, provenance creation and artifact upload.
+  Artifact `11667860623` is available until 2027-01-08. Earlier Fast run
+  [38050957209](https://github.com/PavlovILYA/hradar/actions/runs/38050957209)
+  passed frontend; backend log shows bootstrap guard exit 1 before Kotlin build.
+  Downloaded artifact via authenticated CLI. Both SHA256 values match SHA256SUMS/metadata;
+  both `gh attestation verify` commands exited 0 with exact repository, signer,
+  master ref, build commit and GitHub-hosted runner requirements. Certificates
+  identify that exact run. JAR classes/source identity, ARM64 `lipo`, and pinned
+  upstream schema/original/patched CMake hashes passed independent checks.
+  `otool -L` confirms external JDK/Homebrew OpenSSL dependencies. Verified hashes
+  and build commit are now pinned in config/tdlib.json (see docs/CI.md).
+  Seven Python safeguard tests passed again. JDK 21 `./gradlew :backend:build
+  --no-daemon --console=plain` exited 0 with the downloaded verified JAR, no JNI,
+  no Telegram credentials/session: 56 tests, zero failures/errors/skips.
+  Fast CI supports bootstrap branch
+  pushes and manual dispatch; no native workflow or product code changed.
+  Commit `4b8272d` was pushed with explicit user authorization. Its Fast run
+  [38093744547](https://github.com/PavlovILYA/hradar/actions/runs/38093744547)
+  passed frontend and stopped backend at the unpinned bootstrap guard.
+  With explicit user approval, the [first TDLib Release](https://github.com/PavlovILYA/hradar/releases/tag/tdlib-bc9c263e2bfee06aaab41e82db51a103376030bc-v1)
+  is published with all four original assets. Uploaded asset digests match all
+  originals, and the tag resolves to the exact verified native build commit.
+  Local `fetch-tdlib-java.py` exited 0 using the permanent Release URL and
+  installed the SHA256/provenance/class-verified JAR without JNI.
+  Pinning commit `20d646d` is pushed to ci/tdlib-bootstrap. Its
+  [Fast CI 38095719750, attempt 2](https://github.com/PavlovILYA/hradar/actions/runs/38095719750/attempts/2)
+  concluded success: frontend production build and 14 offline Playwright tests;
+  backend verified Release fetch, seven Python safeguard tests, Kotlin build and
+  account-free unit tests (`BUILD SUCCESSFUL in 1m 15s`). No check was bypassed.
+- **NOT VERIFIED at the CI checkpoint:** master Fast CI with these pins (no merge performed in that task).
+  Intel local checks do not replace the GitHub ARM64 JNI smoke test; ARM64 JNI
+  was not loaded locally. No TDLib rebuild, backend startup, master modification
+  or merge occurred. Application processes in other worktrees were left untouched.
+- **NEXT ACTION at that checkpoint:** maintainer review of [PR #1](https://github.com/PavlovILYA/hradar/pull/1)
+  from ci/tdlib-bootstrap to master. Bootstrap is verified on the feature branch;
+  merge remains a separate maintainer action, outside agent authorization.
+
+PR #1 has since been merged by the maintainer into master (`44828cf`). Its changes
+are being integrated into the Bot feature branch; no merge into master is performed
+by this task. Historical bootstrap guards and missing-pin statements below are
+superseded by the published Release and committed hashes above.
+
 ## Mobile recruiter checkpoint — 2026-10-11
 
 This checkpoint supersedes runtime and task status below. Branch `feat/bot-workspace`;
@@ -55,7 +127,7 @@ NEXT ACTION:
 - For rollback stop the backend and restore the stopped-database backup before
   running an older binary; do not downgrade v7 in place or run a second TDLib client.
 
-## Runtime follow-up — 2026-10-11
+## Runtime follow-up — 2026-10-11 (historical)
 
 VERIFIED: User reported new commands unavailable. Listener PID 68501 was still the
 old adjacent `hradar` checkout; its live MCP listing had nine tools. Stopped that
@@ -80,11 +152,11 @@ matching post in an authorized test source. MCP match reads additionally need ex
 source grants. No push or merge.
 
 
-Current checkpoint: 2026-10-11, Telegram Inbox and safe MCP publication, branch
+Historical checkpoint: 2026-10-11, Telegram Inbox and safe MCP publication, branch
 `feat/bot-workspace`, based on `ae7b322`. No push, merge, CI/script changes or backend
 restart. Previous checkpoint evidence is retained below as historical context.
 
-## VERIFIED — current task
+## VERIFIED — previous Inbox task (historical)
 - `/matches`, `/sources`, `/digest`, `/help`, inline saved-publication navigation,
   read marking shared with React, and verified original-link buttons implemented.
   Normal navigation edits the current bot card through the existing durable outbox;
@@ -114,7 +186,7 @@ restart. Previous checkpoint evidence is retained below as historical context.
   isolated bounded worker, cancellation/restart and review stages. No model/CLI/shell
   execution is connected to Telegram.
 
-## NOT VERIFIED — current task
+## NOT VERIFIED — previous Inbox task (historical)
 - Real bot command/edit/phone delivery and MCP publication confirmation were not
   exercised against Telegram. Fake API success does not prove phone display.
 - Existing backend PID 68501 was identified in the adjacent `/Users/pavlov/Projects/hradar`
@@ -124,7 +196,7 @@ restart. Previous checkpoint evidence is retained below as historical context.
   recalled by revocation. Deleted/uneditable bot cards can produce a permanent edit
   failure; reopening `/matches` provides a fresh card.
 
-## NEXT ACTION — current task
+## NEXT ACTION — previous Inbox task (historical)
 Stop the one existing backend; back up its SQLite database; deploy this branch with
 compatible existing TDLib artifacts and start exactly one backend. Follow the manual
 Inbox, original-link, consent/cancel/confirm/revoke and phone checks in `docs/BOT.md`.
@@ -132,7 +204,7 @@ Do not run a competing getUpdates consumer. Push requires separate user approval
 
 ---
 
-## Previous checkpoint — 2026-10-10
+## Previous checkpoint — 2026-10-10 (historical)
 
 Verified 2026-10-10. Milestone: optional Telegram Bot API notifications and controls.
 Existing documentation changes preserved separately in checkpoint `b3440d0`.
