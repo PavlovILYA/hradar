@@ -52,9 +52,11 @@ class RecruitmentProjectService(private val repo: Repositories, private val matc
     }
     fun statistics(id: String): ProjectStatistics { get(id); return repo.recruitmentStatistics(id) }
     fun add(id: String, input: AddPublication): RecruitmentCard {
-        get(id); require(input.channelId < 0 && input.messageId > 0) { "Некорректная публикация" }
-        val message = repo.recruitmentPublication(input.channelId, input.messageId) ?: throw ResourceNotFound()
-        return repo.addRecruitmentCard(id, message, classifier.classify(message.text))
+        val project = get(id); require(input.channelId < 0 && input.messageId > 0) { "Некорректная публикация" }
+        val evidence = repo.recruitmentPublication(input.channelId, input.messageId) ?: throw ResourceNotFound()
+        // Shared publication evidence may carry another project's/template's explanation.
+        val message = evidence.copy(explanation = explain(project, evidence.text))
+        return repo.addRecruitmentCard(id, message, classifier.classify(message.text), project)
     }
     fun update(id: String, card: String, input: CardUpdate): RecruitmentCard {
         require(input.notes.length <= 10000 && input.interest in 0..5) { "Заметка: до 10000 символов; интерес: 0–5" }
@@ -62,6 +64,11 @@ class RecruitmentProjectService(private val repo: Repositories, private val matc
     }
     fun remove(id: String, card: String) { get(id); if (!repo.deleteRecruitmentCard(id, card)) throw ResourceNotFound() }
     private fun rule(project: RecruitmentProject) = SearchTemplate(name = project.criteria.name, required = project.criteria.required, excluded = project.criteria.excluded, telegramQuery = project.criteria.required.firstOrNull() ?: project.criteria.name, sourceMode = "selected", sources = project.criteria.sources)
+    private fun explain(project: RecruitmentProject, text: String?): MatchExplanation {
+        val criteria = rule(project)
+        return matching.check(criteria, text).copy(foundAny = matching.check(
+            criteria.copy(required = emptyList(), excluded = emptyList(), any = project.criteria.desired), text).foundAny)
+    }
     suspend fun search(id: String, request: ProjectSearch): ProjectSearchPage {
         val project = get(id)
         require(request.query.trim().length in 1..256 && request.mode in setOf("telegram", "archive")) { "Введите запрос и выберите место поиска" }
@@ -89,7 +96,7 @@ class RecruitmentProjectService(private val repo: Repositories, private val matc
             val result = try {
                 withTimeoutOrNull(remainingMs) {
                     recruiter.find(request.query, request.mode, project.criteria.sources, sourceCursor,
-                        minOf(10 - messages.size, 10_000 - seen.size))
+                        minOf(10 - messages.size, 10_000 - seen.size), withLinks = false)
                 }
             } catch (e: TelegramRequestException) {
                 state = if (e.code == 429 || e.reason.startsWith("FLOOD_WAIT")) "rate_limited" else "telegram_error"
@@ -102,12 +109,16 @@ class RecruitmentProjectService(private val repo: Repositories, private val matc
             for (message in result.messages) {
                 if (!seen.add(message.channelId to message.id)) continue
                 scanned++
-                val explanation = matching.check(rule(project), message.text)
-                if (explanation.matches) messages.add(message.copy(explanation = explanation.copy(
-                    foundAny = matching.check(rule(project).copy(any = project.criteria.desired), message.text).foundAny)))
+                val explanation = explain(project, message.text)
+                if (explanation.matches) messages.add(message.copy(explanation = explanation))
             }
             sourceCursor = result.cursor
-            if (result.state != "ok") { state = result.state; notice = result.notice; break }
+            if (result.state != "ok") {
+                state = result.state; notice = result.notice
+                // A link rate limit can occur after every source page is complete.
+                exhausted = state == "rate_limited" && sourceCursor.isEmpty()
+                break
+            }
             if (sourceCursor.isEmpty()) { exhausted = true; break }
             if (sourceCursor in visited) { state = "cursor_stalled"; break }
         }

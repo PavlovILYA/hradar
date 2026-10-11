@@ -134,9 +134,25 @@ class Repositories(path: Path) : AutoCloseable {
         return saved
     }
     @Synchronized fun deleteTemplate(id: String): Boolean = update("DELETE FROM search_templates WHERE id=?", id) > 0
-    @Synchronized fun recordMatch(template: SearchTemplate, message: ResearchMessage): Boolean = transaction {
-        if (this.template(template.id) == null) return@transaction false
-        val record = NotificationRecord(UUID.randomUUID().toString(), template.id, template.name, message)
+    @Synchronized fun recordMatch(template: SearchTemplate, message: ResearchMessage, monitoring: MatchingService? = null): Boolean = transaction {
+        val current = this.template(template.id) ?: return@transaction false
+        val effectiveTemplate = if (monitoring == null) {
+            if (current != template) return@transaction false
+            template
+        } else {
+            // Recheck live rules and source permission in the same transaction as the
+            // notification/outbox write. UI edits/removal may race the worker's snapshot.
+            if (!current.active || !current.subscribed || current.sourceMode == "global" ||
+                message.date < current.subscriptionSince || channels().none { it.id == message.channelId } ||
+                current.sourceMode == "selected" && message.channelId !in current.sources) return@transaction false
+            current
+        }
+        val evidence = if (monitoring == null) message else {
+            val explanation = monitoring.check(effectiveTemplate, message.text)
+            if (!explanation.matches) return@transaction false
+            message.copy(explanation = explanation)
+        }
+        val record = NotificationRecord(UUID.randomUUID().toString(), effectiveTemplate.id, effectiveTemplate.name, evidence)
         val inserted = update("INSERT INTO matched_messages(id,template_id,channel_id,message_id,data,message_date) VALUES(?,?,?,?,?,?) ON CONFLICT(template_id,channel_id,message_id) DO NOTHING", record.id, template.id, message.channelId, message.id, json.encodeToString(record), message.date)
         if (inserted > 0) {
             update("INSERT INTO notifications VALUES(?,0,?)", record.id, System.currentTimeMillis())
@@ -259,7 +275,12 @@ class Repositories(path: Path) : AutoCloseable {
     @Synchronized fun markRead(id: String): Boolean = update("UPDATE notifications SET is_read=1 WHERE id=?", id) > 0
     @Synchronized fun markAllRead() { update("UPDATE notifications SET is_read=1") }
     @Synchronized fun state(channelId: Long): MonitoringState? = rows("SELECT data FROM monitoring_state WHERE channel_id=?", listOf(channelId)) { json.decodeFromString<MonitoringState>(it.getString(1)) }.firstOrNull()
-    @Synchronized fun saveState(state: MonitoringState) { update("INSERT INTO monitoring_state VALUES(?,?) ON CONFLICT(channel_id) DO UPDATE SET data=excluded.data", state.channelId, json.encodeToString(state)) }
+    @Synchronized fun saveState(state: MonitoringState) {
+        // A source can disappear while an IO operation is suspended. Late checkpoints
+        // must neither recreate it nor kill the polling worker with a foreign-key error.
+        update("INSERT INTO monitoring_state SELECT ?,? WHERE EXISTS(SELECT 1 FROM monitored_channels WHERE id=?) ON CONFLICT(channel_id) DO UPDATE SET data=excluded.data",
+            state.channelId, json.encodeToString(state), state.channelId)
+    }
 
     @Synchronized fun historySyncs(): List<HistorySyncRecord> = rows("SELECT data FROM history_sync ORDER BY username") { json.decodeFromString<HistorySyncRecord>(it.getString(1)) }
     @Synchronized fun historySync(channelId: Long): HistorySyncRecord? = rows("SELECT data FROM history_sync WHERE channel_id=?", listOf(channelId)) { json.decodeFromString<HistorySyncRecord>(it.getString(1)) }.firstOrNull()
@@ -403,9 +424,13 @@ class Repositories(path: Path) : AutoCloseable {
         val where = "(? IS NULL OR status=?) AND instr(name,?)>0"
         val args = listOf(status?.name, status?.name, MatchingService().normalize(query))
         val total = rows("SELECT COUNT(*) FROM recruitment_projects WHERE $where", args) { it.getInt(1) }.single()
-        // List criteria are snapshots; details resolve live template associations.
         val page = rows("SELECT data FROM recruitment_projects WHERE $where ORDER BY updated_at DESC,id LIMIT ? OFFSET ?", args + listOf(limit, offset)) { json.decodeFromString<RecruitmentProject>(it.getString(1)) }
-        return ProjectPage(page, total)
+        // Resolve live links in one bounded batch: cascaded template deletion must not
+        // leave stale IDs in list DTOs that cannot subsequently be saved.
+        val links = if (page.isEmpty()) emptyMap() else rows(
+            "SELECT project_id,template_id FROM recruitment_templates WHERE project_id IN (${page.joinToString(",") { "?" }}) ORDER BY template_id",
+            page.map { it.id }) { it.getString(1) to it.getString(2) }.groupBy({ it.first }, { it.second })
+        return ProjectPage(page.map { it.copy(criteria = it.criteria.copy(templateIds = links[it.id].orEmpty())) }, total)
     }
     @Synchronized fun writeProject(input: ProjectInput, id: String? = null): RecruitmentProject = atomic {
         val old = id?.let { project(it) ?: throw ResourceNotFound() }
@@ -432,8 +457,9 @@ class Repositories(path: Path) : AutoCloseable {
         deleted
     }
     @Synchronized fun recruitmentCard(projectId: String, id: String): RecruitmentCard? = rows("SELECT data FROM recruitment_cards WHERE project_id=? AND id=?", listOf(projectId, id)) { json.decodeFromString<RecruitmentCard>(it.getString(1)) }.firstOrNull()
-    @Synchronized fun addRecruitmentCard(projectId: String, message: ResearchMessage, classification: Classification): RecruitmentCard = atomic {
+    @Synchronized fun addRecruitmentCard(projectId: String, message: ResearchMessage, classification: Classification, expected: RecruitmentProject? = null): RecruitmentCard = atomic {
         val project = project(projectId) ?: throw ResourceNotFound()
+        require(expected == null || project == expected) { "Проект изменился. Повторите добавление" }
         require(project.criteria.status == ProjectStatus.ACTIVE) { "Проект архивирован" }
         require(message.channelId in project.criteria.sources && channels().any { it.id == message.channelId }) { "Источник не разрешён в проекте" }
         val now = System.currentTimeMillis()
@@ -466,8 +492,16 @@ class Repositories(path: Path) : AutoCloseable {
     @Synchronized fun recruitmentMatches(projectId: String, sources: List<Long>, limit: Int, before: Long): ProjectMatchesPage {
         if (sources.isEmpty()) return ProjectMatchesPage(emptyList())
         val scope = sources.joinToString(",") { "?" }
-        val page = rows("SELECT m.data,n.rowid FROM notifications n JOIN matched_messages m ON m.id=n.id JOIN recruitment_templates t ON t.template_id=m.template_id WHERE t.project_id=? AND m.channel_id IN ($scope) AND n.rowid<? ORDER BY n.rowid DESC LIMIT ?", listOf(projectId) + sources + listOf(before, limit + 1)) { json.decodeFromString<NotificationRecord>(it.getString(1)).message to it.getLong(2) }
-        return ProjectMatchesPage(page.take(limit).map { it.first }.distinctBy { it.channelId to it.id }, page.take(limit).lastOrNull()?.second?.takeIf { page.size > limit })
+        // Deduplicate before applying the cursor: otherwise an older notification for
+        // another linked template resurfaces the same publication on a later page.
+        val page = rows("""WITH publications AS (
+            SELECT MAX(n.rowid) AS sequence FROM notifications n
+            JOIN matched_messages m ON m.id=n.id JOIN recruitment_templates t ON t.template_id=m.template_id
+            WHERE t.project_id=? AND m.channel_id IN ($scope) GROUP BY m.channel_id,m.message_id
+        ) SELECT m.data,p.sequence FROM publications p JOIN notifications n ON n.rowid=p.sequence
+          JOIN matched_messages m ON m.id=n.id WHERE p.sequence<? ORDER BY p.sequence DESC LIMIT ?""",
+            listOf(projectId) + sources + listOf(before, limit + 1)) { json.decodeFromString<NotificationRecord>(it.getString(1)).message to it.getLong(2) }
+        return ProjectMatchesPage(page.take(limit).map { it.first }, page.take(limit).lastOrNull()?.second?.takeIf { page.size > limit })
     }
     @Synchronized fun recruitmentStatistics(projectId: String): ProjectStatistics {
         project(projectId) ?: throw ResourceNotFound()

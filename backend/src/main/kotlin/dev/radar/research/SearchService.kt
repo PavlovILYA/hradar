@@ -31,7 +31,7 @@ class SearchService(private val telegram: TdlibGateway, private val repo: Reposi
         return try { json.decodeFromString<SearchCursor>(String(Base64.getUrlDecoder().decode(value))) }
         catch (_: Exception) { throw IllegalArgumentException("Некорректный курсор поиска") }
     }
-    suspend fun enrich(message: TdApi.Message, known: MonitoredChannel? = null, withLink: Boolean = true): ResearchMessage {
+    suspend fun enrich(message: TdApi.Message, known: MonitoredChannel? = null, withLink: Boolean = true, onLinkRateLimit: (() -> Unit)? = null): ResearchMessage {
         val channel = known ?: run {
             val chat = execute(TdApi.GetChat(message.chatId)) as TdApi.Chat
             val type = chat.type as? TdApi.ChatTypeSupergroup
@@ -40,7 +40,10 @@ class SearchService(private val telegram: TdlibGateway, private val repo: Reposi
         }
         val link = if (withLink) try {
             (execute(TdApi.GetMessageLink().apply { chatId = message.chatId; messageId = message.id }) as TdApi.MessageLink).link
-        } catch (ex: TelegramRequestException) { null } else null
+        } catch (ex: TelegramRequestException) {
+            if (ex.code == 429 || ex.reason.startsWith("FLOOD_WAIT")) onLinkRateLimit?.invoke()
+            null
+        } else null
         return ResearchMessage(message.id, message.chatId, message.date, messageText(message.content), channel.title, channel.username.takeIf { it.isNotBlank() }, link)
     }
     suspend fun search(input: SearchRequest): SearchPage = withTimeout(90_000) {
@@ -65,14 +68,16 @@ class SearchService(private val telegram: TdlibGateway, private val repo: Reposi
         val context = MessageDigest.getInstance("SHA-256").digest("$mode|$query|$usernames|${template?.let { json.encodeToString(it) }}".toByteArray()).joinToString("") { "%02x".format(it) }
         val cursor = if (input.cursor.isEmpty()) SearchCursor(context) else decode(input.cursor)
         require(cursor.context == context) { "Параметры поиска изменились. Начните заново" }
-        if (mode == "global") return@withTimeout global(query, input.limit, cursor, template)
+        if (mode == "global") return@withTimeout global(query, input.limit, cursor, template, input.withLinks)
         val positions = cursor.positions.toMutableMap()
         val done = cursor.done.toMutableSet()
         val channels = usernames.filterNot { it in done }.take(input.limit)
         val result = mutableListOf<ResearchMessage>()
         val errors = mutableListOf<String>()
         var candidates = 0
+        var rateLimited = false
         for (username in channels) {
+            if (rateLimited) break
             try {
                 val channel = if (mode == "tracked") saved.first { it.username == username } else telegram.resolveChannel(username)
                 val count = (input.limit / channels.size).coerceAtLeast(1)
@@ -84,24 +89,31 @@ class SearchService(private val telegram: TdlibGateway, private val repo: Reposi
                 for (message in page.messages) {
                     candidates++
                     val explanation = template?.let { matching.check(it, messageText(message.content)) }
-                    if (explanation == null || explanation.matches) result.add(enrich(message, channel).copy(explanation = explanation))
+                    if (explanation == null || explanation.matches) result.add(enrich(message, channel,
+                        withLink = input.withLinks && !rateLimited, onLinkRateLimit = { rateLimited = true }).copy(explanation = explanation))
                 }
             } catch (ex: TelegramRequestException) {
-                if (ex.code == 429 || ex.reason.startsWith("FLOOD_WAIT")) throw ex
+                if (ex.code == 429 || ex.reason.startsWith("FLOOD_WAIT")) {
+                    rateLimited = true
+                    break // Keep completed source pages; failed source position is unchanged.
+                }
                 errors.add("@$username недоступен (${ex.code})")
                 // Retry failed sources on the next page; never silently replace them.
             }
         }
         val next = if (done.containsAll(usernames)) "" else encode(SearchCursor(context, positions, done))
-        val notice = (errors + if (template != null) listOf("Проверено $candidates кандидатов. Локальные условия применяются к результатам запроса «$query».") else emptyList()).joinToString(" ").takeIf { it.isNotBlank() }
-        SearchPage(result.distinctBy { it.channelId to it.id }.sortedWith(compareByDescending<ResearchMessage> { it.date }.thenByDescending { it.id }), next, if (errors.isEmpty()) "ok" else "partial", notice)
+        val notice = (errors +
+            (if (rateLimited) listOf("Telegram ограничил частоту запросов. Повторите позже; уже найденные публикации доступны.") else emptyList()) +
+            (if (template != null) listOf("Проверено $candidates публикаций. Локальные условия применяются к результатам запроса «$query».") else emptyList()))
+            .joinToString(" ").takeIf { it.isNotBlank() }
+        SearchPage(result.distinctBy { it.channelId to it.id }.sortedWith(compareByDescending<ResearchMessage> { it.date }.thenByDescending { it.id }), next, if (rateLimited) "rate_limited" else if (errors.isEmpty()) "ok" else "partial", notice)
     }
     private fun function(name: String, fields: Map<String, Any>): TdApi.Function<*> {
         val type = Class.forName("org.drinkless.tdlib.TdApi\$$name")
         return (type.getDeclaredConstructor().newInstance() as TdApi.Function<*>).also { fn -> fields.forEach { (key, value) -> type.getField(key).set(fn, value) } }
     }
     private fun field(obj: TdApi.Object, name: String): Any = obj.javaClass.getField(name).get(obj)
-    private suspend fun global(query: String, limit: Int, cursor: SearchCursor, template: SearchTemplate?): SearchPage {
+    private suspend fun global(query: String, limit: Int, cursor: SearchCursor, template: SearchTemplate?, withLinks: Boolean): SearchPage {
         try {
             val check = function("GetPublicPostSearchLimits", mapOf("query" to query))
             val limits = execute(check)
@@ -112,7 +124,7 @@ class SearchService(private val telegram: TdlibGateway, private val repo: Reposi
             @Suppress("UNCHECKED_CAST") val messages = field(page, "messages") as Array<TdApi.Message>
             val result = messages.mapNotNull { message ->
                 val explanation = template?.let { matching.check(it, messageText(message.content)) }
-                if (explanation != null && !explanation.matches) null else enrich(message).copy(explanation = explanation)
+                if (explanation != null && !explanation.matches) null else enrich(message, withLink = withLinks).copy(explanation = explanation)
             }
             val offset = field(page, "nextOffset") as String
             val exceeded = field(page, "areLimitsExceeded") as Boolean

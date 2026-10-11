@@ -26,8 +26,9 @@ class NotificationService(private val repo: Repositories, private val matching: 
     fun process(channel: MonitoredChannel, message: ResearchMessage): Int {
         var count = 0
         repo.templates().filter { it.active && it.subscribed && message.date >= it.subscriptionSince && it.sourceMode != "global" && (it.sourceMode == "all" || channel.id in it.sources) }.forEach { template ->
-            val explanation = matching.check(template, message.text)
-            if (explanation.matches && repo.recordMatch(template, message.copy(explanation = explanation))) count++
+            // Matching must use the live rule in the write transaction: a rule can
+            // change after this snapshot, including making a previous non-match eligible.
+            if (repo.recordMatch(template, message, monitoring = matching)) count++
         }
         if (count > 0) revision.incrementAndGet()
         return count
@@ -104,15 +105,18 @@ class MonitoringService(
         if (message.id > state.lastMessageId) notifications.process(channel, search.enrich(message, channel, withLink = false))
     }
     internal suspend fun recover(channel: MonitoredChannel) {
+        if (channel !in repo.channels()) return
         var state = repo.state(channel.id)
         if (state == null) {
             // New sources start now. Never notify about their entire old history.
             val latest = readHistory(channel.id, 0L, 1)
+            if (channel !in repo.channels()) return
             repo.saveState(MonitoringState(channel.id, latest.messages.firstOrNull()?.id ?: 0L))
             return
         }
         repeat(4) {
             val page = readHistory(channel.id, state!!.recoveryCursor, 100)
+            if (channel !in repo.channels()) return
             val head = state!!.recoveryHead.takeIf { it != 0L } ?: page.messages.firstOrNull()?.id ?: state!!.lastMessageId
             for (message in page.messages.filter { it.id > state!!.lastMessageId }.asReversed()) {
                 // Store only matching publications; no full history copy.
