@@ -30,17 +30,21 @@ VERIFIED:
 - No BotService/BotUpdateHandler/MCP/Agent Bridge/LLM/agent-jobs.sqlite, CI or TDLib build
   script changes. Existing backend/session and user database were not modified/restarted.
   `git diff --check` passes. Guide: docs/RECRUITMENT_PROJECTS.md.
+- Feature commit `8972aeb` pushed only to feat/recruiting-crm. [PR #4](https://github.com/PavlovILYA/hradar/pull/4)
+  targets master. [Fast CI 38098840366](https://github.com/PavlovILYA/hradar/actions/runs/38098840366)
+  completed **success** for `8972aeb3664abed288e926b78e96dc3d9f563beb`: frontend production
+  build / 17 offline browser tests and backend pinned/attested Java JAR bootstrap,
+  safeguard tests / Kotlin build and account-free tests. No merge or release.
 
 NOT VERIFIED:
 - Production v7→v8 startup and live project Telegram search/monitoring were deliberately
   not run against the user's existing session. Live delivery is not established by fixtures.
-- GitHub Actions for this branch: pending PR creation and checks at this checkpoint.
-  Online/saved excerpts keep the shared 4,000-character limit; full text is in the original.
+- Online/saved excerpts keep the shared 4,000-character limit; full text is in the original.
   Classification is conservative phrase matching, not semantic understanding. Offset pages
   can shift under concurrent edits. No drag and drop; accessible select/save controls exist.
 
 NEXT ACTION:
-- Push only feat/recruiting-crm, create PR to master and inspect its checks; no merge/release.
+- Review PR #4; no merge/release is performed or authorized. The documentation follow-up records the verified feature commit/run above.
 - For manual deployment stop the single existing backend, make a stopped-database/SQLite
   backup, then start this checkout once. Follow docs/RECRUITMENT_PROJECTS.md. Rollback
   requires restoring the pre-v8 backup, not changing user_version in place.
