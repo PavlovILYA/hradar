@@ -1,5 +1,51 @@
 # hradar — Development status / session handoff
 
+## CI bootstrap checkpoint — 2026-10-11
+
+Worktree `/Users/pavlov/Projects/hradar-ci`, branch `ci/tdlib-bootstrap` only.
+
+- **VERIFIED:** GitHub native run [38045478478](https://github.com/PavlovILYA/hradar/actions/runs/38045478478)
+  succeeded at `ce6363e9da5d1d7bf2069241f8738ad4303b18ce` on master, including
+  ARM64/JNI checks, Kotlin tests, provenance creation and artifact upload.
+  Artifact `11667860623` is available until 2027-01-08. Latest Fast run
+  [38050957209](https://github.com/PavlovILYA/hradar/actions/runs/38050957209)
+  passed frontend; backend log shows bootstrap guard exit 1 before Kotlin build.
+  Downloaded artifact via authenticated CLI. Both SHA256 values match SHA256SUMS/metadata;
+  both `gh attestation verify` commands exited 0 with exact repository, signer,
+  master ref, build commit and GitHub-hosted runner requirements. Certificates
+  identify that exact run. JAR classes/source identity, ARM64 `lipo`, and pinned
+  upstream schema/original/patched CMake hashes passed independent checks.
+  `otool -L` confirms external JDK/Homebrew OpenSSL dependencies. Verified hashes
+  and build commit are now pinned in config/tdlib.json (see docs/CI.md).
+  Seven Python safeguard tests passed again. JDK 21 `./gradlew :backend:build
+  --no-daemon --console=plain` exited 0 with the downloaded verified JAR, no JNI,
+  no Telegram credentials/session: 56 tests, zero failures/errors/skips.
+  Fast CI supports bootstrap branch
+  pushes and manual dispatch; no native workflow or product code changed.
+  Commit `4b8272d` was pushed with explicit user authorization. Its Fast run
+  [38093744547](https://github.com/PavlovILYA/hradar/actions/runs/38093744547)
+  passed frontend and stopped backend at the unpinned bootstrap guard.
+  With explicit user approval, the [first TDLib Release](https://github.com/PavlovILYA/hradar/releases/tag/tdlib-bc9c263e2bfee06aaab41e82db51a103376030bc-v1)
+  is published with all four original assets. Uploaded asset digests match all
+  originals, and the tag resolves to the exact verified native build commit.
+  Local `fetch-tdlib-java.py` exited 0 using the permanent Release URL and
+  installed the SHA256/provenance/class-verified JAR without JNI.
+  Pinning commit `20d646d` is pushed to ci/tdlib-bootstrap. Its
+  [Fast CI 38095719750, attempt 2](https://github.com/PavlovILYA/hradar/actions/runs/38095719750/attempts/2)
+  concluded success: frontend production build and 14 offline Playwright tests;
+  backend verified Release fetch, seven Python safeguard tests, Kotlin build and
+  account-free unit tests (`BUILD SUCCESSFUL in 1m 15s`). No check was bypassed.
+- **NOT VERIFIED:** master Fast CI with these pins (no merge performed).
+  Intel local checks do not replace the GitHub ARM64 JNI smoke test; ARM64 JNI
+  was not loaded locally. No TDLib rebuild, backend startup, master modification
+  or merge occurred. Application processes in other worktrees were left untouched.
+- **NEXT ACTION:** maintainer review of [PR #1](https://github.com/PavlovILYA/hradar/pull/1)
+  from ci/tdlib-bootstrap to master. Bootstrap is verified on the feature branch;
+  merge remains a separate maintainer action, outside agent authorization.
+
+The product runtime handoff below is preserved; its previous native-CI blocker
+is superseded by the evidence above.
+
 Verified 2026-10-10. Milestone: optional Telegram Bot API notifications and controls.
 Existing documentation changes preserved separately in checkpoint `b3440d0`.
 Previous CI fix: `ce6363e`; CI files, TDLib build scripts and config/tdlib.json were not changed. No git push.

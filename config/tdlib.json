@@ -3,6 +3,6 @@
   "javaCmakeSha256": "d80106a6f60137b28b2f8f9bcc8c4215e574f25edbe495b684eec1432f58b664",
   "repository": "PavlovILYA/hradar",
   "releaseTag": "tdlib-bc9c263e2bfee06aaab41e82db51a103376030bc-v1",
-  "jarSha256": null,
-  "buildSourceDigest": null
+  "jarSha256": "f94f26b5ff60d254c51ce728079b600aa6c76b80cca009aa2969f81c6972adad",
+  "buildSourceDigest": "ce6363e9da5d1d7bf2069241f8738ad4303b18ce"
 }
