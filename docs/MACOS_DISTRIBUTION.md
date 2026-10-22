@@ -29,12 +29,12 @@ use the OS's per-app approval process only for an artifact you independently tru
 
 ## Local data and existing installations
 
-Data remains outside `.app`/DMG in the established directories:
+Data remains outside `.app`/DMG in `~/.hradar`:
 
-- `~/.hradar/research.sqlite`: archive, subscriptions, projects and other existing
+- `~/.hradar/data/research.sqlite`: archive, subscriptions, projects and other existing
   repository data. SQLite migrations retain their existing forward-only behavior.
-- `~/.recruitment-radar/tdlib/`: existing Telegram authorization/session.
-- `~/.hradar/telegram-api.json`: API ID/hash, owner-only mode 0600, in an owner-only
+- `~/.hradar/tdlib/`: existing Telegram authorization/session.
+- `~/.hradar/config/telegram-api.json`: API ID/hash, owner-only mode 0600, in an owner-only
   directory (0700). This file is plaintext protected by macOS filesystem permissions;
   it is not a password/code store or Keychain item. Login codes/2FA passwords are
   submitted directly to TDLib, never persisted or logged by onboarding.
@@ -54,6 +54,9 @@ is created. Stop the old development backend yourself before manual installation
 this task leaves it untouched. Older binaries launched afterward do not honor the new
 application lock; never deliberately run a legacy client against the same session.
 TDLib's own SQLite locking is an additional constraint, not a replacement for this rule.
+On first launch, previous locations are copied with a checked backup before TDLib
+starts. The installed app uses the same `RuntimePaths` as Gradle. Details and recovery:
+[storage migration](STORAGE_MIGRATION.md).
 
 This branch currently supports SQLite schemas through v8 (including hiring projects and publication Kanban). A database created by a
 newer feature build is refused with a visible message, without a downgrade or

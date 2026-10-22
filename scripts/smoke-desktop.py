@@ -50,7 +50,7 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
                 http('/api/onboarding/credentials', {'apiId':1,'apiHash':'0'*32}, headers, expected=403)
                 http('/api/projects', expected=403)
                 http('/api/projects', headers={'Cookie':cookie,'Origin':'https://evil.example'}, expected=403)
-                database = home/'.hradar/research.sqlite'
+                database = home/'.hradar/data/research.sqlite'
                 if attempt == 0:
                     with sqlite3.connect(database) as db:
                         assert db.execute('PRAGMA user_version').fetchone() == (8,)
@@ -82,7 +82,7 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
                 # A duplicate must exit without replacing marker, DB or session.
                 subprocess.run([str(launcher)],env=env,stdout=log,stderr=log,check=True,timeout=20)
                 assert json.loads(marker.read_text())['token'] == token
-                with sqlite3.connect(home/'.hradar/research.sqlite') as db:
+                with sqlite3.connect(home/'.hradar/data/research.sqlite') as db:
                     if attempt == 0:
                         db.execute('CREATE TABLE distribution_smoke (value TEXT)')
                         db.execute("INSERT INTO distribution_smoke VALUES ('preserved')")
@@ -96,6 +96,7 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
                 assert process.returncode == 0
                 assert not marker.exists()
                 assert (session/'preserved-sentinel').read_text() == 'preserved'
+                assert (home/'.hradar/tdlib/preserved-sentinel').read_text() == 'preserved'
             finally:
                 if process.poll() is None:
                     process.terminate(); process.wait(timeout=20)
@@ -106,11 +107,11 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
             subprocess.run([str(launcher)],env=env,stdout=log,stderr=log,check=True,timeout=20)
             assert not marker.exists()
         # No downgrade of a database created by a newer local feature build.
-        with sqlite3.connect(home/'.hradar/research.sqlite') as db:
+        with sqlite3.connect(home/'.hradar/data/research.sqlite') as db:
             db.execute('PRAGMA user_version=9')
         subprocess.run([str(launcher)],env=env,stdout=log,stderr=log,check=True,timeout=20)
         assert not marker.exists()
-        with sqlite3.connect(home/'.hradar/research.sqlite') as db:
+        with sqlite3.connect(home/'.hradar/data/research.sqlite') as db:
             assert db.execute('PRAGMA user_version').fetchone() == (9,)
             assert db.execute('SELECT value FROM distribution_smoke').fetchone() == ('preserved',)
             assert crm_snapshot == {table:db.execute(f'SELECT * FROM {table} ORDER BY 1,2').fetchall() for table in crm_snapshot}

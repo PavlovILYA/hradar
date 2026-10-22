@@ -1,5 +1,28 @@
 # hradar — Development status / session handoff
 
+## Unified local storage — 2026-10-23
+
+VERIFIED: `feat/unified-storage` was created from fetched `origin/master`
+`29b1078` in the separate `hradar-storage` worktree. The migration and all
+automatic tests used temporary fixtures; no real user storage or Telegram
+session was opened. The application now prepares `~/.hradar/data/`, `config/`
+and `tdlib/` and copies recognized legacy data with private backups, integrity
+checks, conflict detection and an idempotent completion marker. Original data
+is retained. See `docs/STORAGE_MIGRATION.md` for layout and rollback.
+
+VERIFIED: JDK 21 `:backend:build :backend:stageDesktop -PbundledWeb=true`
+passed (134 tests, no failures/errors/skips); React production build, 32
+offline Playwright scenarios, seven Python safeguards and script syntax checks
+passed. The staged diff must be checked for secrets before the authorized push.
+
+NOT VERIFIED: physical upgrade, TDLib authorization continuity and Telegram's
+server-side API application title; native macOS packaging on Intel and Apple
+Silicon is pending PR CI. The local worktree has the checksum-matched Java TDLib
+JAR but no native JNI bundle, so no local DMG smoke was run.
+
+NEXT ACTION: inspect staged diff for leaks, commit, push only this feature branch,
+open a PR to master, then inspect its CI. Do not merge or release.
+
 ## CRM master synchronization — 2026-10-12
 
 VERIFIED: PR #4 was merged by the maintainer as origin/master `0a24f2e`.
