@@ -256,10 +256,13 @@ See [CI setup, bootstrap publication, retry and TDLib updates](docs/CI.md).
 
 ## Optional Telegram bot
 
-Set `TG_BOT_TOKEN` and `TG_BOT_ALLOWED_USER_IDS` in your ignored local `.env`,
-restart the single backend and send `/start` to your bot from an allowlisted private
-account. Without a token the app works normally; an empty/invalid allowlist blocks
-the bot. New subscription matches use a durable SQLite delivery queue; old matches
+Open **Интеграции → Telegram Bot**, check and save a token from @BotFather, then
+enable the bot. hradar adds the currently signed-in Telegram account automatically;
+open the bot and send `/start` in its private chat. Invite other people with a one-use
+link or find their public @username. The legacy `TG_BOT_TOKEN` and
+`TG_BOT_ALLOWED_USER_IDS` environment settings still work until web settings are
+saved; saved settings then take precedence. New subscription matches use a durable
+SQLite delivery queue; old matches
 are not backfilled. `/status`, `/subscriptions`, `/pause`, `/resume` share the same
 rules as React. `/find query` searches saved Telegram sources or SQLite archive, `/watch` creates
 real subscriptions with preview/confirmation, and `/saved` opens operator favorites.

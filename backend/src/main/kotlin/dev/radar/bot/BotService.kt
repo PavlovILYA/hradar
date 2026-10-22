@@ -31,6 +31,7 @@ class BotService(
     @Volatile private var lastPollAt = 0L
     private var pollFailures = 0
     init { repo.configureBot(botId.takeIf { config.enabled }, config.allowedUsers) }
+    fun setAllowedUsers(ids: Set<Long>) { config.updateAllowedUsers(ids) }
     fun status(): BotStatus = BotStatus(state, notice, config.allowedUsers.size,
         botId?.let(repo::botRegisteredCount) ?: 0, botId?.let(repo::botDeliveryCounts) ?: BotDeliveryCounts(),
         botId?.let { maxOf(repo.botRetryAt(it, true), repo.botRetryAt(it, false), repo.botRateRetryAt(it)) } ?: 0, lastPollAt)
@@ -58,12 +59,12 @@ class BotService(
     private fun fail(error: BotApiException) {
         state = "error"
         notice = when (error.code) {
-            401 -> "Bot API отклонил авторизацию; проверьте токен локально и перезапустите backend"
-            409 -> "Конфликт getUpdates: проверьте другой poller или ранее настроенный webhook"
-            429 -> "Telegram ограничил Bot API; доставка ожидает retry_after"
-            403 -> "Bot API запретил доставку получателю; откройте бота и проверьте блокировку"
-            400 -> "Bot API отклонил запрос; проверьте состояние подписки и получателя"
-            else -> "Bot API временно недоступен; очередь сохранена для повторной попытки"
+            401 -> "Telegram отклонил токен. Проверьте подключение в настройках бота"
+            409 -> "Бот уже получает сообщения через другое подключение. Проверьте настройки Telegram"
+            429 -> "Telegram временно ограничил запросы. Доставка возобновится позже"
+            403 -> "Не удалось доставить сообщение. Получателю нужно открыть бота и проверить блокировку"
+            400 -> "Telegram отклонил сообщение. Проверьте получателя"
+            else -> "Telegram временно недоступен. Сообщения сохранены для повторной попытки"
         }
         if (error.code == 429) botId?.let { repo.setBotRateRetryAt(it, now() + retryDelay(error, 0)) }
         if (error.code == 401) fatal = true

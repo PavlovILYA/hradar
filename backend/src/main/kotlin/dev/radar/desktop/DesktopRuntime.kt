@@ -17,6 +17,7 @@ class RuntimePaths(val home: Path = Path.of(System.getProperty("user.home"))) {
     val session = home.resolve(".recruitment-radar/tdlib")
     val database = data.resolve("research.sqlite")
     val credentials = data.resolve("telegram-api.json")
+    val botConfiguration = credentials.parent.resolve("telegram-bot.json")
     fun prepare() { privateDirectory(data); privateDirectory(session) }
     fun loadCredentials(): ApiCredentials? {
         val id = System.getenv("TG_API_ID")?.toIntOrNull()

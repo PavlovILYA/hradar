@@ -6,30 +6,28 @@ client. No webhook, tunnel, second TDLib session, LLM or Codex execution is invo
 
 ## Setup and real verification
 
-1. In Telegram, open the official [@BotFather](https://t.me/BotFather), run `/newbot`
-   and follow its instructions. Save the token **only** in your ignored local `.env`;
-   do not paste it into chat, Git, command-line URLs or screenshots. Use a dedicated
-   bot that is not already running another getUpdates consumer or webhook.
-2. Obtain your own numeric Telegram user ID. For the account already authorized in
-   hradar, open `http://127.0.0.1:8080/api/telegram/me` locally and read its `id` field.
-   This is a user ID, not a channel ID, username or phone number. Register that same
-   account in the bot. No third-party ID bot is required.
-3. Add to `.env` (values below are placeholders):
-
-   ```dotenv
-   TG_BOT_TOKEN=<token obtained privately from BotFather>
-   TG_BOT_ALLOWED_USER_IDS=<your positive numeric user ID>
-   ```
-
-   Multiple trusted operators may be comma-separated, e.g. `123456789,987654321`.
-   In the actual file replace the placeholders with real values, without angle
-   brackets. Every operator can see **all monitored sources/subscriptions** and
-   pause/resume shared rules. Only add people authorized to receive those excerpts.
-4. Stop the current backend before restarting with `./scripts/run-local.sh`. Keep
-   exactly one backend/poller for this bot. Without a token the app works as before;
-   missing, empty or malformed allowlist blocks the bot entirely. Credentials and
-   recipient IDs are not exposed in the frontend or status REST response.
-5. From the allowlisted account open the bot's **private** chat and send `/start`.
+1. Finish Telegram sign-in in hradar. Open **Интеграции → Telegram Bot**. Create a
+   bot with [@BotFather](https://t.me/BotFather), paste its token into the local
+   form, choose **Проверить токен**, then **Сохранить подключение** and **Включить
+   бота**. hradar reads the current account's numeric ID from its authorized TDLib
+   session and adds it automatically. No external ID bot or backend restart is needed.
+   Use a bot without another getUpdates consumer or webhook.
+2. Open the connected bot from hradar and send `/start` in its **private** chat.
+   Telegram does not allow a bot to start the conversation. The owner's access is
+   granted on enable, but delivery begins only after this opt-in.
+3. To add another person, create a one-use invitation link (valid for 10 minutes)
+   and send it privately. It works without a public username; Telegram supplies the
+   sender's numeric ID after they press Start. You may also find a public @username,
+   confirm the displayed account and ask that person to open the bot and send `/start`.
+   Revoke access or outstanding invitations from the same screen. Every authorized
+   operator can see all monitored sources/subscriptions and pause/resume shared rules.
+4. The prior `TG_BOT_TOKEN` and `TG_BOT_ALLOWED_USER_IDS` environment setup still
+   works when no web configuration has been saved. Once web settings exist, they
+   take precedence even if legacy environment values remain. Connecting the same
+   bot through the web interface retains previously allowed IDs and their queue.
+   The token is kept in
+   a private-permission local file and never returned by status endpoints.
+5. From an authorized account, use the bot's **private** chat. After `/start`,
    The bot confirms registration. In hradar open **Интеграции → Telegram Bot**:
    check connection, registered-recipient count and queue status. `/status` reports
    TDLib/monitoring/active subscriptions. `/subscriptions`, `/pause`, `/resume`
@@ -53,17 +51,18 @@ client. No webhook, tunnel, second TDLib session, LLM or Codex execution is invo
 If blocked by Telegram (403), unblock the bot, check the allowlist and send `/start`
 again for future events. Permanently rejected 400/403 deliveries remain failed for
 inspection; they are not retried indefinitely or automatically resent by `/start`.
-A 401 stops requests until configuration is corrected and the backend restarted.
+A 401 stops requests until the token is corrected in the web settings.
 For 409, stop the competing poller or remove a pre-existing webhook yourself using
 Telegram's documented procedure. hradar never silently deletes another integration's
 webhook. Do not run ad-hoc getUpdates while hradar is polling.
 
 ## Delivery and persistence
 
-- Schema v5 adds `bot_recipients`, `bot_state` and `bot_outbox`. Migration is forward
+- Schema v9 adds `bot_access` and `bot_invitations`; schema v5 added
+  `bot_recipients`, `bot_state` and `bot_outbox`. Migration is forward
   and transactional; existing archive, templates, notifications and MCP settings
   remain intact. Before a production upgrade, stop the app and back up the local
-  database. Older v4 binaries reject the newer schema; rollback requires that backup,
+  database. Older binaries that do not understand v9 reject the newer schema; rollback requires that backup,
   not deleting or modifying the current database.
 - `NotificationService` is the only matching/notification pipeline. New match,
   in-app notification and opted-in bot outbox rows commit in one SQLite transaction.
@@ -97,6 +96,11 @@ webhook. Do not run ad-hoc getUpdates while hradar is polling.
 counts, retry deadline and last successful poll. It never returns the token, raw Bot
 API errors, message bodies, user IDs or local files. Queue counts include command
 replies. No arbitrary Bot API transport or arbitrary-chat sender is exposed. MCP can request a constrained publication only through the consent flow below.
+`GET /api/integrations/bot/settings` additionally returns bot identity, owner and
+authorized user IDs, registration states and pending invitation IDs/expiry, but never
+tokens or invitation links. All bot-setting mutations require the desktop cookie when
+enabled, exact local Host/Origin and CSRF header. A new invitation link is returned
+only by its creation response; the database stores its SHA-256 hash.
 
 ## Automated checks and external evidence
 
@@ -117,6 +121,7 @@ fake tests alone do not establish those external outcomes.
 Official protocol references: [Bot API](https://core.telegram.org/bots/api#getupdates),
 [sendMessage](https://core.telegram.org/bots/api#sendmessage),
 [BotFather](https://core.telegram.org/bots/features#botfather).
+Invitation payloads follow Telegram's [64-character deep-link limit](https://core.telegram.org/bots/features#deep-linking): `i_` plus 43 base64url characters from 32 random bytes.
 
 ## Telegram Inbox and agent publication
 

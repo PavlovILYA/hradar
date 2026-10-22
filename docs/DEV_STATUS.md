@@ -1,5 +1,40 @@
 # hradar — Development status / session handoff
 
+## Bot settings in web UI — 2026-10-22 (feat/bot-web-settings)
+
+VERIFIED: In isolated worktree from origin/master, bot settings use a private file
+resolved from `RuntimePaths.credentials.parent`, with saved settings taking precedence
+over legacy `TG_BOT_TOKEN` / `TG_BOT_ALLOWED_USER_IDS`. A validated getMe identity
+is required before saving or replacing a token. The currently authorized TDLib
+user becomes the owner on enable; without authorization enable fails. Poller switch
+cancels/joins the old service before starting the replacement. SQLite v9 adds
+per-bot user access and hashed one-use invitations; claim, recipient registration,
+reply and update cursor commit together. Existing bot recipients, queue and saved
+publications remain namespaced by bot ID. Username lookup uses TDLib
+SearchPublicChat/GetUser and accepts only regular private users. Bot-setting mutations
+use the existing desktop cookie plus exact Origin and CSRF checks. See docs/BOT.md.
+
+VERIFIED AUTOMATION: JDK 21 `./gradlew :backend:build` passed with 126 tests,
+zero failures/errors/skips; `npm run build --prefix frontend` passed; offline
+Playwright 32 passed. All new tests use fake Bot API and TDLib, and
+temporary SQLite; no real Telegram account or user's database was touched.
+
+NOT VERIFIED: Real BotFather token, Telegram deep link activation, actual getUpdates
+polling after a live token switch, sendMessage to a phone, and production SQLite v8→v9
+migration. The single user backend was not started or stopped. A pre-upgrade backup
+is required for rollback to a binary that only understands schema v8.
+
+NEXT ACTION: On a Mac with a controlled test bot, back up the local database, stop
+the existing hradar process, start this branch as the only backend, complete Telegram
+sign-in, and follow docs/BOT.md. For unified-storage integration, reconcile concurrent
+edits to `Application.kt`, `DesktopRuntime.kt` and `TdlibGateway.kt`; the bot path is
+derived from `RuntimePaths.credentials.parent`, so it follows that PR's config move.
+Security: Bot token is saved only under the user's private runtime directory with
+600 file / 700 parent permissions; TDLib/API credentials stay in their existing
+local locations. New `scripts/check-secrets.py` scans Git index blobs and tracked
+paths without printing values, and Fast CI runs it before builds. No real user
+secret files, sessions or databases were read or used for tests.
+
 ## CRM master synchronization — 2026-10-12
 
 VERIFIED: PR #4 was merged by the maintainer as origin/master `0a24f2e`.

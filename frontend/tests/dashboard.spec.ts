@@ -404,21 +404,53 @@ test('MCP settings require explicit enable and source grants and reuse the capab
 });
 
 test('bot integration shows optional configuration and persistent delivery status without credentials', async ({ page }) => {
-  let state = { state: 'disabled', notice: 'Bot API выключен: TG_BOT_TOKEN не задан', allowedUsers: 0, registeredUsers: 0, delivery: { pending: 0, sent: 0, failed: 0 }, retryAt: 0, lastPollAt: 0 };
+  let state = { state: 'disabled', notice: null as string | null, allowedUsers: 0, registeredUsers: 0, delivery: { pending: 0, sent: 0, failed: 0 }, retryAt: 0, lastPollAt: 0 };
+  const bot = { id: 123, username: 'synthetic_bot', name: 'Synthetic Bot' };
+  let settings = { status: state, configured: false, enabled: false, identity: null as typeof bot | null, owner: null as { id: number; name: string; username: string | null; role: string; connected: boolean } | null, users: [] as { id: number; name: string; username: string | null; role: string; connected: boolean }[], invitations: [] as { id: string; expiresAt: number }[], legacy: false };
+  await page.route('**/api/onboarding', route => route.fulfill({ json: { state: 'Ready', csrfToken: 'test-csrf' } }));
+  await page.route('**/api/integrations/bot/**', async route => {
+    const url = new URL(route.request().url());
+    const path = url.pathname;
+    if (route.request().method() === 'GET') return route.fulfill({ json: settings });
+    expect(route.request().headers()['x-hradar-csrf']).toBe('test-csrf');
+    if (path.endsWith('/check')) return route.fulfill({ json: bot });
+    if (path.endsWith('/connection')) { settings = { ...settings, configured: true, identity: bot }; return route.fulfill({ json: settings }); }
+    if (path.endsWith('/enabled')) { settings = { ...settings, enabled: true, owner: { id: 7, name: 'Owner', username: null, role: 'owner', connected: false }, status: { ...state, state: 'running', allowedUsers: 1 } }; return route.fulfill({ json: settings }); }
+    if (path.endsWith('/invitations') && route.request().method() === 'POST') { settings.invitations = [{ id: 'one', expiresAt: Date.now() + 600_000 }]; return route.fulfill({ json: { ...settings.invitations[0], url: 'https://t.me/synthetic_bot?start=i_synthetic' } }); }
+    if (path.endsWith('/users/lookup')) return route.fulfill({ json: { id: 8, name: 'Guest', username: 'guest_user', role: 'guest', connected: false } });
+    if (path.endsWith('/users') && route.request().method() === 'POST') { settings.users = [{ id: 8, name: 'Guest', username: 'guest_user', role: 'guest', connected: false }]; return route.fulfill({ json: settings }); }
+    if (path.endsWith('/users/8')) { settings.users = []; return route.fulfill({ json: settings }); }
+    return route.fulfill({ json: settings });
+  });
   await page.route('**/api/integrations/bot', route => route.fulfill({ json: state }));
   await page.goto('/');
   await page.getByRole('button', { name: 'Интеграции → Telegram Bot', exact: true }).click();
   const panel = page.getByRole('region', { name: 'Интеграции Bot API', exact: true });
-  await expect(panel.getByText('Bot API выключен', { exact: true })).toBeVisible();
-  await expect(panel.getByText(/браузер можно закрыть/)).toBeVisible();
-  await expect(panel.getByText(/после сбоя возможна повторная доставка/i)).toBeVisible();
-  await expect(panel.locator('input')).toHaveCount(0);
-  state = { state: 'error', notice: 'Telegram ограничил Bot API; доставка ожидает retry_after', allowedUsers: 1, registeredUsers: 1, delivery: { pending: 3, sent: 2, failed: 1 }, retryAt: Date.now() + 60_000, lastPollAt: Date.now() };
+  await expect(panel.getByText('Бот выключен', { exact: true })).toBeVisible();
+  await panel.getByLabel('Токен бота').fill('123:synthetic');
+  await panel.getByRole('button', { name: 'Проверить токен' }).click();
+  await expect(panel.getByText(/Найден бот:/)).toBeVisible();
+  await panel.getByRole('button', { name: 'Сохранить подключение' }).click();
+  await expect(panel.getByLabel('Токен бота')).toBeEmpty();
+  await expect(panel.getByText(/Токен сохранён локально/)).toBeVisible();
+  await panel.getByRole('button', { name: 'Включить бота' }).click();
+  await expect(panel.getByText(/Основной аккаунт:.*Owner/)).toBeVisible();
+  await expect(panel.getByRole('link', { name: 'Открыть бота' })).toHaveAttribute('href', 'https://t.me/synthetic_bot');
+  await panel.getByRole('button', { name: 'Пригласить пользователя' }).click();
+  await expect(panel.getByRole('link', { name: 'Открыть приглашение' })).toHaveAttribute('href', /start=i_/);
+  await panel.getByLabel('Добавить по @username').fill('@guest_user');
+  await panel.getByRole('button', { name: 'Найти пользователя' }).click();
+  await expect(panel.getByText(/Найден: Guest/)).toBeVisible();
+  await panel.getByRole('button', { name: 'Подтвердить доступ' }).click();
+  await expect(panel.getByText(/Guest · ID 8/)).toBeVisible();
+  await panel.getByRole('button', { name: 'Отозвать доступ' }).click();
+  await expect(panel.getByText(/Guest · ID 8/)).toHaveCount(0);
+  state = { state: 'error', notice: 'Telegram временно ограничил запросы', allowedUsers: 1, registeredUsers: 1, delivery: { pending: 3, sent: 2, failed: 1 }, retryAt: Date.now() + 60_000, lastPollAt: Date.now() };
+  settings.status = state;
   await panel.getByRole('button', { name: 'Обновить состояние бота' }).click();
-  await expect(panel.getByText('Bot API: требуется внимание', { exact: true })).toBeVisible();
-  await expect(panel.getByText(/доставка ожидает retry_after/)).toBeVisible();
-  await expect(panel.locator('dd')).toHaveText(['1', '1', '3', '2', '1']);
-  await expect(panel.getByText(/Повторная попытка не раньше/)).toBeVisible();
+  await expect(panel.getByText(/Боту требуется внимание/)).toBeVisible();
+  await expect(panel.locator('dd')).toHaveText(['1', '3', '2', '1']);
+  await expect(panel.getByText(/Повторим после/)).toBeVisible();
   await page.getByRole('button', { name: 'Поиск в Telegram', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Поиск в Telegram', exact: true })).toBeVisible();
 });

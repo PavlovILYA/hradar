@@ -16,6 +16,19 @@ class BotUpdateHandler(
         fun ignore(): String? { repo.handleBotUpdate(botId, update.id) {}; return null }
         val sender = update.callback?.userId ?: update.message?.userId ?: return ignore()
         val chatInfo = update.callback?.chat ?: update.message?.chat ?: return ignore()
+        val invite = update.message?.text?.trim()?.split(Regex("\\s+"), limit = 2)
+        if (sender !in config.allowedUsers && update.callback == null && !(update.message?.isBot ?: true) &&
+            chatInfo.type == "private" && chatInfo.id == sender && invite?.size == 2 && invite[0].substringBefore('@') == "/start" &&
+            invite[0].substringAfter('@', botUsername).equals(botUsername, true)) {
+            val hash = BotInvitationToken.hash(invite[1])
+            if (hash != null && repo.acceptBotInvitation(botId, update.id, hash, sender, chatInfo.id,
+                    update.message?.firstName.orEmpty(), update.message?.username, now())) {
+                val allowed = config.allowedUsers + sender
+                config.updateAllowedUsers(allowed)
+                repo.configureBot(botId, allowed)
+                return null
+            }
+        }
         if ((update.callback?.isBot ?: update.message?.isBot ?: true) || sender !in config.allowedUsers || chatInfo.type != "private" || chatInfo.id != sender) return ignore()
         val rawInput = update.message?.text?.trim()
         val commandTarget = rawInput?.substringBefore(' ')?.substringBefore('\n')?.substringAfter('@', "").orEmpty()

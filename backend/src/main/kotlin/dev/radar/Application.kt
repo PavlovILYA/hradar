@@ -67,7 +67,9 @@ fun main() {
     val subscriptions = SubscriptionService(repositories, matching)
     val recruiter = RecruiterService(repositories, RecruiterSearchPort(search::search))
     val workspace = BotWorkspaceService(repositories, recruiter)
-    val bot = BotService(BotConfig.fromEnvironment(), repositories, subscriptions, statusText = {
+    val bot = BotSettingsService(paths, repositories, subscriptions,
+        owner = { telegram.getMe().let { BotAccessUser(it.id, listOf(it.firstName, it.lastName).filter(String::isNotBlank).joinToString(" "), it.username, "owner") } },
+        lookup = telegram::resolvePublicUser, statusText = {
         val status = telegram.getStatus()
         "hradar\nTDLib: ${status.authorizationState} · ${status.connectionState}\nМониторинг: ${repositories.channels().size} источников\nАктивные подписки: ${subscriptions.list().count { it.active && it.subscribed && it.sourceMode != "global" }}"
     }, workspace = workspace, link = { chatId, messageId ->
@@ -87,6 +89,11 @@ fun main() {
             json(Json { prettyPrint = true; encodeDefaults = true })
         } }
         install(StatusPages) {
+            exception<BotApiException> { call, ex ->
+                val status = when (ex.code) { 401 -> HttpStatusCode.BadRequest; 409 -> HttpStatusCode.Conflict; 429 -> HttpStatusCode.TooManyRequests; else -> HttpStatusCode.BadGateway }
+                val message = when (ex.code) { 401 -> "Telegram отклонил токен бота"; 409 -> "Бот уже используется другим подключением"; 429 -> "Telegram ограничил запросы. Попробуйте позже"; else -> "Не удалось связаться с Telegram" }
+                call.respondApiError(status, ApiError(message))
+            }
             exception<io.ktor.server.plugins.BadRequestException> { call, _ -> call.respondApiError(HttpStatusCode.BadRequest, ApiError("Некорректный JSON запроса")) }
             exception<ResourceNotFound> { call, _ -> call.respondApiError(HttpStatusCode.NotFound, ApiError("Ресурс не найден")) }
             exception<TelegramRequestException> { call, ex ->
