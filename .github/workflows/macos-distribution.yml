@@ -1,0 +1,155 @@
+name: hradar - macOS installers
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      sign:
+        description: Sign and notarize using the protected macos-signing environment
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+concurrency:
+  group: macos-distribution-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  native:
+    uses: ./.github/workflows/macos-native.yml
+  package:
+    needs: native
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
+        with:
+          distribution: temurin
+          java-version: '21.0.12+8.0.LTS'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24.11.1'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: portable-tdlib-${{ matrix.arch }}
+          path: .tdlib-build
+      - name: Install matching verified TDLib
+        run: |
+          mkdir -p .tdlib-build/release backend/libs backend/native
+          tar -xzf .tdlib-build/portable-bundle.tar.gz -C .tdlib-build/release
+          (cd .tdlib-build/release; shasum -a 256 -c SHA256SUMS)
+          cp .tdlib-build/release/tdlib-java.jar backend/libs/
+          cp .tdlib-build/release/libtdjni.dylib backend/native/
+          bash scripts/verify-tdlib-macos.sh '${{ matrix.arch }}'
+      - name: Build production React and Kotlin; account-free tests
+        run: |
+          npm ci --prefix frontend
+          npm run build --prefix frontend
+          ./gradlew :backend:build :backend:stageDesktop -PbundledWeb=true --no-daemon --console=plain
+          python3 -B -m unittest discover -s tests -v
+      - name: App image, bundled JVM/JNI checks and DMG
+        run: bash scripts/package-macos.sh '${{ matrix.arch }}'
+      - name: Production UI and lifecycle smoke without Telegram/tools
+        run: |
+          npx --prefix frontend playwright install chromium
+          npm run test:ci --prefix frontend
+          bash scripts/verify-macos-dmg.sh '${{ matrix.arch }}' '.tdlib-build/distribution-${{ matrix.arch }}'
+      - name: Attest installers
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
+        with:
+          subject-path: |
+            .tdlib-build/distribution-${{ matrix.arch }}/*.dmg
+            .tdlib-build/distribution-${{ matrix.arch }}/*.app.zip
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: hradar-macos-${{ matrix.arch }}-unsigned
+          path: |
+            .tdlib-build/distribution-${{ matrix.arch }}/*.dmg
+            .tdlib-build/distribution-${{ matrix.arch }}/*.app.zip
+            .tdlib-build/distribution-${{ matrix.arch }}/SHA256SUMS
+            .tdlib-build/distribution-${{ matrix.arch }}/distribution.json
+          if-no-files-found: error
+          retention-days: 90
+
+  sign:
+    if: github.event_name == 'workflow_dispatch' && inputs.sign
+    needs: package
+    environment: macos-signing
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
+        with:
+          distribution: temurin
+          java-version: '21.0.12+8.0.LTS'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: hradar-macos-${{ matrix.arch }}-unsigned
+          path: .tdlib-build/signing
+      - name: Provision ephemeral Developer ID and notarytool credentials
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_NOTARY_KEY_BASE64: ${{ secrets.APPLE_NOTARY_KEY_BASE64 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: bash scripts/provision-apple-signing.sh
+      - name: Sign, notarize and staple app and DMG
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: bash scripts/notarize-distribution.sh '${{ matrix.arch }}' .tdlib-build/signing
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24.11.1'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Signed runtime lifecycle smoke (no Telegram client)
+        run: |
+          npm ci --prefix frontend
+          npx --prefix frontend playwright install chromium
+          npm run test:ci --prefix frontend
+          bash scripts/verify-macos-dmg.sh '${{ matrix.arch }}' .tdlib-build/signing/signed
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
+        with:
+          subject-path: |
+            .tdlib-build/signing/signed/*.dmg
+            .tdlib-build/signing/signed/*.app.zip
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: hradar-macos-${{ matrix.arch }}-signed
+          path: .tdlib-build/signing/signed/
+          if-no-files-found: error
+          retention-days: 90
+      - name: Remove ephemeral credentials
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/hradar-signing.keychain-db" || true
+          rm -f "$RUNNER_TEMP/hradar-certificate.p12" "$RUNNER_TEMP/hradar-notary.p8"

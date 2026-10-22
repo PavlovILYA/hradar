@@ -229,3 +229,14 @@ patch if needed, reset binary hashes to null and choose a **new** release tag. R
 native workflow, verify artifacts/attestation and manually publish/pin them as above.
 Old releases/tags remain intact. Changing only frontend/Kotlin code requires neither
 TDLib version changes nor a native rebuild.
+
+## Standalone macOS installers
+
+The original Fast CI and published ARM64 TDLib Release above remain unchanged.
+Separate `macos-native.yml` builds/cache-verifies portable native bundles on
+`macos-15` and `macos-15-intel`; `macos-distribution.yml` builds unsigned app ZIPs/DMGs
+for PRs and account-free runtime/lifecycle checks. Apple signing is a separate manual,
+protected job disabled by default. `macos-release.yml` defaults to verification only
+and never creates a tag. See [MACOS_DISTRIBUTION.md](MACOS_DISTRIBUTION.md) for fixed
+toolchain versions, macOS 15.0 minimum, exact secrets/environment setup and testing.
+Actual installer run/artifact evidence belongs in DEV_STATUS, not inferred from YAML.
