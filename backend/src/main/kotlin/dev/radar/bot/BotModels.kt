@@ -4,11 +4,18 @@ import kotlinx.serialization.Serializable
 import java.net.URI
 
 /** Deliberately not a data class: credentials must never appear in toString/DTOs. */
-class BotConfig private constructor(internal val token: String?, val allowedUsers: Set<Long>, val state: String, val notice: String?) {
+class BotConfig private constructor(internal val token: String?, @Volatile var allowedUsers: Set<Long>, val state: String, val notice: String?) {
     val enabled get() = state == "configured"
     val botId get() = token?.substringBefore(':')?.toLongOrNull()
     override fun toString() = "BotConfig(state=$state)"
+    fun updateAllowedUsers(ids: Set<Long>) { allowedUsers = ids.toSet() }
     companion object {
+        fun managed(token: String?, allowed: Set<Long>, enabled: Boolean): BotConfig {
+            require(allowed.all { it > 0 } && allowed.size <= 100)
+            require(token == null || token.matches(Regex("[1-9][0-9]*:[A-Za-z0-9_-]+")))
+            if (enabled && allowed.isEmpty()) return BotConfig(null, emptySet(), "blocked", "Завершите вход в Telegram и включите бота снова")
+            return BotConfig(if (enabled) token else null, if (enabled) allowed else emptySet(), if (enabled) "configured" else "disabled", null)
+        }
         fun fromEnvironment(env: (String) -> String? = System::getenv): BotConfig {
             val token = env("TG_BOT_TOKEN")?.trim()?.takeIf { it.isNotEmpty() }
                 ?: return BotConfig(null, emptySet(), "disabled", "Bot API выключен: TG_BOT_TOKEN не задан")
@@ -28,10 +35,12 @@ class BotConfig private constructor(internal val token: String?, val allowedUser
 @Serializable data class BotPayload(val text: String, val buttons: List<List<BotButton>> = emptyList(), val channelId: Long? = null, val messageId: Long? = null, val needsLink: Boolean = false, val mcpSourceId: Long? = null, val editMessageId: Long? = null, val publishRequestId: String? = null)
 data class BotOutboxItem(val id: Long, val userId: Long, val chatId: Long, val payload: BotPayload, val attempts: Int)
 data class BotChat(val id: Long, val type: String)
-data class BotMessage(val userId: Long, val chat: BotChat, val text: String?, val isBot: Boolean = false)
+data class BotMessage(val userId: Long, val chat: BotChat, val text: String?, val isBot: Boolean = false, val firstName: String = "", val username: String? = null)
 data class BotCallback(val id: String, val userId: Long, val chat: BotChat?, val data: String?, val isBot: Boolean = false, val messageId: Long? = null)
 data class BotUpdate(val id: Long, val message: BotMessage? = null, val callback: BotCallback? = null)
-data class BotIdentity(val id: Long, val username: String)
+@Serializable data class BotIdentity(val id: Long, val username: String, val name: String = "")
+@Serializable data class BotAccessUser(val id: Long, val name: String, val username: String? = null, val role: String = "guest", val connected: Boolean = false)
+@Serializable data class BotInvitation(val id: String, val expiresAt: Long)
 @Serializable data class BotDeliveryCounts(val pending: Int = 0, val sent: Int = 0, val failed: Int = 0)
 @Serializable data class BotStatus(val state: String, val notice: String? = null, val allowedUsers: Int = 0, val registeredUsers: Int = 0, val delivery: BotDeliveryCounts = BotDeliveryCounts(), val retryAt: Long = 0, val lastPollAt: Long = 0)
 

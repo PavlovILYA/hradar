@@ -1,27 +1,38 @@
 # hradar — Development status / session handoff
 
-## Unified local storage — 2026-10-23
+## Bot settings + unified storage integration — 2026-10-23
 
-VERIFIED: `feat/unified-storage` was created from fetched `origin/master`
-`29b1078` in the separate `hradar-storage` worktree. The migration and all
-automatic tests used temporary fixtures; no real user storage or Telegram
-session was opened. The application now prepares `~/.hradar/data/`, `config/`
-and `tdlib/` and copies recognized legacy data with private backups, integrity
-checks, conflict detection and an idempotent completion marker. Original data
-is retained. See `docs/STORAGE_MIGRATION.md` for layout and rollback.
+VERIFIED: PR #6 unified-storage is in `origin/master` (`250628c`). The
+`feat/bot-web-settings` worktree merges that commit and keeps the Bot API settings,
+access controls, queue and invitation changes. `RuntimePaths` places the bot token
+file at `~/.hradar/config/telegram-bot.json`; the unified startup migrator copies
+an old saved bot file with private backup and conflict checks. SQLite v9 is accepted
+as an old-layout database and includes bot access and invitation tables.
 
-VERIFIED: JDK 21 `:backend:build :backend:stageDesktop -PbundledWeb=true`
-passed (134 tests, no failures/errors/skips); React production build, 32
-offline Playwright scenarios, seven Python safeguards and script syntax checks
-passed. The staged diff must be checked for secrets before the authorized push.
+VERIFIED: Installer run 39855466503 passed Kotlin/React builds and all 32 browser
+tests on both architectures. Both package jobs then failed in `scripts/smoke-desktop.py`
+because it asserted schema v8 while the bot branch creates v9. The smoke and
+installer metadata now expect v9; its newer-schema refusal fixture uses v10.
 
-NOT VERIFIED: physical upgrade, TDLib authorization continuity and Telegram's
-server-side API application title; native macOS packaging on Intel and Apple
-Silicon is pending PR CI. The local worktree has the checksum-matched Java TDLib
-JAR but no native JNI bundle, so no local DMG smoke was run.
+VERIFIED AUTOMATION: `:backend:build :backend:stageDesktop -PbundledWeb=true`
+passed; `:backend:test` passed 146 tests with no failures/errors/skips. React
+production build, 32 offline Playwright scenarios, seven Python safeguards,
+Python smoke syntax and package shell syntax checks passed. All local tests used
+fake Telegram ports and temporary storage. No real user storage or secrets were
+opened.
 
-NEXT ACTION: inspect staged diff for leaks, commit, push only this feature branch,
-open a PR to master, then inspect its CI. Do not merge or release.
+VERIFIED CI: [Fast CI run 39915118552](https://github.com/PavlovILYA/hradar/actions/runs/39915118552)
+and [macOS installer run 39915118520](https://github.com/PavlovILYA/hradar/actions/runs/39915118520)
+completed successfully at `a4e15b4`. Both Intel and Apple Silicon passed native
+and package jobs, including mounted-DMG production UI/lifecycle smoke; both unsigned
+installer artifacts were uploaded. No signing or release was requested.
+
+NOT VERIFIED: a real account upgrade, BotFather token or Telegram deep-link
+activation. The local worktree has no native JNI bundle; installed-app smoke was
+verified by the hosted macOS runners.
+
+NEXT ACTION: test with a controlled bot on a Mac as described in docs/BOT.md,
+then review PR #7. Do not merge or publish a Release without a separate decision.
 
 ## CRM master synchronization — 2026-10-12
 

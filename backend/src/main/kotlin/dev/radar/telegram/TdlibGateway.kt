@@ -4,6 +4,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.Serializable
 import dev.radar.research.MonitoredChannel
+import dev.radar.bot.BotAccessUser
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
 import java.nio.file.Path
@@ -15,7 +16,7 @@ import kotlin.coroutines.resumeWithException
 data class TelegramStatus(val authorizationState: String, val authorized: Boolean, val connectionState: String = "Initializing")
 
 @Serializable
-data class TelegramUser(val id: Long, val firstName: String, val lastName: String)
+data class TelegramUser(val id: Long, val firstName: String, val lastName: String, val username: String? = null)
 
 @Serializable
 data class TelegramMessage(val id: Long, val date: Int, val text: String?, val channelId: Long)
@@ -59,6 +60,15 @@ internal suspend fun readChannelHistory(
         cursor = nextCursor
     }
     messages.values.toList()
+}
+
+internal suspend fun readPublicUser(username: String, request: suspend (TdApi.Function<*>) -> TdApi.Object): BotAccessUser = withTimeout(20_000) {
+    val chat = request(TdApi.SearchPublicChat(username)) as TdApi.Chat
+    val type = chat.type as? TdApi.ChatTypePrivate ?: throw IllegalArgumentException("Найден канал или группа. Отправьте приглашение по ссылке")
+    val user = request(TdApi.GetUser(type.userId)) as TdApi.User
+    require(user.type is TdApi.UserTypeRegular && user.id > 0) { "Найден не пользователь. Отправьте приглашение по ссылке" }
+    BotAccessUser(user.id, listOf(user.firstName, user.lastName).filter { !it.isNullOrBlank() }.joinToString(" ").take(100),
+        user.usernames?.activeUsernames?.firstOrNull(), "guest")
 }
 
 class TdlibGateway(
@@ -119,7 +129,11 @@ class TdlibGateway(
     suspend fun getMe(): TelegramUser {
         ensureAuthorized()
         val user = request(TdApi.GetMe()) as TdApi.User
-        return TelegramUser(user.id, user.firstName, user.lastName)
+        return TelegramUser(user.id, user.firstName, user.lastName, user.usernames?.activeUsernames?.firstOrNull())
+    }
+    suspend fun resolvePublicUser(username: String): BotAccessUser {
+        ensureAuthorized()
+        return readPublicUser(username, ::request)
     }
 
     suspend fun getRecentMessages(username: String, limit: Int): List<TelegramMessage> {

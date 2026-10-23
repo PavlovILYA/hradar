@@ -22,6 +22,11 @@ internal fun decodeBotResponse(status: Int, bytes: ByteArray): JsonElement {
     }
     return envelope["result"] ?: throw BotApiException()
 }
+internal fun decodeBotIdentity(result: JsonElement): BotIdentity {
+    val user = result.jsonObject
+    return BotIdentity(user.getValue("id").jsonPrimitive.long, user.getValue("username").jsonPrimitive.content,
+        user["first_name"]?.jsonPrimitive?.contentOrNull.orEmpty())
+}
 interface BotGateway : AutoCloseable {
     suspend fun identity(): BotIdentity
     suspend fun updates(offset: Long): List<BotUpdate>
@@ -53,8 +58,7 @@ class HttpsBotGateway(private val token: String) : BotGateway {
         catch (_: Exception) { throw BotApiException() }
     }
     override suspend fun identity(): BotIdentity {
-        val result = call("getMe", buildJsonObject {}).jsonObject
-        return BotIdentity(result.getValue("id").jsonPrimitive.long, result.getValue("username").jsonPrimitive.content)
+        return decodeBotIdentity(call("getMe", buildJsonObject {}))
     }
     override suspend fun updates(offset: Long): List<BotUpdate> {
         val result = call("getUpdates", buildJsonObject {
@@ -67,7 +71,7 @@ class HttpsBotGateway(private val token: String) : BotGateway {
             fun chat(value: JsonObject?) = value?.let { BotChat(it.getValue("id").jsonPrimitive.long, it.getValue("type").jsonPrimitive.content) }
             val message = update["message"]?.jsonObject?.let { m ->
                 val from = m["from"]?.jsonObject ?: return@let null
-                BotMessage(from.getValue("id").jsonPrimitive.long, chat(m["chat"]?.jsonObject) ?: return@let null, m["text"]?.jsonPrimitive?.contentOrNull, from["is_bot"]?.jsonPrimitive?.booleanOrNull ?: false)
+                BotMessage(from.getValue("id").jsonPrimitive.long, chat(m["chat"]?.jsonObject) ?: return@let null, m["text"]?.jsonPrimitive?.contentOrNull, from["is_bot"]?.jsonPrimitive?.booleanOrNull ?: false, from["first_name"]?.jsonPrimitive?.contentOrNull.orEmpty(), from["username"]?.jsonPrimitive?.contentOrNull)
             }
             val callback = update["callback_query"]?.jsonObject?.let { c ->
                 val from = c.getValue("from").jsonObject
