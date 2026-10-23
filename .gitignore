@@ -20,7 +20,7 @@ backend/libs/*
 !backend/libs/.gitkeep
 backend/native/*
 !backend/native/.gitkeep
-.recruitment-radar/
+.hradar/
 **/node_modules/
 frontend/dist/
 frontend/test-results/

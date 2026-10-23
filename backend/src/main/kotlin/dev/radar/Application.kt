@@ -37,7 +37,16 @@ internal suspend fun ApplicationCall.respondApiError(status: HttpStatusCode, err
 fun main() {
     if (System.getProperty("hradar.jniSmoke") == "true") { jniSmoke(); return }
     val paths = RuntimePaths()
-    paths.prepare()
+    // Older builds may have no session lock. Check their fixed port before any migration.
+    if (DesktopRuntime.portOccupied()) {
+        if (DesktopRuntime.reopen(paths)) return
+        DesktopRuntime.conflict("Порт 8080 занят. Закройте работающий hradar перед запуском новой версии.")
+        return
+    }
+    try { paths.prepare() } catch (_: Exception) {
+        DesktopRuntime.conflict("Не удалось безопасно перенести локальные данные hradar. Оригиналы сохранены; проверьте права, место и занятые файлы.")
+        return
+    }
     val lease = SessionLease.acquire(paths.session)
     if (lease == null) {
         if (!DesktopRuntime.reopen(paths)) DesktopRuntime.conflict("hradar уже использует эту Telegram-сессию. Закройте работающий экземпляр.")
