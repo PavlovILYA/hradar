@@ -1,39 +1,33 @@
 # hradar — Development status / session handoff
 
-## Bot settings in web UI — 2026-10-22 (feat/bot-web-settings)
+## Bot settings + unified storage integration — 2026-10-23
 
-VERIFIED: In isolated worktree from origin/master, bot settings use a private file
-resolved from `RuntimePaths.credentials.parent`, with saved settings taking precedence
-over legacy `TG_BOT_TOKEN` / `TG_BOT_ALLOWED_USER_IDS`. A validated getMe identity
-is required before saving or replacing a token. The currently authorized TDLib
-user becomes the owner on enable; without authorization enable fails. Poller switch
-cancels/joins the old service before starting the replacement. SQLite v9 adds
-per-bot user access and hashed one-use invitations; claim, recipient registration,
-reply and update cursor commit together. Existing bot recipients, queue and saved
-publications remain namespaced by bot ID. Username lookup uses TDLib
-SearchPublicChat/GetUser and accepts only regular private users. Bot-setting mutations
-use the existing desktop cookie plus exact Origin and CSRF checks. See docs/BOT.md.
+VERIFIED: PR #6 unified-storage is in `origin/master` (`250628c`). The
+`feat/bot-web-settings` worktree merges that commit and keeps the Bot API settings,
+access controls, queue and invitation changes. `RuntimePaths` places the bot token
+file at `~/.hradar/config/telegram-bot.json`; the unified startup migrator copies
+an old saved bot file with private backup and conflict checks. SQLite v9 is accepted
+as an old-layout database and includes bot access and invitation tables.
 
-VERIFIED AUTOMATION: JDK 21 `./gradlew :backend:build` passed with 126 tests,
-zero failures/errors/skips; `npm run build --prefix frontend` passed; offline
-Playwright 32 passed. All new tests use fake Bot API and TDLib, and
-temporary SQLite; no real Telegram account or user's database was touched.
+VERIFIED: Installer run 39855466503 passed Kotlin/React builds and all 32 browser
+tests on both architectures. Both package jobs then failed in `scripts/smoke-desktop.py`
+because it asserted schema v8 while the bot branch creates v9. The smoke and
+installer metadata now expect v9; its newer-schema refusal fixture uses v10.
 
-NOT VERIFIED: Real BotFather token, Telegram deep link activation, actual getUpdates
-polling after a live token switch, sendMessage to a phone, and production SQLite v8→v9
-migration. The single user backend was not started or stopped. A pre-upgrade backup
-is required for rollback to a binary that only understands schema v8.
+VERIFIED AUTOMATION: `:backend:build :backend:stageDesktop -PbundledWeb=true`
+passed; `:backend:test` passed 146 tests with no failures/errors/skips. React
+production build, 32 offline Playwright scenarios, seven Python safeguards,
+Python smoke syntax and package shell syntax checks passed. All local tests used
+fake Telegram ports and temporary storage. No real user storage or secrets were
+opened.
 
-NEXT ACTION: On a Mac with a controlled test bot, back up the local database, stop
-the existing hradar process, start this branch as the only backend, complete Telegram
-sign-in, and follow docs/BOT.md. For unified-storage integration, reconcile concurrent
-edits to `Application.kt`, `DesktopRuntime.kt` and `TdlibGateway.kt`; the bot path is
-derived from `RuntimePaths.credentials.parent`, so it follows that PR's config move.
-Security: Bot token is saved only under the user's private runtime directory with
-600 file / 700 parent permissions; TDLib/API credentials stay in their existing
-local locations. New `scripts/check-secrets.py` scans Git index blobs and tracked
-paths without printing values, and Fast CI runs it before builds. No real user
-secret files, sessions or databases were read or used for tests.
+NOT VERIFIED: fresh Fast CI and dual-architecture installer results, a real account
+upgrade, BotFather token or Telegram deep-link activation. The local worktree has
+no native JNI bundle, so installed-app smoke requires the hosted macOS runners.
+
+NEXT ACTION: run isolated tests and security audit, commit and push the feature
+branch, then verify Fast CI and both macOS installer jobs on PR #7. Do not merge
+or publish a Release.
 
 ## CRM master synchronization — 2026-10-12
 

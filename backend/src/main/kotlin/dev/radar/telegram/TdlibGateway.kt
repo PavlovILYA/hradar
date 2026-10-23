@@ -190,7 +190,7 @@ class TdlibGateway(
                     apiId = this@TdlibGateway.apiId!!
                     apiHash = this@TdlibGateway.apiHash!!
                     systemLanguageCode = "en"
-                    deviceModel = "Recruitment Radar (macOS)"
+                    deviceModel = "HRadar (macOS)"
                     applicationVersion = "0.1.0"
                 }
                 sendAuthorization(params)

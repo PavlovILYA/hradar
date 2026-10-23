@@ -1,4 +1,4 @@
-# Recruitment Radar
+# hradar
 
 Local Telegram recruitment research prototype: **Kotlin/JVM 21 + Ktor 3.6.0 + official TDLib Java/JNI**.
 Local MVP: authorize a Telegram user locally and browse recent public-channel messages in a React + TypeScript web interface.
@@ -31,7 +31,7 @@ wrapper. The wrapper downloads Gradle on first use and verifies its SHA-256.
 For build commands, set `JAVA_HOME="$(/usr/libexec/java_home -v 21)"` and use
 `./gradlew :backend:build` after compiling TDLib.
 
-The local UI handles your phone number, Telegram login code, and if applicable 2FA password or email code. Use the localhost onboarding form; never put login codes in a public webpage or commit them. After authorization, the TDLib session is stored under `~/.recruitment-radar/tdlib` and can be reused on later starts. **Protect that directory: it contains account session data.**
+The local UI handles your phone number, Telegram login code, and if applicable 2FA password or email code. Use the localhost onboarding form; never put login codes in a public webpage or commit them. After authorization, the TDLib session is stored under `~/.hradar/tdlib` and can be reused on later starts. **Protect that directory: it contains account session data.** Existing installations are copied into the new layout before startup; see [storage migration](docs/STORAGE_MIGRATION.md).
 
 TDLib native binaries and generated bindings are intentionally excluded from Git. Never commit `.env`, account sessions or candidate personal information.
 
@@ -122,8 +122,8 @@ notifications survive restarts; unique constraints prevent duplicate notificatio
 Rate-limit recovery waits are persisted. Public non-member channels may rely on the
 periodic recovery scan rather than live updates. Keep the backend running to monitor.
 
-Local SQLite: `~/.hradar/research.sqlite` (schema migration version 4). Account credentials
-stay in `.env` and the separate TDLib session; they are not stored in research tables.
+Local SQLite: `~/.hradar/data/research.sqlite` (schema version 8). Account credentials
+stay in `.env` or `~/.hradar/config/telegram-api.json` and the separate TDLib session; they are not stored in research tables.
 `/api/events` streams updates with SSE. Browser desktop notifications need explicit
 permission and an open page; no external push server or Telegram sends are used.
 

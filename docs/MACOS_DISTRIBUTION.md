@@ -29,12 +29,12 @@ use the OS's per-app approval process only for an artifact you independently tru
 
 ## Local data and existing installations
 
-Data remains outside `.app`/DMG in the established directories:
+Data remains outside `.app`/DMG in `~/.hradar`:
 
-- `~/.hradar/research.sqlite`: archive, subscriptions, projects and other existing
+- `~/.hradar/data/research.sqlite`: archive, subscriptions, projects and other existing
   repository data. SQLite migrations retain their existing forward-only behavior.
-- `~/.recruitment-radar/tdlib/`: existing Telegram authorization/session.
-- `~/.hradar/telegram-api.json`: API ID/hash, owner-only mode 0600, in an owner-only
+- `~/.hradar/tdlib/`: existing Telegram authorization/session.
+- `~/.hradar/config/telegram-api.json`: API ID/hash, owner-only mode 0600, in an owner-only
   directory (0700). This file is plaintext protected by macOS filesystem permissions;
   it is not a password/code store or Keychain item. Login codes/2FA passwords are
   submitted directly to TDLib, never persisted or logged by onboarding.
@@ -54,12 +54,15 @@ is created. Stop the old development backend yourself before manual installation
 this task leaves it untouched. Older binaries launched afterward do not honor the new
 application lock; never deliberately run a legacy client against the same session.
 TDLib's own SQLite locking is an additional constraint, not a replacement for this rule.
+On first launch, previous locations are copied with a checked backup before TDLib
+starts. The installed app uses the same `RuntimePaths` as Gradle. Details and recovery:
+[storage migration](STORAGE_MIGRATION.md).
 
-This branch currently supports SQLite schemas through v8 (including hiring projects and publication Kanban). A database created by a
+This branch currently supports SQLite schemas through v9 (including bot access and invitations). A database created by a
 newer feature build is refused with a visible message, without a downgrade or
-deletion; use a build containing that newer schema/features. Existing Bot API
-credentials remain optional environment configuration and are not included in this
-Telegram user-account onboarding.
+deletion; use a build containing that newer schema/features. Bot API settings are
+stored separately in `~/.hradar/config/telegram-bot.json` and can be managed in the
+web interface after Telegram user-account onboarding.
 
 Updating/replacing the `.app` does not remove these directories. There is no automatic
 updater or downgrade migration. Back up a stopped database/session before testing a
@@ -137,11 +140,11 @@ bash scripts/package-macos.sh "$(uname -m)"
 bash scripts/verify-macos-dmg.sh "$(uname -m)" ".tdlib-build/distribution-$(uname -m)"
 ```
 
-Installer metadata records `sqliteSchemaVersion: 8` and `recruitment-crm`.
+Installer metadata records `sqliteSchemaVersion: 9`, `recruitment-crm` and `telegram-bot-settings`.
 Both architecture jobs also execute the offline Playwright suite. Mounted-DMG smoke
 creates synthetic CRM/archive records through real REST, preserves notes/stages and
-compares stored rows after reopening an existing v8 database. It checks SQLite
-integrity/foreign keys and refuses v9 without changing CRM rows. Browser CRM uses
+compares stored rows after reopening an existing v9 database. It checks SQLite
+integrity/foreign keys and refuses v10 without changing CRM rows. Browser CRM uses
 production resources and real REST; authorization status is mocked and its live SSE channel isolated.
 
 The smoke test uses an isolated temporary home, no account client, a restricted PATH

@@ -22,7 +22,7 @@ class DesktopTest {
             SessionLease.acquire(paths.session)!!.close()
             assertTrue(Files.exists(paths.credentials))
             Files.writeString(paths.credentials, "invalid settings")
-            assertNull(paths.loadCredentials())
+            assertFailsWith<IllegalStateException> { paths.loadCredentials() }
             paths.saveCredentials(creds)
             assertEquals(creds, paths.loadCredentials())
         } finally { home.toFile().deleteRecursively() }

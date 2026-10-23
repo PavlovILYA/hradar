@@ -11,37 +11,50 @@ import java.net.URI
 import java.security.SecureRandom
 import java.util.Base64
 
-/** Keeps established paths: no silent copy, downgrade, deletion or session reset. */
 class RuntimePaths(val home: Path = Path.of(System.getProperty("user.home"))) {
     val data = home.resolve(".hradar")
-    val session = home.resolve(".recruitment-radar/tdlib")
-    val database = data.resolve("research.sqlite")
-    val credentials = data.resolve("telegram-api.json")
+    val session = data.resolve("tdlib")
+    val database = data.resolve("data/research.sqlite")
+    val credentials = data.resolve("config/telegram-api.json")
     val botConfiguration = credentials.parent.resolve("telegram-bot.json")
-    fun prepare() { privateDirectory(data); privateDirectory(session) }
+    val backups = data.resolve("backups")
+    val logs = data.resolve("logs")
+    fun prepare() {
+        privateDirectory(data)
+        StorageMigration(this).run()
+        listOf(database.parent, credentials.parent, session).forEach(::privateDirectory)
+    }
     fun loadCredentials(): ApiCredentials? {
         val id = System.getenv("TG_API_ID")?.toIntOrNull()
         val hash = System.getenv("TG_API_HASH")
         if (id != null && hash != null) return ApiCredentials(id, hash).also { it.validate() }
         if (!Files.exists(credentials)) return null
         Files.setPosixFilePermissions(credentials, PosixFilePermissions.fromString("rw-------"))
-        return runCatching { Json.decodeFromString<ApiCredentials>(Files.readString(credentials)).also { it.validate() } }.getOrNull()
+        return try { Json.decodeFromString<ApiCredentials>(Files.readString(credentials)).also { it.validate() } }
+        catch (_: Exception) { throw IllegalStateException("Конфигурация Telegram повреждена") }
     }
     fun saveCredentials(value: ApiCredentials) {
         value.validate()
-        val temp = Files.createTempFile(data, "api-", ".tmp", PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")))
+        privateDirectory(credentials.parent)
+        val temp = Files.createTempFile(credentials.parent, "api-", ".tmp", PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")))
         try {
             Files.writeString(temp, Json.encodeToString(ApiCredentials.serializer(), value))
             Files.move(temp, credentials, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
         } finally { Files.deleteIfExists(temp) }
     }
-    private fun privateDirectory(path: Path) { Files.createDirectories(path); Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rwx------")) }
+    private fun privateDirectory(path: Path) {
+        Files.createDirectories(path)
+        check(!Files.isSymbolicLink(path)) { "Каталог hradar не может быть симлинком" }
+        Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rwx------"))
+    }
 }
 class SessionLease private constructor(private val channel: FileChannel, private val lock: FileLock): AutoCloseable {
     override fun close() { lock.release(); channel.close() }
     companion object {
         fun acquire(directory: Path): SessionLease? {
-            val channel = FileChannel.open(directory.resolve("hradar.lock"), StandardOpenOption.CREATE, StandardOpenOption.WRITE)
+            val lockPath = directory.resolve("hradar.lock")
+            check(!Files.isSymbolicLink(lockPath)) { "Файл блокировки не может быть симлинком" }
+            val channel = FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE)
             Files.setPosixFilePermissions(directory.resolve("hradar.lock"), PosixFilePermissions.fromString("rw-------"))
             val lock = try { channel.tryLock() } catch (_: java.nio.channels.OverlappingFileLockException) { null }
             if (lock == null) { channel.close(); return null }

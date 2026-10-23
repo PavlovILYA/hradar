@@ -1,2 +1,2 @@
-rootProject.name = "recruitment-radar"
+rootProject.name = "hradar"
 include(":backend")
