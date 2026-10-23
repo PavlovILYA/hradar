@@ -21,13 +21,18 @@ Python smoke syntax and package shell syntax checks passed. All local tests used
 fake Telegram ports and temporary storage. No real user storage or secrets were
 opened.
 
-NOT VERIFIED: fresh Fast CI and dual-architecture installer results, a real account
-upgrade, BotFather token or Telegram deep-link activation. The local worktree has
-no native JNI bundle, so installed-app smoke requires the hosted macOS runners.
+VERIFIED CI: [Fast CI run 39915118552](https://github.com/PavlovILYA/hradar/actions/runs/39915118552)
+and [macOS installer run 39915118520](https://github.com/PavlovILYA/hradar/actions/runs/39915118520)
+completed successfully at `a4e15b4`. Both Intel and Apple Silicon passed native
+and package jobs, including mounted-DMG production UI/lifecycle smoke; both unsigned
+installer artifacts were uploaded. No signing or release was requested.
 
-NEXT ACTION: run isolated tests and security audit, commit and push the feature
-branch, then verify Fast CI and both macOS installer jobs on PR #7. Do not merge
-or publish a Release.
+NOT VERIFIED: a real account upgrade, BotFather token or Telegram deep-link
+activation. The local worktree has no native JNI bundle; installed-app smoke was
+verified by the hosted macOS runners.
+
+NEXT ACTION: test with a controlled bot on a Mac as described in docs/BOT.md,
+then review PR #7. Do not merge or publish a Release without a separate decision.
 
 ## CRM master synchronization — 2026-10-12
 
