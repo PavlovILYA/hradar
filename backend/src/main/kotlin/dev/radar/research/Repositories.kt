@@ -25,7 +25,7 @@ class Repositories(path: Path) : AutoCloseable {
             s.execute("PRAGMA busy_timeout=5000")
             s.execute("PRAGMA journal_mode=WAL")
             val version = s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) }
-            check(version <= 8) { "Database schema is newer than this application" }
+            check(version <= 9) { "Database schema is newer than this application" }
             if (version == 0) transaction {
                 s.execute("CREATE TABLE monitored_channels(id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, data TEXT NOT NULL)")
                 s.execute("CREATE TABLE search_templates(id TEXT PRIMARY KEY, data TEXT NOT NULL)")
@@ -85,6 +85,12 @@ class Repositories(path: Path) : AutoCloseable {
                 s.execute("CREATE INDEX IF NOT EXISTS recruitment_project_status ON recruitment_projects(status,updated_at,id)")
                 s.execute("CREATE TABLE IF NOT EXISTS recruitment_publications(channel_id INTEGER NOT NULL,message_id INTEGER NOT NULL,data TEXT NOT NULL,PRIMARY KEY(channel_id,message_id))")
                 s.execute("PRAGMA user_version=8")
+            }
+            if (version < 9) transaction {
+                s.execute("CREATE TABLE bot_access(bot_id INTEGER NOT NULL,user_id INTEGER NOT NULL,role TEXT NOT NULL CHECK(role IN ('owner','guest')),name TEXT NOT NULL,username TEXT,PRIMARY KEY(bot_id,user_id))")
+                s.execute("CREATE TABLE bot_invitations(id TEXT PRIMARY KEY,bot_id INTEGER NOT NULL,token_hash TEXT NOT NULL UNIQUE,expires_at INTEGER NOT NULL,used_at INTEGER,recalled_at INTEGER)")
+                s.execute("CREATE INDEX bot_invitations_open ON bot_invitations(bot_id,expires_at) WHERE used_at IS NULL AND recalled_at IS NULL")
+                s.execute("PRAGMA user_version=9")
             }
 
         }
@@ -367,6 +373,37 @@ class Repositories(path: Path) : AutoCloseable {
             rows("SELECT user_id FROM bot_recipients WHERE bot_id=? AND active=1", listOf(botId)) { it.getLong(1) }
                 .filter { it !in allowed }.forEach { update("UPDATE bot_recipients SET active=0 WHERE bot_id=? AND user_id=?", botId, it); update("DELETE FROM bot_workspace WHERE bot_id=? AND user_id=?", botId, it); update("DELETE FROM bot_publish_permission WHERE bot_id=? AND user_id=?", botId, it); update("UPDATE bot_publish_request SET state='CANCELLED' WHERE bot_id=? AND user_id=? AND state='PENDING'", botId, it) }
         }
+    }
+    @Synchronized fun botAccessUsers(botId: Long): List<BotAccessUser> = rows("SELECT user_id,role,name,username FROM bot_access WHERE bot_id=? ORDER BY role DESC,user_id", listOf(botId)) {
+        BotAccessUser(it.getLong(1), it.getString(3), it.getString(4), it.getString(2), botRegistered(botId, it.getLong(1)))
+    }
+    @Synchronized fun saveBotAccess(botId: Long, userId: Long, role: String, name: String, username: String?) {
+        require(botId > 0 && userId > 0 && role in setOf("owner", "guest"))
+        update("INSERT INTO bot_access(bot_id,user_id,role,name,username) VALUES(?,?,?,?,?) ON CONFLICT(bot_id,user_id) DO UPDATE SET role=excluded.role,name=excluded.name,username=excluded.username", botId, userId, role, name.take(100), username?.take(32))
+    }
+    @Synchronized fun replaceBotOwner(botId: Long, userId: Long, name: String, username: String?) = transaction {
+        require(botId > 0 && userId > 0)
+        update("DELETE FROM bot_access WHERE bot_id=? AND role='owner' AND user_id<>?", botId, userId)
+        saveBotAccess(botId, userId, "owner", name, username)
+    }
+    @Synchronized fun removeBotAccess(botId: Long, userId: Long) {
+        update("DELETE FROM bot_access WHERE bot_id=? AND user_id=? AND role='guest'", botId, userId)
+    }
+    @Synchronized fun createBotInvitation(id: String, botId: Long, hash: String, expiresAt: Long) {
+        update("INSERT INTO bot_invitations(id,bot_id,token_hash,expires_at) VALUES(?,?,?,?)", id, botId, hash, expiresAt)
+    }
+    @Synchronized fun botInvitations(botId: Long, now: Long): List<BotInvitation> = rows("SELECT id,expires_at FROM bot_invitations WHERE bot_id=? AND expires_at>? AND used_at IS NULL AND recalled_at IS NULL ORDER BY expires_at", listOf(botId, now)) { BotInvitation(it.getString(1), it.getLong(2)) }
+    @Synchronized fun recallBotInvitation(botId: Long, id: String, now: Long): Boolean = update("UPDATE bot_invitations SET recalled_at=? WHERE id=? AND bot_id=? AND used_at IS NULL AND recalled_at IS NULL", now, id, botId) == 1
+    /** Claim, grant, /start registration, acknowledgement and update cursor are one SQLite transaction. */
+    @Synchronized fun acceptBotInvitation(botId: Long, updateId: Long, hash: String, userId: Long, chatId: Long, name: String, username: String?, now: Long): Boolean = transaction {
+        if (botPolicyId != botId || userId <= 0 || userId != chatId || updateId < botOffset(botId)) return@transaction false
+        if (rows("SELECT COUNT(*) FROM bot_access WHERE bot_id=?", listOf(botId)) { it.getInt(1) }.single() >= 100) return@transaction false
+        if (update("UPDATE bot_invitations SET used_at=? WHERE token_hash=? AND bot_id=? AND expires_at>? AND used_at IS NULL AND recalled_at IS NULL", now, hash, botId, now) != 1) return@transaction false
+        saveBotAccess(botId, userId, "guest", name, username)
+        update("INSERT INTO bot_recipients VALUES(?,?,?,?,1) ON CONFLICT(bot_id,user_id) DO UPDATE SET active=1,chat_id=excluded.chat_id", botId, userId, chatId, now / 1000)
+        update("INSERT INTO bot_outbox(bot_id,event_key,user_id,chat_id,payload) VALUES(?,?,?,?,?) ON CONFLICT(bot_id,event_key,user_id) DO NOTHING", botId, "update:$updateId", userId, chatId, json.encodeToString(BotPayload("hradar подключён. Доступ открыт; используйте /help для списка команд.")))
+        update("UPDATE bot_state SET next_offset=? WHERE bot_id=?", updateId + 1, botId)
+        true
     }
     /** Command mutation, its reply and polling cursor commit together; replay cannot reapply pause/resume. */
     @Synchronized fun handleBotUpdate(botId: Long, updateId: Long, handle: () -> Unit): Boolean = transaction {

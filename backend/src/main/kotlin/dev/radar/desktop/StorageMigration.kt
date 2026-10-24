@@ -16,6 +16,7 @@ internal class StorageMigration(private val paths: RuntimePaths) {
     private val oldSession = oldRoot.resolve("tdlib")
     private val oldDatabase = paths.data.resolve("research.sqlite")
     private val oldCredentials = paths.data.resolve("telegram-api.json")
+    private val oldBotConfiguration = paths.data.resolve("telegram-bot.json")
     private val marker = paths.data.resolve("storage-migration-v1.complete")
 
     fun run() {
@@ -43,9 +44,13 @@ internal class StorageMigration(private val paths: RuntimePaths) {
                 (!hasSession || "source-tdlib=${fingerprint(oldSession)}" in migrated)) {
                 "Старые данные изменились после переноса; не запускайте новую версию до ручного согласования копий"
             }
+            migrateBotConfiguration()
             return
         }
-        if (!hasDatabase && !hasCredentials && !hasSession) return
+        if (!hasDatabase && !hasCredentials && !hasSession) {
+            migrateBotConfiguration()
+            return
+        }
         try {
             val lockPath = paths.data.resolve("storage-migration.lock")
             check(!Files.isSymbolicLink(lockPath)) { "Файл блокировки не может быть симлинком" }
@@ -61,12 +66,28 @@ internal class StorageMigration(private val paths: RuntimePaths) {
                     try {
                         assertNoOpenFiles(listOfNotNull(if (hasSession) oldRoot else null, if (hasDatabase || hasCredentials) paths.data else null))
                         migrate(hasDatabase, hasCredentials, hasSession)
+                        migrateBotConfiguration()
                     } finally { legacyLease?.close() }
                 }
             }
         } catch (ex: Exception) {
             throw IllegalStateException("Перенос локальных данных остановлен; оригиналы сохранены. ${ex.message}", ex)
         }
+    }
+
+    private fun migrateBotConfiguration() {
+        if (!Files.exists(oldBotConfiguration, LinkOption.NOFOLLOW_LINKS)) return
+        check(Files.isRegularFile(oldBotConfiguration, LinkOption.NOFOLLOW_LINKS)) { "Старая конфигурация бота недоступна" }
+        check(Files.isReadable(oldBotConfiguration)) { "Старая конфигурация бота недоступна" }
+        assertNoOpenFiles(listOf(paths.data))
+        compatible(oldBotConfiguration, paths.botConfiguration)
+        if (Files.exists(paths.botConfiguration, LinkOption.NOFOLLOW_LINKS)) return
+        privateDirectory(paths.backups)
+        val backup = paths.backups.resolve("migration-${UUID.randomUUID()}")
+        privateDirectory(backup)
+        val backupFile = backup.resolve("config/telegram-bot.json")
+        copyVerified(oldBotConfiguration, backupFile)
+        publish(backupFile, paths.botConfiguration)
     }
 
     private fun migrate(db: Boolean, config: Boolean, tdlib: Boolean) {
@@ -150,7 +171,7 @@ internal class StorageMigration(private val paths: RuntimePaths) {
         FileChannel.open(marker, StandardOpenOption.WRITE).use { it.force(true) }
         if (Files.isDirectory(oldRoot) && Files.list(oldRoot).use { stream -> stream.anyMatch { it.fileName.toString() != "tdlib" } })
             System.err.println("В старом каталоге остались дополнительные файлы; проверьте их вручную.")
-        val known = setOf("research.sqlite", "research.sqlite-wal", "research.sqlite-shm", "telegram-api.json",
+        val known = setOf("research.sqlite", "research.sqlite-wal", "research.sqlite-shm", "telegram-api.json", "telegram-bot.json",
             "data", "config", "tdlib", "backups", "logs", "desktop-instance.json", "storage-migration.lock", "storage-migration-v1.complete")
         if (Files.list(paths.data).use { stream -> stream.anyMatch { it.fileName.toString() !in known } })
             System.err.println("В корне хранилища остались нераспознанные файлы; проверьте их вручную.")
@@ -161,11 +182,12 @@ internal class StorageMigration(private val paths: RuntimePaths) {
             DriverManager.getConnection("jdbc:sqlite:${path.toUri()}?mode=ro").use { db ->
                 db.createStatement().use { statement ->
                     val version = statement.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) }
-                    check(version in 1..8) { "Неизвестная версия старой SQLite" }
+                    check(version in 1..9) { "Неизвестная версия старой SQLite" }
                     val required = buildSet {
                         addAll(listOf("monitored_channels", "search_templates"))
                         if (version >= 2) add("imported_messages")
                         if (version >= 8) addAll(listOf("recruitment_projects", "recruitment_cards"))
+                        if (version >= 9) addAll(listOf("bot_access", "bot_invitations"))
                     }
                     val actual = statement.executeQuery("SELECT name FROM sqlite_master WHERE type='table'").use { rows ->
                         buildSet { while (rows.next()) add(rows.getString(1)) }

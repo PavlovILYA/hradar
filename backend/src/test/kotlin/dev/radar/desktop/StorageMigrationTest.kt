@@ -22,6 +22,7 @@ class StorageMigrationTest {
         assertTrue(Files.isDirectory(paths.session))
         assertTrue(Files.isDirectory(paths.database.parent))
         assertTrue(Files.isDirectory(paths.credentials.parent))
+        assertEquals(paths.data.resolve("config/telegram-bot.json"), paths.botConfiguration)
         assertFalse(Files.exists(paths.home.resolve(".recruitment-radar")))
     }
 
@@ -38,7 +39,7 @@ class StorageMigrationTest {
         paths.prepare()
         assertEquals("synthetic-binlog", Files.readString(paths.session.resolve("td.binlog")))
         assertEquals("synthetic-sqlite", Files.readString(paths.session.resolve("files/cache.sqlite")))
-        assertEquals(8, DriverManager.getConnection("jdbc:sqlite:${paths.database}").use { c -> c.createStatement().use { s -> s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) } } })
+        assertEquals(9, DriverManager.getConnection("jdbc:sqlite:${paths.database}").use { c -> c.createStatement().use { s -> s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) } } })
         assertEquals(ApiCredentials(12345, "a".repeat(32)), paths.loadCredentials())
         assertTrue(Files.exists(oldDb))
         assertTrue(Files.exists(oldSession.resolve("td.binlog")))
@@ -54,6 +55,39 @@ class StorageMigrationTest {
         assertFailsWith<IllegalStateException> { paths.prepare() }
         assertEquals("new", Files.readString(paths.database))
         assertEquals("old", Files.readString(paths.data.resolve("research.sqlite")))
+    }
+
+    @Test fun `saved bot configuration migrates privately and survives restart`() = fixture { paths ->
+        Files.createDirectories(paths.data)
+        val old = paths.data.resolve("telegram-bot.json")
+        val synthetic = """{"token":"123:synthetic","identity":{"id":123,"username":"fake_bot","name":"Fake Bot"},"enabled":true}"""
+        Files.writeString(old, synthetic)
+        paths.prepare()
+        assertEquals(synthetic, Files.readString(paths.botConfiguration))
+        assertEquals(synthetic, Files.readString(old))
+        assertEquals(PosixFilePermissions.fromString("rw-------"), Files.getPosixFilePermissions(paths.botConfiguration))
+        assertTrue(Files.walk(paths.backups).use { stream -> stream.anyMatch { it.fileName.toString() == "telegram-bot.json" } })
+        paths.prepare()
+        assertEquals(synthetic, Files.readString(paths.botConfiguration))
+    }
+
+    @Test fun `conflicting bot configuration is refused without overwriting`() = fixture { paths ->
+        Files.createDirectories(paths.data)
+        Files.createDirectories(paths.botConfiguration.parent)
+        Files.writeString(paths.data.resolve("telegram-bot.json"), "old")
+        Files.writeString(paths.botConfiguration, "new")
+        assertFailsWith<IllegalStateException> { paths.prepare() }
+        assertEquals("new", Files.readString(paths.botConfiguration))
+    }
+
+    @Test fun `completed storage migration still picks up old bot settings`() = fixture { paths ->
+        Files.createDirectories(paths.data)
+        Repositories(paths.data.resolve("research.sqlite")).use { }
+        paths.prepare()
+        assertTrue(Files.exists(paths.data.resolve("storage-migration-v1.complete")))
+        Files.writeString(paths.data.resolve("telegram-bot.json"), "synthetic-bot-settings")
+        paths.prepare()
+        assertEquals("synthetic-bot-settings", Files.readString(paths.botConfiguration))
     }
 
     @Test fun `locked legacy session fails before copying`() = fixture { paths ->

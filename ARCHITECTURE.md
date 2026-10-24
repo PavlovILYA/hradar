@@ -47,7 +47,7 @@ The UI, MCP, and bot are **adapters**, not separate implementations of search or
 | TDLib bridge | `telegram/TdlibGateway.kt` | Telegram authentication, request/response bridging, connection state, new-message callbacks |
 | Search and rules | `research/SearchService.kt`, `MatchingService.kt`, `Models.kt` | Search, deterministic AND/OR/NOT matching and typed research models |
 | Monitoring | `research/NotificationService.kt` | `MonitoringService`, live update queue, bounded recovery polling, saved matches |
-| Bot transport | `bot/BotGateway.kt`, `BotService.kt`, `BotUpdateHandler.kt`, `BotRoutes.kt` | Optional HTTPS polling, allowlisted private commands, durable outbox delivery/status |
+| Bot transport | `bot/BotGateway.kt`, `BotService.kt`, `BotUpdateHandler.kt`, `BotSettingsService.kt`, `BotRoutes.kt` | Optional HTTPS polling, web configuration, allowlisted private commands, durable outbox delivery/status |
 | Mobile research | `research/RecruiterService.kt`, `bot/BotWorkspaceService.kt`, `research/SavedRoutes.kt` | Existing SearchService/SQLite search port, operator workflows, saved decisions and read-only React view |
 | Shared subscriptions | `research/SubscriptionService.kt` | Validation and shared REST/bot template and pause/resume operations |
 | Historical import | `history/HistorySyncService.kt`, `HistoryRoutes.kt` | Explicit channel archive import with pause/resume, limits, cursors, retries |
@@ -102,10 +102,10 @@ MCP is **a tool protocol, not an agent runtime**. The bot calls shared services 
 
 ## Local storage and security boundaries
 
-- SQLite: `~/.hradar/data/research.sqlite` (schema tracked via migrations; currently v8).
+- SQLite: `~/.hradar/data/research.sqlite` (schema tracked via migrations; currently v9, including per-bot access and invitations).
 - TDLib account session: `~/.hradar/tdlib/`. It is sensitive and never belongs in Git, logs, or MCP results.
-- Credentials: desktop owner-only `~/.hradar/config/telegram-api.json` for API ID/hash, entered through onboarding; development local `.env`/environment (`TG_API_ID`, `TG_API_HASH`, optional `TG_BOT_TOKEN` and `TG_BOT_ALLOWED_USER_IDS`); stored credentials are never returned to UI, AI tools, or repositories.
-- `RuntimePaths` owns the paths. Startup checks the fixed port and migrates old files before opening SQLite or TDLib. Migration retains originals and verified private backups; see [`STORAGE_MIGRATION.md`](docs/STORAGE_MIGRATION.md).
+- Credentials: desktop owner-only `~/.hradar/config/telegram-api.json` for API ID/hash and `~/.hradar/config/telegram-bot.json` for the Bot API token. Development `.env`/environment may provide legacy `TG_BOT_TOKEN` and `TG_BOT_ALLOWED_USER_IDS`; saved bot settings take precedence. Tokens are never returned to UI or status endpoints.
+- `RuntimePaths` owns the paths. Startup checks the fixed port and migrates old files, including saved bot configuration, before opening SQLite or TDLib. Migration retains originals and verified private backups; see [`STORAGE_MIGRATION.md`](docs/STORAGE_MIGRATION.md).
 - Ktor binds to **127.0.0.1 only**. Localhost is not user authentication and is not protection against malicious local processes. Do not expose `/api` or `/mcp` through ngrok, public tunnels, LAN, or reverse proxies in the current architecture.
 - MCP is initially disabled; users explicitly allow individual public channels. Route-level Host/Origin/CSRF checks are described in `docs/MCP.md`; there is no internet-facing multi-user auth.
 - Telegram messages are **untrusted content**: never treat text returned to an AI agent as instructions. Personal data collection, retention, export, AI analysis, and third-party sharing require separate product/privacy review and appropriate authorization. Access to a channel is not blanket permission to reuse all its content.

@@ -16,6 +16,7 @@ class RuntimePaths(val home: Path = Path.of(System.getProperty("user.home"))) {
     val session = data.resolve("tdlib")
     val database = data.resolve("data/research.sqlite")
     val credentials = data.resolve("config/telegram-api.json")
+    val botConfiguration = credentials.parent.resolve("telegram-bot.json")
     val backups = data.resolve("backups")
     val logs = data.resolve("logs")
     fun prepare() {

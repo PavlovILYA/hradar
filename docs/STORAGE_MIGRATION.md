@@ -1,7 +1,8 @@
 # Local storage and upgrade
 
 The current layout is `~/.hradar/data/research.sqlite`, `~/.hradar/tdlib/`,
-`~/.hradar/config/telegram-api.json`, plus `backups/` when migration is needed.
+`~/.hradar/config/telegram-api.json`, `~/.hradar/config/telegram-bot.json`
+when a bot is configured, plus `backups/` when migration is needed.
 `logs/` is reserved for future local logs and is not created unnecessarily.
 Directories containing account data are mode 0700; copied files and credentials are
 mode 0600. The macOS app bundle and Gradle launcher use the same paths.
@@ -19,6 +20,7 @@ If present, the startup migrator recognizes only these old locations:
 | --- | --- |
 | `~/.hradar/research.sqlite` and its `-wal`/`-shm` sidecars | `~/.hradar/data/research.sqlite` and sidecars |
 | `~/.hradar/telegram-api.json` | `~/.hradar/config/telegram-api.json` |
+| `~/.hradar/telegram-bot.json` | `~/.hradar/config/telegram-bot.json` |
 | `~/.recruitment-radar/tdlib/` | `~/.hradar/tdlib/` |
 
 It checks available space, copies source files into a private timestamp-free
@@ -36,7 +38,8 @@ has been tested and the backup is known to be usable.
 Unrecognized files outside the old TDLib directory, including old logs, temporary
 files and backup copies, remain where they are. A startup warning reports extra
 files under the old root or `~/.hradar`. They require manual review. There is no compatibility
-symlink. The SQLite schema stays at v8; copying does not apply a new SQL migration.
+symlink. The bot settings feature adds schema v9; copying does not itself apply a
+new SQL migration. Repository startup upgrades older schemas after copying.
 
 If the app refuses startup, close the old app and inspect the error, disk space,
 permissions, `backups/`, and both path sets. Resolve conflicting files by comparing
