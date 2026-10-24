@@ -82,7 +82,7 @@ class TdlibGateway(
     private lateinit var client: Client
     @Volatile var messageListener: ((TdApi.Message) -> Unit)? = null
 
-    val onboarding = Onboarding(::rawRequest)
+    val onboarding = Onboarding(send = ::rawRequest)
 
     @Synchronized fun configure(credentials: ApiCredentials, persist: () -> Unit = {}) {
         credentials.validate()

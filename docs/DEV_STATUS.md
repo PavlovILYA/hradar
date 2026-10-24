@@ -1,5 +1,55 @@
 # hradar — Development status / session handoff
 
+## Safe onboarding diagnostics — 2026-10-25
+
+VERIFIED: Error responses now carry a bounded numeric TDLib code, strict enum
+identifier, known current auth stage and retry interval. Exact known errors retain
+PHONE_CODE_INVALID/PHONE_CODE_EXPIRED; wait formats normalize to FLOOD_WAIT.
+Unknown text and 406 remain opaque. Local failures have LOCAL_* identifiers and
+no fabricated Telegram code. A compact details block displays diagnostics; copying
+constructs exactly four independently validated fields, excluding raw error text,
+form inputs, phone/email (including masked values), credentials and session tokens.
+Clipboard failures use fixed text. Auth operations, desktop guards and storage did
+not change; no dependency was added.
+
+VERIFIED: `:backend:build` passed 150 tests (zero failures/errors/skips), TypeScript
+production build passed, all 35 offline Playwright tests passed. Synthetic backend
+fixtures test exact identifiers, unknown/prefix-injected messages, 406, numeric-code
+bounds and stage sanitization. Browser fixtures test the four-field export, wait
+values, injected extras and clipboard denial without writing the real clipboard.
+
+NOT VERIFIED: Real Telegram delivery/physical Mac; no user secrets, profile or
+TDLib session were read. NEXT ACTION: push this correction to the same branch;
+gh is unavailable, so use the manual PR link. No merge or release is authorized.
+
+## Telegram onboarding UX — 2026-10-25
+
+VERIFIED: Isolated `hradar-onboarding` worktree/`feat/telegram-onboarding-ux`
+starts at `origin/master` 19a8eaf, including merged PRs #6 and #7. Onboarding
+now exposes masked delivery information, next method, cooldown and action status.
+Finite guarded resend/phone operations use pinned TDLib methods; changing phone
+keeps the real auth state until TDLib reports a transition. Concurrent/stale
+requests and server wait intervals are enforced. Known errors map to safe fixed
+messages; 406 stays opaque. Login codes/passwords/raw errors are never persisted
+or logged. Test JVM excludes inherited TG_* credentials.
+
+VERIFIED: New responsive themed login card, progress, delivery hints, phone editor,
+countdown, loading states and preserved failed input. `:backend:build` passed with
+149 tests, zero failures/errors/skips; frontend TypeScript/Vite build passed; all
+34 offline Playwright tests and seven Python safeguards passed. New tests use fake
+TDLib/HTTP, injected time and synthetic data. Desktop/light and narrow/dark UI
+were visually inspected with synthetic fixtures. Packaged UI smoke selector was
+updated for the new heading; script syntax and Git diff checks passed.
+
+NOT VERIFIED: Live code delivery, account-specific SMS/email restrictions, real
+2FA/phone replacement and mounted-DMG smoke for this branch. No real credentials,
+user profile, session or database were opened; no real TDLib client was started.
+Existing storage layout/security and Bot API behavior were retained.
+
+NEXT ACTION: gh is unavailable; push the feature branch and provide the compare
+URL for manual PR creation. After PR CI, use a controlled account on a Mac to
+follow docs/TELEGRAM_LOGIN.md. Do not merge, release or overwrite an installed app.
+
 ## Bot settings + unified storage integration — 2026-10-23
 
 VERIFIED: PR #6 unified-storage is in `origin/master` (`250628c`). The

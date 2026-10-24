@@ -62,6 +62,8 @@ fun Application.configureOnboarding(telegram: TdlibGateway, paths: RuntimePaths,
                 call.respond(mapOf("ok" to true))
             }
             post("/login") { telegram.onboarding.submit(bounded<LoginInput>(call)); call.respond(mapOf("ok" to true)) }
+            post("/resend") { telegram.onboarding.resend(bounded<LoginInput>(call)); call.respond(mapOf("ok" to true)) }
+            post("/phone") { telegram.onboarding.changePhone(bounded<LoginInput>(call)); call.respond(mapOf("ok" to true)) }
         }
         if (DesktopRuntime.enabled) post("/api/desktop/shutdown") { call.respond(mapOf("ok" to true)); shutdown() }
     }

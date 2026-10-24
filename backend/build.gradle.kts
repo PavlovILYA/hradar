@@ -35,7 +35,11 @@ application {
     )
 }
 
-tasks.test { useJUnitPlatform() }
+tasks.test {
+    useJUnitPlatform()
+    // Account-free tests must not inherit a developer's Telegram credentials.
+    environment = environment.filterKeys { !it.startsWith("TG_") }
+}
 
 tasks.register("checkTdlibJava") {
     group = "verification"
