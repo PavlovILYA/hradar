@@ -1,5 +1,61 @@
 import { test, expect } from '@playwright/test';
 
+test('technical diagnostics copy only approved fields and identifiers', async ({ page }) => {
+  await page.clock.install();
+  await page.addInitScript(() => Object.defineProperty(navigator, 'clipboard', { value: {
+    writeText: async (text: string) => { (window as unknown as { diagnosticCopy: string }).diagnosticCopy = text; },
+  } }));
+  let diagnostic: Record<string, unknown> = { telegramCode: 400, identifier: 'PHONE_CODE_INVALID', state: 'WaitCode', retryAfterSeconds: 0 };
+  await page.route('**/api/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/events') return route.abort();
+    if (path === '/api/telegram/status') return route.fulfill({ json: { authorizationState: 'WaitCode', authorized: false } });
+    if (path === '/api/onboarding') return route.fulfill({ json: { state: 'WaitCode', csrfToken: 'synthetic-session-secret',
+      delivery: { method: 'sms', destination: '••••90' }, resendSupported: false } });
+    if (path === '/api/onboarding/login') return route.fulfill({ status: diagnostic.telegramCode === 429 ? 429 : 400, json: {
+      error: 'Проверьте код.', kind: diagnostic.telegramCode === 429 ? 'rate_limited' : 'invalid_code', retryAfterSeconds: diagnostic.retryAfterSeconds,
+      diagnostics: { ...diagnostic, phone: '+1234567890', email: 'synthetic@example.invalid', token: 'synthetic-token', message: 'raw-secret-error', value: 'synthetic-login-code' },
+    } });
+    if (path === '/api/notifications') return route.fulfill({ json: { items: [], unread: 0 } });
+    if (['/api/channels', '/api/templates', '/api/monitoring', '/api/history/syncs'].includes(path)) return route.fulfill({ json: [] });
+    throw new Error(`Unmocked synthetic route ${path}`);
+  });
+  await page.goto('/');
+  await page.getByLabel('Код Telegram').fill('synthetic-login-code');
+  await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+  await page.getByText('Технические подробности', { exact: true }).click();
+  const details = page.getByTestId('login-diagnostics');
+  await expect(details).toContainText('PHONE_CODE_INVALID');
+  await expect(details).toContainText('400');
+  for (const expected of [
+    { telegramCode: 400, identifier: 'PHONE_CODE_INVALID', state: 'WaitCode', retryAfterSeconds: 0 },
+    { telegramCode: null, identifier: 'UNKNOWN', state: 'WaitCode', retryAfterSeconds: 0 },
+    { telegramCode: 429, identifier: 'FLOOD_WAIT', state: 'WaitCode', retryAfterSeconds: 3 },
+  ]) {
+    if (expected.identifier === 'UNKNOWN') {
+      diagnostic = { telegramCode: '400 raw-secret-error', identifier: 'PHONE_CODE_INVALID synthetic@example.invalid', state: 'raw-secret-state', retryAfterSeconds: 0 };
+      await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+      await expect(details).toContainText('UNKNOWN');
+    }
+    if (expected.identifier === 'FLOOD_WAIT') {
+      diagnostic = { ...expected };
+      await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+      await expect(details).toContainText('FLOOD_WAIT');
+    }
+    await page.getByRole('button', { name: 'Скопировать диагностику', exact: true }).click();
+    const copy = await page.evaluate(() => (window as unknown as { diagnosticCopy: string }).diagnosticCopy);
+    expect(JSON.parse(copy)).toEqual(expected);
+    for (const secret of ['+1234567890', 'synthetic@', 'synthetic-token', 'raw-secret', 'synthetic-login-code', 'synthetic-session-secret', '••••90']) {
+      expect(copy).not.toContain(secret);
+      await expect(details).not.toContainText(secret);
+    }
+  }
+  await page.evaluate(() => { Object.defineProperty(navigator.clipboard, 'writeText', { value: async () => { throw new Error('private clipboard details'); } }); });
+  await page.getByRole('button', { name: 'Скопировать диагностику', exact: true }).click();
+  await expect(details).toContainText('Не удалось скопировать');
+  await expect(details).not.toContainText('private clipboard');
+});
+
 test('local onboarding follows fake TDLib states and clears secret fields', async ({ page }) => {
   let state = 'Credentials';
   let bad = false;

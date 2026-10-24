@@ -7,6 +7,34 @@ import org.drinkless.tdlib.TdApi
 import kotlin.test.*
 
 class OnboardingTest {
+    @Test fun `diagnostics preserve numeric code and only exact approved identifiers`() = runBlocking {
+        val cases = listOf(
+            Triple(400, "PHONE_CODE_INVALID", "PHONE_CODE_INVALID"),
+            Triple(400, "PHONE_CODE_EXPIRED", "PHONE_CODE_EXPIRED"),
+            Triple(429, "FLOOD_WAIT_42", "FLOOD_WAIT"),
+            Triple(429, "Too Many Requests: retry after 42", "FLOOD_WAIT"),
+            Triple(400, "PHONE_CODE_INVALID synthetic-private@example.invalid +1234567890 code-secret password-secret", "UNKNOWN"),
+            Triple(406, "PHONE_CODE_INVALID", "UNKNOWN"),
+            Triple(999999999, "synthetic-private", "UNKNOWN"),
+        )
+        for ((errorCode, raw, id) in cases) {
+            val auth = Onboarding { TdApi.Error(errorCode, raw) }
+            auth.update(code())
+            val failure = assertFailsWith<OnboardingRejected> { auth.submit(LoginInput("WaitCode", "submitted-secret")) }.failure("WaitCode")
+            assertEquals(errorCode.takeIf { it in 100..599 }, failure.diagnostics.telegramCode)
+            assertEquals(id, failure.diagnostics.identifier.name)
+            assertEquals("WaitCode", failure.diagnostics.state)
+            assertEquals(if (errorCode == 429) 42 else 0, failure.diagnostics.retryAfterSeconds)
+            val json = Json.encodeToString(failure)
+            for (secret in listOf("synthetic-private", "+1234567890", "code-secret", "password-secret", "submitted-secret"))
+                assertFalse(json.contains(secret))
+        }
+        val local = OnboardingRejected("network").failure("secret-state@example.invalid")
+        assertNull(local.diagnostics.telegramCode)
+        assertEquals("Unknown", local.diagnostics.state)
+        assertFalse(Json.encodeToString(local).contains("secret-state"))
+    }
+
     private fun code(type: TdApi.AuthenticationCodeType? = TdApi.AuthenticationCodeTypeSms(5),
                      next: TdApi.AuthenticationCodeType? = TdApi.AuthenticationCodeTypeCall(5), timeout: Int = 0) =
         TdApi.AuthorizationStateWaitCode(TdApi.AuthenticationCodeInfo("+1234567890", type, next, timeout))

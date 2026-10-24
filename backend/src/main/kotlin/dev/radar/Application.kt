@@ -121,7 +121,7 @@ fun main() {
             }
             exception<dev.radar.telegram.OnboardingRejected> { call, ex ->
                 if (ex.retryAfterSeconds > 0) call.response.headers.append("Retry-After", ex.retryAfterSeconds.toString())
-                call.respondText(Json.encodeToString(dev.radar.telegram.OnboardingFailure(ex.message!!, ex.kind, ex.retryAfterSeconds)),
+                call.respondText(Json.encodeToString(ex.failure(telegram.onboarding.status().state)),
                     ContentType.Application.Json, when (ex.kind) {
                         "rate_limited", "wait" -> HttpStatusCode.TooManyRequests
                         "state_changed", "busy" -> HttpStatusCode.Conflict

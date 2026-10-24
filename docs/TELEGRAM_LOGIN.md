@@ -38,6 +38,22 @@ failure, changed state and additional confirmation. Unknown errors use a generic
 message. Error 406 is never interpreted. Numeric FLOOD_WAIT intervals are enforced
 across login, phone replacement and resend; no raw Telegram text is returned/logged.
 
+The structured error response also contains `diagnostics` with exactly four fields:
+`telegramCode` (numeric TDLib error code in 100–599, or null), `identifier` (closed
+enum whitelist), `state` (known current authorization stage or `Unknown`) and
+`retryAfterSeconds`. Known exact errors retain identifiers such as
+`PHONE_CODE_INVALID` and `PHONE_CODE_EXPIRED`; retry formats normalize to
+`FLOOD_WAIT`. Unknown non-rate-limit text, including known prefixes with appended data, becomes
+`UNKNOWN`. Error 406 retains only its numeric code and `UNKNOWN`. Local failures
+use `LOCAL_*` identifiers with no fabricated Telegram code.
+
+**Технические подробности** in the UI shows the safe code/identifier, current stage
+and current wait. **Скопировать диагностику** exports only these four fields as
+JSON. The frontend independently validates code/identifier/stage and constructs a
+fresh object; it never copies the full response, form, error message, destination,
+CSRF/launch token or credentials. Even masked phone/email are excluded. Clipboard
+failure produces a fixed message without browser exception details.
+
 ## API and privacy
 
 The guarded local endpoints remain finite: GET `/api/onboarding`, POST

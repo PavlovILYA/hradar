@@ -21,9 +21,36 @@ import org.drinkless.tdlib.TdApi
     val canChangePhone: Boolean = false, val busy: Boolean = false) {
     override fun toString() = "OnboardingStatus(state=$state)"
 }
-@Serializable data class OnboardingFailure(val error: String, val kind: String, val retryAfterSeconds: Int)
+@Serializable enum class OnboardingErrorIdentifier {
+    UNKNOWN, PHONE_CODE_INVALID, PHONE_CODE_EMPTY, EMAIL_CODE_INVALID, CODE_INVALID, EMAIL_VERIFY_CODE_INVALID,
+    PHONE_CODE_EXPIRED, EMAIL_CODE_EXPIRED, CODE_EXPIRED, EMAIL_VERIFY_EXPIRED, PASSWORD_HASH_INVALID,
+    PHONE_NUMBER_INVALID, EMAIL_INVALID, EMAIL_NOT_ALLOWED, SEND_CODE_UNAVAILABLE, PHONE_CODE_HASH_EMPTY,
+    SESSION_PASSWORD_NEEDED, EMAIL_VERIFICATION_NEEDED, AUTH_RESTART, FLOOD_WAIT,
+    LOCAL_NETWORK, LOCAL_WAIT, LOCAL_RATE_LIMIT, LOCAL_BUSY, LOCAL_STATE_CHANGED,
+    LOCAL_UNSUPPORTED_STATE, LOCAL_RESEND_UNAVAILABLE, LOCAL_INVALID_PHONE,
+}
+@Serializable data class OnboardingDiagnostics(val telegramCode: Int?, val identifier: OnboardingErrorIdentifier,
+    val state: String, val retryAfterSeconds: Int)
+@Serializable data class OnboardingFailure(val error: String, val kind: String, val retryAfterSeconds: Int,
+    val diagnostics: OnboardingDiagnostics)
+private val diagnosticStates = setOf("Credentials", "ParametersFailed", "Initializing", "WaitTdlibParameters",
+    "WaitPhoneNumber", "WaitPremiumPurchase", "WaitEmailAddress", "WaitEmailCode", "WaitCode",
+    "WaitOtherDeviceConfirmation", "WaitRegistration", "WaitPassword", "Ready", "LoggingOut", "Closing", "Closed")
 
-class OnboardingRejected(val kind: String, val retryAfterSeconds: Int = 0): IllegalArgumentException(when (kind) {
+class OnboardingRejected(val kind: String, val retryAfterSeconds: Int = 0,
+    private val telegramCode: Int? = null,
+    private val identifier: OnboardingErrorIdentifier = when (kind) {
+        "network" -> OnboardingErrorIdentifier.LOCAL_NETWORK
+        "wait" -> OnboardingErrorIdentifier.LOCAL_WAIT
+        "rate_limited" -> OnboardingErrorIdentifier.LOCAL_RATE_LIMIT
+        "busy" -> OnboardingErrorIdentifier.LOCAL_BUSY
+        "state_changed" -> OnboardingErrorIdentifier.LOCAL_STATE_CHANGED
+        "unsupported_state" -> OnboardingErrorIdentifier.LOCAL_UNSUPPORTED_STATE
+        "resend_unavailable" -> OnboardingErrorIdentifier.LOCAL_RESEND_UNAVAILABLE
+        "invalid_phone" -> OnboardingErrorIdentifier.LOCAL_INVALID_PHONE
+        else -> OnboardingErrorIdentifier.UNKNOWN
+    },
+): IllegalArgumentException(when (kind) {
     "invalid_code" -> "Неверный код. Проверьте его и попробуйте ещё раз."
     "expired_code" -> "Срок действия кода истёк. Запросите новый код или измените номер."
     "invalid_password" -> "Неверный пароль двухэтапной проверки. Попробуйте ещё раз."
@@ -40,6 +67,9 @@ class OnboardingRejected(val kind: String, val retryAfterSeconds: Int = 0): Ille
     else -> "Telegram отклонил запрос. Проверьте данные и повторите текущий этап."
 }) {
     val rateLimited get() = kind == "rate_limited"
+    fun failure(state: String) = OnboardingFailure(message!!, kind, retryAfterSeconds,
+        OnboardingDiagnostics(telegramCode?.takeIf { it in 100..599 }, identifier,
+            state.takeIf { it in diagnosticStates } ?: "Unknown", retryAfterSeconds))
 }
 
 /** A deliberately finite login API. No generic Telegram executor is exposed. */
@@ -127,12 +157,15 @@ class Onboarding(private val now: () -> Long = System::currentTimeMillis,
     }
     private fun safeError(error: TdApi.Error): OnboardingRejected {
         // Error 406 must not be interpreted. All other raw messages stay within this allowlist.
-        if (error.code == 406) return OnboardingRejected("rejected")
+        if (error.code == 406) return OnboardingRejected("rejected", telegramCode = 406)
         val raw = error.message.orEmpty()
         val interval = Regex("(?:FLOOD(?:_PREMIUM)?_WAIT_|Too Many Requests: retry after )([0-9]{1,9})")
             .matchEntire(raw)?.groupValues?.get(1)?.toIntOrNull()?.coerceAtLeast(1)
         if (error.code == 429 || interval != null || raw in setOf("FLOOD_WAIT", "PHONE_NUMBER_FLOOD", "PHONE_PASSWORD_FLOOD", "PHONE_CODE_FLOOD"))
-            return OnboardingRejected("rate_limited", interval ?: 60)
+            return OnboardingRejected("rate_limited", interval ?: 60, error.code, OnboardingErrorIdentifier.FLOOD_WAIT)
+        val identifier = if (raw == "Authentication code can't be resent") OnboardingErrorIdentifier.SEND_CODE_UNAVAILABLE
+            else OnboardingErrorIdentifier.entries.firstOrNull { !it.name.startsWith("LOCAL_") && it.name == raw }
+                ?: OnboardingErrorIdentifier.UNKNOWN
         return OnboardingRejected(when (raw) {
             "PHONE_CODE_INVALID", "PHONE_CODE_EMPTY", "EMAIL_CODE_INVALID", "CODE_INVALID", "EMAIL_VERIFY_CODE_INVALID" -> "invalid_code"
             "PHONE_CODE_EXPIRED", "EMAIL_CODE_EXPIRED", "CODE_EXPIRED", "EMAIL_VERIFY_EXPIRED" -> "expired_code"
@@ -143,7 +176,7 @@ class Onboarding(private val now: () -> Long = System::currentTimeMillis,
             "SESSION_PASSWORD_NEEDED", "EMAIL_VERIFICATION_NEEDED" -> "confirmation_required"
             "AUTH_RESTART" -> "state_changed"
             else -> if (error.code >= 500) "network" else "rejected"
-        })
+        }, telegramCode = error.code, identifier = identifier)
     }
     private fun maskPhone(value: String?) = value?.takeIf { it.matches(Regex("\\+?[0-9]{5,20}")) }?.let { "••••${it.takeLast(2)}" }
     private fun maskEmail(value: String?): String? {

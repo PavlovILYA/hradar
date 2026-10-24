@@ -1,5 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import './Onboarding.css';
+import { OnboardingDiagnostics, readDiagnostic } from './OnboardingDiagnostics';
+import type { DiagnosticFailure } from './OnboardingDiagnostics';
 
 type Delivery = { method: string; destination?: string; length?: number };
 type Status = { state: string; csrfToken: string; link?: string; notice?: string; revision?: number;
@@ -38,6 +40,7 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
   const [apiId, setApiId] = useState('');
   const [apiHash, setApiHash] = useState('');
   const [error, setError] = useState('');
+  const [diagnostic, setDiagnostic] = useState<DiagnosticFailure | null>(null);
   const [connectionError, setConnectionError] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -64,7 +67,7 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
         if (!mounted.current || version !== generation.current) return;
         const old = statusRef.current;
         if (old && (old.state !== s.state || old.revision !== s.revision)) {
-          setValue(''); setPhone(''); setEditingPhone(false); setApiHash(''); setError(''); setMessage('');
+          setValue(''); setPhone(''); setEditingPhone(false); setApiHash(''); setError(''); setMessage(''); setDiagnostic(null);
         }
         statusRef.current = s; setStatus(s); setSampledAt(Date.now()); setTick(Date.now()); setConnectionError('');
         if (s.state === 'Ready') ready.current();
@@ -84,12 +87,13 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
   const locked = busy || !!status?.busy;
   async function submit(path: string, body?: unknown) {
     if (pending.current || locked || (retrySeconds > 0 && path !== '/api/desktop/shutdown')) return;
-    pending.current = true; generation.current++; setBusy(true); setError(''); setMessage('');
+    pending.current = true; generation.current++; setBusy(true); setError(''); setMessage(''); setDiagnostic(null);
     try {
       const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Hradar-CSRF': statusRef.current?.csrfToken ?? '' }, body: JSON.stringify(body ?? {}) });
       if (!mounted.current) return;
       if (!r.ok) {
-        const data = await r.json() as { error?: string; kind?: string; retryAfterSeconds?: number };
+        const data = await r.json() as { error?: string; kind?: string; retryAfterSeconds?: number; diagnostics?: unknown };
+        setDiagnostic(readDiagnostic(data.diagnostics));
         if (data.retryAfterSeconds && data.retryAfterSeconds > 0) {
           const deadline = Date.now() + data.retryAfterSeconds * 1000;
           if (data.kind === 'wait') setResendUntil(deadline); else setRetryUntil(deadline);
@@ -102,7 +106,7 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
         else setMessage('Запрос принят. Ожидаем следующий этап от Telegram…');
         if (path === '/api/desktop/shutdown') { document.getElementById('root')!.textContent = 'hradar завершён. Теперь можно закрыть вкладку.'; return; }
       }
-    } catch { if (mounted.current) setError('Не удалось связаться с приложением. Проверьте соединение и повторите текущий этап.'); }
+    } catch { if (mounted.current) { setError('Не удалось связаться с приложением. Проверьте соединение и повторите текущий этап.'); setDiagnostic(readDiagnostic({ identifier: 'LOCAL_NETWORK' })); } }
     finally {
       pending.current = false;
       if (mounted.current) { setBusy(false); await refresh.current(); }
@@ -148,6 +152,7 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
         </div>}
         {status?.canChangePhone && !editingPhone && <button className="login-back" aria-label="Изменить номер" disabled={locked} onClick={() => { setEditingPhone(true); setError(''); setMessage(''); }}>← Изменить номер</button>}
         <div id="login-feedback" className="login-feedback">{retrySeconds > 0 && <p role="timer">Подождите {retrySeconds} сек. перед следующим запросом.</p>}{(error || connectionError) && <p className="login-error" role="alert">{error || connectionError}</p>}{message && !error && <p role="status">{message}</p>}</div>
+        <OnboardingDiagnostics failure={diagnostic} state={status?.state} waitSeconds={Math.max(retrySeconds, resendSeconds)} />
         {status?.link?.startsWith('tg://') && <a className="login-confirm" href={status.link}>Открыть подтверждение в Telegram ↗</a>}
         <p className="login-footnote">Доставкой кода управляет Telegram. Для сторонних приложений SMS и другие способы могут быть ограничены. Исправная SIM-карта не гарантирует отправку кода.</p>
       </div>

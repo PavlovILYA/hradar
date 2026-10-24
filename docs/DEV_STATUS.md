@@ -1,5 +1,27 @@
 # hradar — Development status / session handoff
 
+## Safe onboarding diagnostics — 2026-10-25
+
+VERIFIED: Error responses now carry a bounded numeric TDLib code, strict enum
+identifier, known current auth stage and retry interval. Exact known errors retain
+PHONE_CODE_INVALID/PHONE_CODE_EXPIRED; wait formats normalize to FLOOD_WAIT.
+Unknown text and 406 remain opaque. Local failures have LOCAL_* identifiers and
+no fabricated Telegram code. A compact details block displays diagnostics; copying
+constructs exactly four independently validated fields, excluding raw error text,
+form inputs, phone/email (including masked values), credentials and session tokens.
+Clipboard failures use fixed text. Auth operations, desktop guards and storage did
+not change; no dependency was added.
+
+VERIFIED: `:backend:build` passed 150 tests (zero failures/errors/skips), TypeScript
+production build passed, all 35 offline Playwright tests passed. Synthetic backend
+fixtures test exact identifiers, unknown/prefix-injected messages, 406, numeric-code
+bounds and stage sanitization. Browser fixtures test the four-field export, wait
+values, injected extras and clipboard denial without writing the real clipboard.
+
+NOT VERIFIED: Real Telegram delivery/physical Mac; no user secrets, profile or
+TDLib session were read. NEXT ACTION: push this correction to the same branch;
+gh is unavailable, so use the manual PR link. No merge or release is authorized.
+
 ## Telegram onboarding UX — 2026-10-25
 
 VERIFIED: Isolated `hradar-onboarding` worktree/`feat/telegram-onboarding-ux`
