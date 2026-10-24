@@ -120,7 +120,14 @@ fun main() {
                 }))
             }
             exception<dev.radar.telegram.OnboardingRejected> { call, ex ->
-                call.respondApiError(if (ex.rateLimited) HttpStatusCode.TooManyRequests else HttpStatusCode.BadRequest, ApiError(ex.message!!))
+                if (ex.retryAfterSeconds > 0) call.response.headers.append("Retry-After", ex.retryAfterSeconds.toString())
+                call.respondText(Json.encodeToString(dev.radar.telegram.OnboardingFailure(ex.message!!, ex.kind, ex.retryAfterSeconds)),
+                    ContentType.Application.Json, when (ex.kind) {
+                        "rate_limited", "wait" -> HttpStatusCode.TooManyRequests
+                        "state_changed", "busy" -> HttpStatusCode.Conflict
+                        "network" -> HttpStatusCode.ServiceUnavailable
+                        else -> HttpStatusCode.BadRequest
+                    })
             }
             exception<IllegalArgumentException> { call, ex ->
                 call.respondApiError(HttpStatusCode.BadRequest, ApiError(ex.message ?: "Bad request"))

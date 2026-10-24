@@ -29,7 +29,7 @@ test('local onboarding follows fake TDLib states and clears secret fields', asyn
   await page.getByLabel('Код Telegram').fill('wrong');
   await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Telegram отклонил ввод');
-  await expect(page.getByLabel('Код Telegram')).toHaveValue('');
+  await expect(page.getByLabel('Код Telegram')).toHaveValue('wrong');
   for (const [label, value] of [['Код Telegram','12345'], ['Пароль 2FA','fake-only'], ['Email для входа','fake@example.invalid'], ['Код из email','12345']]) {
     await page.getByLabel(label).fill(value);
     await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
@@ -37,4 +37,99 @@ test('local onboarding follows fake TDLib states and clears secret fields', asyn
   await expect(page.getByRole('link', { name: 'Открыть подтверждение в Telegram' })).toHaveAttribute('href','tg://login?token=fake');
   state = 'Ready';
   await expect(page.getByRole('status')).toHaveText('Telegram подключён');
+});
+
+test('delivery countdown resend and phone replacement follow server state', async ({ page }) => {
+  await page.clock.install();
+  let state = 'WaitCode';
+  let seconds = 2;
+  let resends = 0;
+  let release: (() => void) | undefined;
+  await page.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/events') return route.abort();
+    if (path === '/api/telegram/status') return route.fulfill({ json: { authorizationState: state, authorized: false, connectionState: 'Ready' } });
+    if (path === '/api/onboarding') return route.fulfill({ json: { state, revision: 1, csrfToken: 'fake-csrf', canChangePhone: true,
+      delivery: { method: 'telegram', destination: '••••90', length: 5 }, nextDelivery: { method: 'sms' }, resendSupported: true, resendAfterSeconds: seconds } });
+    if (path === '/api/onboarding/resend') {
+      resends++;
+      expect(route.request().headers()['x-hradar-csrf']).toBe('fake-csrf');
+      if (resends === 1) return route.fulfill({ status: 429, json: { kind: 'wait', error: 'Повторная отправка пока недоступна.', retryAfterSeconds: 1 } });
+      seconds = 30;
+      return route.fulfill({ json: { ok: true } });
+    }
+    if (path === '/api/onboarding/phone') {
+      expect(route.request().postDataJSON()).toMatchObject({ state: 'WaitCode', value: '+19876543210' });
+      await new Promise<void>(resolve => { release = resolve; });
+      state = 'WaitEmailCode';
+      return route.fulfill({ json: { ok: true } });
+    }
+    if (path === '/api/notifications') return route.fulfill({ json: { items: [], unread: 0, cursor: null } });
+    if (['/api/channels', '/api/templates', '/api/monitoring', '/api/history/syncs'].includes(path)) return route.fulfill({ json: [] });
+    throw new Error(`Unmocked synthetic route ${path}`);
+  });
+  await page.goto('/');
+  await expect(page.getByText('В приложении Telegram', { exact: true })).toBeVisible();
+  await expect(page.getByText('••••90', { exact: false })).toBeVisible();
+  const resend = page.getByRole('button', { name: 'Отправить повторно', exact: true });
+  await expect(resend).toBeDisabled();
+  await page.clock.fastForward(1000);
+  await expect(page.getByTestId('resend-countdown')).toContainText('1 сек');
+  seconds = 0;
+  await page.clock.fastForward(1000);
+  await expect(resend).toBeEnabled();
+  await resend.click();
+  await expect(resend).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Продолжить', exact: true })).toBeEnabled();
+  await page.clock.fastForward(1100);
+  await expect(resend).toBeEnabled();
+  await resend.click();
+  await expect(resend).toBeDisabled();
+  expect(resends).toBe(2);
+  await page.getByRole('button', { name: 'Изменить номер', exact: true }).click();
+  await page.getByLabel('Новый номер телефона').fill('+19876543210');
+  await page.getByRole('button', { name: 'Получить код', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Отправляем…', exact: true })).toBeDisabled();
+  await expect(page.getByLabel('Новый номер телефона')).toHaveValue('+19876543210');
+  release!();
+  await page.clock.fastForward(1600);
+  await expect(page.getByLabel('Код из email')).toBeVisible();
+});
+
+test('onboarding keeps failed input supports keyboard and fits both themes on a small window', async ({ page }) => {
+  await page.clock.install();
+  let limited = false;
+  await page.setViewportSize({ width: 390, height: 680 });
+  await page.route('**/api/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/events') return route.abort();
+    if (path === '/api/telegram/status') return route.fulfill({ json: { authorizationState: 'WaitEmailCode', authorized: false } });
+    if (path === '/api/onboarding') return route.fulfill({ json: { state: 'WaitEmailCode', csrfToken: 'fake-csrf', delivery: { method: 'email', destination: '•••@example.invalid' }, canChangePhone: true, resendSupported: true, resendAfterSeconds: 0 } });
+    if (path === '/api/onboarding/login') return route.fulfill(limited
+      ? { status: 429, json: { kind: 'rate_limited', error: 'Слишком много попыток.', retryAfterSeconds: 3 } }
+      : { status: 400, json: { kind: 'expired_code', error: 'Срок действия кода истёк. Запросите новый код.' } });
+    if (path === '/api/notifications') return route.fulfill({ json: { items: [], unread: 0, cursor: null } });
+    if (['/api/channels', '/api/templates', '/api/monitoring', '/api/history/syncs'].includes(path)) return route.fulfill({ json: [] });
+    throw new Error(`Unmocked synthetic route ${path}`);
+  });
+  await page.goto('/');
+  await expect(page.getByText('По электронной почте', { exact: true })).toBeVisible();
+  await page.getByLabel('Код из email').fill('123456');
+  await page.getByLabel('Код из email').press('Enter');
+  await expect(page.getByRole('alert')).toContainText('Срок действия кода истёк');
+  await expect(page.getByLabel('Код из email')).toHaveValue('123456');
+  limited = true;
+  await page.getByLabel('Код из email').press('Enter');
+  await expect(page.getByRole('alert')).toContainText('Слишком много попыток');
+  await expect(page.getByRole('button', { name: 'Продолжить', exact: true })).toBeDisabled();
+  await page.clock.fastForward(3100);
+  await expect(page.getByRole('button', { name: 'Продолжить', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Изменить номер', exact: true }).click();
+  await page.getByRole('button', { name: 'Назад к коду', exact: true }).click();
+  await expect(page.getByLabel('Код из email')).toHaveValue('123456');
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate(theme => { document.documentElement.dataset.theme = theme; }, theme);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  }
 });

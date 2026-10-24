@@ -1,5 +1,33 @@
 # hradar — Development status / session handoff
 
+## Telegram onboarding UX — 2026-10-25
+
+VERIFIED: Isolated `hradar-onboarding` worktree/`feat/telegram-onboarding-ux`
+starts at `origin/master` 19a8eaf, including merged PRs #6 and #7. Onboarding
+now exposes masked delivery information, next method, cooldown and action status.
+Finite guarded resend/phone operations use pinned TDLib methods; changing phone
+keeps the real auth state until TDLib reports a transition. Concurrent/stale
+requests and server wait intervals are enforced. Known errors map to safe fixed
+messages; 406 stays opaque. Login codes/passwords/raw errors are never persisted
+or logged. Test JVM excludes inherited TG_* credentials.
+
+VERIFIED: New responsive themed login card, progress, delivery hints, phone editor,
+countdown, loading states and preserved failed input. `:backend:build` passed with
+149 tests, zero failures/errors/skips; frontend TypeScript/Vite build passed; all
+34 offline Playwright tests and seven Python safeguards passed. New tests use fake
+TDLib/HTTP, injected time and synthetic data. Desktop/light and narrow/dark UI
+were visually inspected with synthetic fixtures. Packaged UI smoke selector was
+updated for the new heading; script syntax and Git diff checks passed.
+
+NOT VERIFIED: Live code delivery, account-specific SMS/email restrictions, real
+2FA/phone replacement and mounted-DMG smoke for this branch. No real credentials,
+user profile, session or database were opened; no real TDLib client was started.
+Existing storage layout/security and Bot API behavior were retained.
+
+NEXT ACTION: gh is unavailable; push the feature branch and provide the compare
+URL for manual PR creation. After PR CI, use a controlled account on a Mac to
+follow docs/TELEGRAM_LOGIN.md. Do not merge, release or overwrite an installed app.
+
 ## Bot settings + unified storage integration — 2026-10-23
 
 VERIFIED: PR #6 unified-storage is in `origin/master` (`250628c`). The
