@@ -240,3 +240,13 @@ protected job disabled by default. `macos-release.yml` defaults to verification 
 and never creates a tag. See [MACOS_DISTRIBUTION.md](MACOS_DISTRIBUTION.md) for fixed
 toolchain versions, macOS 15.0 minimum, exact secrets/environment setup and testing.
 Actual installer run/artifact evidence belongs in DEV_STATUS, not inferred from YAML.
+
+## Application version gate
+
+The Fast frontend job checks canonical `appVersion` against npm metadata before
+installing dependencies. Gradle resource processing and `:backend:check` run the
+same gate for standalone builds. Installer workflows serialize all refs, allocate
+one macOS build number and share it across architectures and signing. Packaging
+checks the generated JAR version; image/DMG smoke checks short version, build number
+and distribution metadata. See [VERSIONING.md](VERSIONING.md) for synchronization,
+SemVer/tag rules and the limits of monotonic allocation on ephemeral CI runners.

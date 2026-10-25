@@ -50,3 +50,11 @@ Choose minimal checks for the changed area; report exact outcomes:
 - Prefer **one coherent feature/fix per commit** with tests/docs when relevant. Never `git push`, merge, publish a Release, expose services, or send Telegram messages unless the user explicitly authorizes that action.
 - Update **`ARCHITECTURE.md`** only for real architectural changes, **`ROADMAP.md`** for agreed scope/status changes, and **`docs/DEV_STATUS.md`** at a meaningful checkpoint/end of task with concise **VERIFIED / NOT VERIFIED / NEXT ACTION** evidence. Avoid rewriting them on every minor edit.
 - A task is done when its acceptance criteria are met and verified, not when files merely compile. State tests that ran, blockers, any unverified end-to-end scenario, and relevant commit hashes. If external verification requires user action, give exact steps instead of claiming success.
+
+## Application versioning
+
+- Before completing **every task**, explicitly decide whether a version bump is required. Update the canonical source when needed and state the decision, version and reason in the final report.
+- Root `gradle.properties` `appVersion` is canonical; follow [docs/VERSIONING.md](docs/VERSIONING.md).
+- Bump once per behavior-changing PR (PATCH compatible fixes, MINOR compatible features, MAJOR incompatible stable APIs); before 1.0 let the owner choose an incompatible-change bump. Docs-only, tests-only and CI-only work needs no bump.
+- Run `python3 -B scripts/version.py sync` after changing it and `python3 -B scripts/version.py check` before handoff. Never hardcode another application version in adapters or packaging.
+- Keep SemVer, macOS build counter, SQLite schema, TDLib and JDK versions independent. Preserve increasing published macOS build numbers; see the documented local/CI allocation limits. Creating tags/releases or publishing still requires explicit authorization.

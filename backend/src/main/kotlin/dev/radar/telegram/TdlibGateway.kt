@@ -1,5 +1,6 @@
 package dev.radar.telegram
 
+import dev.radar.AppVersion
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.Serializable
@@ -191,7 +192,7 @@ class TdlibGateway(
                     apiHash = this@TdlibGateway.apiHash!!
                     systemLanguageCode = "en"
                     deviceModel = "HRadar (macOS)"
-                    applicationVersion = "0.1.0"
+                    applicationVersion = AppVersion.value
                 }
                 sendAuthorization(params)
             }

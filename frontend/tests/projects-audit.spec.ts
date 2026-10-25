@@ -1,3 +1,4 @@
+import { openSection } from './navigation-helpers';
 import { test, expect, type Page } from '@playwright/test';
 
 async function fixture(page: Page, options: { delayedProject?: boolean; failedColumn?: boolean; delayedWrite?: boolean; failedOriginal?: boolean } = {}) {
@@ -43,7 +44,7 @@ async function fixture(page: Page, options: { delayedProject?: boolean; failedCo
     }
     throw new Error(`Unexpected offline request: ${method} ${path}`);
   });
-  await page.goto('/'); await page.getByRole('button', { name: 'Проекты', exact: true }).click();
+  await page.goto('/'); await openSection(page, 'Проекты');
   await expect(page.locator('.project-tile')).toBeVisible();
   return { writes, releaseProject, releaseWrite, project: () => project, calls: () => newColumnCalls };
 }

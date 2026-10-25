@@ -1,3 +1,4 @@
+import { openSection } from './navigation-helpers';
 import { test, expect, type Page } from '@playwright/test';
 
 const message = { id: 1, channelId: -1001, date: 1700000000, title: 'Synthetic source', username: 'synthetic_jobs', text: 'Java Spring Boot PostgreSQL', link: 'https://t.me/synthetic_jobs/1', explanation: { matches: true, foundRequired: ['Java', 'Spring Boot', 'PostgreSQL'], foundAny: [], foundExcluded: [], missingRequired: [] } };
@@ -29,7 +30,7 @@ async function open(page: Page, pages: unknown[], sources = true) {
     }
     throw new Error(`Unmocked offline request: ${path}`);
   });
-  await page.goto('/'); await page.getByRole('button', { name: 'Проекты', exact: true }).click();
+  await page.goto('/'); await openSection(page, 'Проекты');
   await page.locator('.project-tile').click(); await page.getByText('Найти и добавить публикации', { exact: true }).click();
   return { searches, additions: () => additions };
 }

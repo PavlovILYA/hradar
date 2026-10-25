@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
 """Mach-O closure and bundled JVM/JNI startup; never creates an account client."""
-import pathlib, subprocess, sys, os
+import pathlib, subprocess, sys, os, plistlib
+from version import app_version, parse_version, validate_build_number, check_jar
 app = pathlib.Path(sys.argv[1]).resolve()
 arch = sys.argv[2]
 assert arch in ('arm64', 'x86_64')
+version = app_version()
+info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
+assert info['CFBundleShortVersionString'] == parse_version(version), 'Packaged short version mismatch'
+validate_build_number(info['CFBundleVersion'])
+if os.environ.get('HRADAR_BUILD_NUMBER'):
+    assert info['CFBundleVersion'] == os.environ['HRADAR_BUILD_NUMBER'], 'Packaged build number mismatch'
+check_jar(app / 'Contents/app' / f'backend-{version}.jar', version)
+
 for path in app.rglob('*'):
     if not path.is_file() or path.is_symlink():
         continue

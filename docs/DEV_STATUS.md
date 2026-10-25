@@ -1,5 +1,38 @@
 # hradar — Development status / session handoff
 
+## Unified navigation and application version — 2026-10-25
+
+VERIFIED: `feat/unified-navigation` starts at fetched `origin/master` fa65a5f
+(merged PR #8). One grouped sidebar replaces competing navigation; sources,
+templates and application controls have dedicated screens. Publication details
+appear only beside search/archive publications. Visited forms retain in-memory
+drafts; mobile navigation supports focus, Escape and both themes. Onboarding,
+REST/authentication, SQLite and user storage behavior are unchanged.
+
+VERIFIED: Canonical `gradle.properties` appVersion=0.2.0 (MINOR for new screens)
+feeds Gradle/JAR, synchronized npm metadata, runtime identity and macOS packaging.
+Apple build numbers are separate from SemVer; both CI architectures share one
+allocation. `docs/VERSIONING.md` and AGENTS.md require a version decision at task
+completion. CI checks metadata consistency without new dependencies.
+
+VERIFIED: Baseline 35 offline browser tests passed before changes; all 41 pass
+after changes. Production frontend build and bundled `:backend:build
+:backend:stageDesktop -PbundledWeb=true` passed (150 Kotlin tests). All 16 Python
+tests and staged-JAR version verification passed. Synthetic desktop/mobile
+screens were visually inspected; a separate read-only navigation review found no
+concrete issues. Tests use fake APIs/temporary data; no real Telegram client was
+started and the existing user backend was left running unchanged.
+
+NOT VERIFIED: Native Intel/ARM64 DMG lifecycle on GitHub runners and real account
+flows for this branch. Overview is intentionally a useful placeholder. Screen
+selection has no URL/browser-history routing; drafts survive screen changes, not
+reload or logout. Independent offline machines do not share the local monotonic
+build counter; normal distribution CI runs are serialized (see VERSIONING.md).
+
+NEXT ACTION: Review/push this feature branch and open a PR to master; inspect its
+Fast CI and macOS installer checks. Do not merge, tag, release or install over the
+running application. Regression checklist: docs/NAVIGATION_REGRESSION.md.
+
 ## Safe onboarding diagnostics — 2026-10-25
 
 VERIFIED: Error responses now carry a bounded numeric TDLib code, strict enum

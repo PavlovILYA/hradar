@@ -1,5 +1,6 @@
 package dev.radar.capabilities
 
+import dev.radar.AppVersion
 import io.modelcontextprotocol.kotlin.sdk.server.Server
 import io.modelcontextprotocol.kotlin.sdk.server.ServerOptions
 import io.modelcontextprotocol.kotlin.sdk.types.*
@@ -32,7 +33,7 @@ object McpTools {
         tool("bot_publish_matches", "Request publication of 1–10 existing allowed matches to an opted-in operator. Requires separate /agent_publish on permission and a human confirmation in the bot. Never accepts arbitrary text or chats.", listOf("recipientUserId", "matchIds"), mapOf("recipientUserId" to number(1), "matchIds" to buildJsonObject { put("type", "array"); put("minItems", 1); put("maxItems", 10); put("uniqueItems", true); put("items", string(36)) })),
         tool("prepare_message", "Return an ephemeral structured draft for an allowed public channel. Never send or save it in Telegram. Future sends require separate human confirmation inside hradar.", listOf("chat", "text"), chat + mapOf("text" to string(4096))),
     )
-    fun server(service: CapabilityService): Server = Server(Implementation("hradar", "0.1.0"), ServerOptions(capabilities = ServerCapabilities(tools = ServerCapabilities.Tools(listChanged = false)))).apply {
+    fun server(service: CapabilityService): Server = Server(Implementation("hradar", AppVersion.value), ServerOptions(capabilities = ServerCapabilities(tools = ServerCapabilities.Tools(listChanged = false)))).apply {
         definitions.forEach { info ->
             addTool(name = info.name, description = info.description,
                 inputSchema = ToolSchema(properties = info.schema["properties"]!!.jsonObject, required = info.schema["required"]!!.jsonArray.map { it.jsonPrimitive.content }),

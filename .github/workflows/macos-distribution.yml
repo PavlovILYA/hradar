@@ -13,13 +13,29 @@ permissions:
   id-token: write
   attestations: write
 concurrency:
-  group: macos-distribution-${{ github.ref }}
+  group: macos-distribution
   cancel-in-progress: false
 jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      build_number: ${{ steps.version.outputs.build_number }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Check version and allocate shared build number
+        id: version
+        run: |
+          python3 -B scripts/version.py check
+          HRADAR_ALLOCATED_BUILD=$(python3 -B scripts/version.py build-number)
+          echo "build_number=$HRADAR_ALLOCATED_BUILD" >> "$GITHUB_OUTPUT"
   native:
     uses: ./.github/workflows/macos-native.yml
   package:
-    needs: native
+    needs: [native, version]
+    env:
+      HRADAR_BUILD_NUMBER: ${{ needs.version.outputs.build_number }}
     strategy:
       fail-fast: false
       matrix:
@@ -89,7 +105,9 @@ jobs:
 
   sign:
     if: github.event_name == 'workflow_dispatch' && inputs.sign
-    needs: package
+    needs: [package, version]
+    env:
+      HRADAR_BUILD_NUMBER: ${{ needs.version.outputs.build_number }}
     environment: macos-signing
     strategy:
       fail-fast: false

@@ -17,9 +17,11 @@ The backend runs in the app launcher process; closing the browser tab leaves
 monitoring running. Use **Завершить hradar** in the UI to close the server/workers,
 wait for TDLib Close and release the session lock. SIGTERM also cleans up.
 
-The product/artifact version is 0.1.0; macOS bundle version is 1.0.0 because
-jpackage rejects a leading zero in CFBundleVersion. This is an internal packaging
-number, not a claim of a stable 1.0 product release.
+Application versions come from root `gradle.properties` `appVersion`; installers
+use its numeric core as the macOS short version and an independent increasing
+macOS build counter. See [VERSIONING.md](VERSIONING.md) for SemVer, prereleases,
+platform syntax and local/CI build allocation guarantees. Native toolchain pins
+in `config/macos-distribution.json` are independent of the application version.
 
 Unsigned artifacts use an ad-hoc resource seal for macOS execution, without a
 Developer ID identity or notarization. They are internal test builds, **not a signed

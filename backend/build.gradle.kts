@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "dev.radar"
-version = "0.1.0-SNAPSHOT"
+version = providers.gradleProperty("appVersion").get()
 
 repositories { mavenCentral() }
 
@@ -69,7 +69,27 @@ tasks.named("compileKotlin") { dependsOn("checkTdlibJava") }
 
 // Production UI becomes a classpath resource; development doesn't need a frontend build.
 val bundledWeb = providers.gradleProperty("bundledWeb").map { it.toBoolean() }.orElse(false)
+val versionResource = tasks.register("generateVersionResource") {
+    val output = layout.buildDirectory.file("generated/version/hradar-version.properties")
+    inputs.property("appVersion", project.version.toString())
+    outputs.file(output)
+    doLast {
+        output.get().asFile.apply {
+            parentFile.mkdirs()
+            writeText("appVersion=${project.version}\n")
+        }
+    }
+}
+val checkAppVersion = tasks.register<Exec>("checkAppVersion") {
+    group = "verification"
+    workingDir(rootProject.projectDir)
+    commandLine("python3", "-B", "scripts/version.py", "check", "--expected-version", project.version.toString())
+}
+tasks.named("check") { dependsOn(checkAppVersion) }
 tasks.processResources {
+    dependsOn(checkAppVersion, versionResource)
+    from(versionResource)
+
     if (bundledWeb.get()) {
         from(rootProject.layout.projectDirectory.dir("frontend/dist")) { into("web") }
         doFirst { check(rootProject.file("frontend/dist/index.html").isFile) { "Build frontend production assets first" } }
