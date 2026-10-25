@@ -78,28 +78,44 @@ number; it must meet the platform syntax. Do not lower a previously published
 build number. Verification compares that value against the packaged plist and
 `distribution.json`, including both architectures before release promotion.
 
-## Prereleases and reviewed tags
+## Prereleases and automatic tags
 
-Use e.g. `appVersion=0.3.0-rc.1`, then sync/check and build the reviewed commit.
-Its matching tag is `v0.3.0-rc.1`; the final release uses `0.3.0` / `v0.3.0` and a
-later build number. Build metadata is supported, but should not be used to bypass
-SemVer precedence or the increasing build-number rule.
+Prereleases such as `0.4.0-rc.1` are opt-in: update the canonical value and sync/check.
+SemVer suffixes remain in application/JAR/distribution metadata; Apple short versions
+contain the numeric core. Automatic stable tags skip prerelease and build-metadata
+versions. Prerelease tagging needs a separately reviewed owner decision.
 
-Tags, pushes, signing and publication require explicit owner authorization. Once
-a reviewed tag already exists, the manual promotion workflow verifies its exact
-commit, the canonical version **at that commit**, signed build provenance,
-checksums, architecture and equal build numbers. It never creates a tag and never
-overwrites assets. Its publish switch creates a GitHub prerelease even for a
-plain `vX.Y.Z` tag; promoting to a stable public release is a separate owner action.
-No release/tag/publication is performed by version synchronization or normal CI.
+The existing **Fast CI** workflow creates annotated `vMAJOR.MINOR.PATCH` tags after
+successful **master push** checks, including frontend/offline Playwright, Kotlin/unit
+and Python checks, and the existing dual-architecture macOS installer workflow
+(reused with `workflow_call`, not copied). PR events, feature pushes and manual runs
+cannot create automatic tags. No release, signing or asset publication is triggered.
+The existing release-promotion workflow remains manual and separately protected.
 
-Only after explicit release authorization, from the reviewed commit with a passing
-version check (the tag target and canonical version must match):
+`tag-version` checks out the exact tested `github.sha`, with credentials persistence
+disabled, and uses only `GITHUB_TOKEN`. Only this new job has `contents: write`;
+`pull-requests: read` verifies that a merged PR into this repository's master has
+that exact merge SHA. The CI master concurrency key includes SHA, so a later merge
+does not cancel an earlier verification. Tag races use create-only Git references;
+there is no force update, delete or moving-master-HEAD lookup.
 
-```sh
-HRADAR_VERSION=$(python3 -B scripts/version.py get)
-git tag -a "v$HRADAR_VERSION" <reviewed-commit> -m "hradar $HRADAR_VERSION"
-git push origin "v$HRADAR_VERSION"
-```
+The version is compared with the immutable `before` SHA from the triggering
+master push payload (validated as an ancestor of its exact `after`/tested SHA).
+This supports merge, squash and rebase without trusting an older PR base SHA. If unchanged,
+including documentation/CI-only PRs, no tag is created and an older version tag is
+left intact. For a changed stable version, an existing tag peeled to the same SHA
+is a no-op; one pointing elsewhere fails the workflow. A new annotated tag object
+and its reference both target the verified SHA. Concurrent creation of the same
+reference is accepted only after verifying its target. Failed, canceled or skipped
+required jobs do not tag; rerun the complete master workflow when needed.
 
-These are manual release instructions, not commands to run during a normal PR.
+Never manually create/move a stable version tag during the normal release process.
+Missing historical tags are not backfilled. Do not reuse a published version for
+new behavior. Tagging does not bump the version and does not create GitHub Releases.
+
+For a real release: obtain owner authorization, identify the successful exact-SHA
+installer run and CI-created tag, then use the existing manual signed-installer
+promotion workflow. It verifies tag/commit, canonical version, build provenance,
+checksums, architecture and matching build numbers. Its publication switch creates
+a GitHub prerelease; stable promotion is a separate owner action. No manual tag
+command is part of ordinary PR completion.

@@ -1,5 +1,51 @@
 # hradar — Development status / session handoff
 
+## Automatic stable version tags — 2026-10-25
+
+VERIFIED: Existing Fast CI now reuses the dual-architecture installer workflow on
+master pushes after frontend/backend checks; the final tag job requires all three.
+Only the tag job gains contents:write and pull-requests:read. It checks exact
+merged-PR SHA, stable canonical version and the immutable triggering push before
+SHA, with ancestor validation. Unchanged versions skip; same-SHA tags are no-ops;
+collisions fail without force updates. No release/signing is triggered.
+
+VERIFIED: All 29 Python safeguards passed, including fake GitHub annotation/ref,
+retry, races, conflict, unchanged version, feature/PR/manual guards, scoped workflow
+permissions, sanitized API errors and old PR-base handling. YAML parsing passed.
+Read-only review found one older-base issue; fixed by using push.before instead
+of PR base.sha, with a regression test. Dashboard review found no other issues.
+No actual Git tag was created and no GitHub-token mutation was exercised locally.
+
+NOT VERIFIED: Live post-merge automatic tag creation; deliberately requires owner
+merge followed by successful master CI. NEXT ACTION: review PR and check hosted
+CI; do not merge/publish during this task. Normal stable tags now belong to CI,
+per AGENTS.md and docs/VERSIONING.md. Version remains 0.3.0 once for this PR.
+
+## Dashboard and workspace setup — 2026-10-25
+
+VERIFIED: PR #9 is merged; `feat/workspace-dashboard` is isolated at
+`hradar-dashboard`, based on fetched origin/master 88b2cee. Dashboard uses five
+existing read-only endpoints for exact active-project/unread/source/subscription
+counts, bounded recent projects/notifications and Telegram state. Existing SSE
+and notification opening/read semantics are reused. No backend/auth/SQLite or
+Telegram-login source changes. Setup derives dependencies from saved facts and
+explicitly checks criteria of the latest active project, not all projects.
+
+VERIFIED: Canonical appVersion is 0.3.0 (MINOR for Dashboard), synchronized by
+scripts/version.py. Frontend production build and backend build passed (150 Kotlin
+tests, zero failures/errors/skips). Offline browsers cover empty/partial/populated
+workspace, unknown/failed/stale data, disconnected Telegram, monitoring, read flow,
+rapid navigation, drafts, mobile and themes: all 51 offline tests passed.
+Synthetic visual checks use no personal data. Existing backend/session left intact.
+
+NOT VERIFIED: Real account/phone delivery, physical-Mac acceptance and GitHub
+installer jobs for this branch. Dashboard health means observed read/event state,
+not proof of successful external notification delivery. API inventory and setup
+scope: docs/DASHBOARD.md. No merge, tag, release or application replacement.
+
+NEXT ACTION: Complete final browser/workflow checks, commit Dashboard and the
+separately requested automatic-tag CI changes separately, push and open one PR.
+
 ## Unified navigation and application version — 2026-10-25
 
 VERIFIED: `feat/unified-navigation` starts at fetched `origin/master` fa65a5f

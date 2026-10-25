@@ -73,6 +73,7 @@ test('local onboarding follows fake TDLib states and clears secret fields', asyn
     }
     if (path === '/api/notifications') return route.fulfill({ json: { items: [], unread: 0, cursor: null } });
     if (['/api/channels', '/api/templates', '/api/monitoring', '/api/history/syncs'].includes(path)) return route.fulfill({ json: [] });
+    if (path === '/api/projects') return route.fulfill({ json: { items: [], total: 0 } });
     throw new Error(`Unmocked onboarding API ${path}`);
   });
   await page.goto('/');

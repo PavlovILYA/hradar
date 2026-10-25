@@ -1,5 +1,6 @@
 import { Onboarding, desktopLaunch, shutdownDesktop, isDesktop } from './Onboarding';
-import { Projects } from './Projects';
+import { Projects, type ProjectIntent } from './Projects';
+import { Dashboard } from './Dashboard';
 import { createRoot } from 'react-dom/client';
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
@@ -28,7 +29,10 @@ function Highlight({ text, terms }: { text: string; terms: string[] }) {
 }
 function App() {
   const [status, setStatus] = useState<TelegramStatus | null>(null);
-  const [checking, setChecking] = useState(false);
+  const [statusAt, setStatusAt] = useState(0);
+  const [statusClock, setStatusClock] = useState(Date.now());
+  useEffect(() => { const timer = setInterval(() => setStatusClock(Date.now()), 15_000); return () => clearInterval(timer); }, []);
+  const [checking, setChecking] = useState(true);
   const [username, setUsername] = useState('@telegram');
   const [limit, setLimit] = useState('10');
   const [loading, setLoading] = useState(false);
@@ -56,6 +60,9 @@ function App() {
   const [notificationPage, setNotificationPage] = useState<NotificationPage>({ items: [], unread: 0, cursor: null });
   const [byChannel, setByChannel] = useState<Record<string, number>>({});
   const [eventConnected, setEventConnected] = useState(false);
+  const [eventAt, setEventAt] = useState(0);
+  const [dashboardRevision, setDashboardRevision] = useState(0);
+  const [projectIntent, setProjectIntent] = useState<ProjectIntent | null>(null);
   const [desktopPermission, setDesktopPermission] = useState(() => 'Notification' in window ? Notification.permission : 'unsupported');
   async function refreshNotifications(more = false) {
     const page = await request<NotificationPage>(`/api/notifications${more && notificationPage.cursor ? `?before=${notificationPage.cursor}` : ''}`);
@@ -73,8 +80,8 @@ function App() {
       let summary: NotificationSummary;
       try { summary = JSON.parse(e.data) as NotificationSummary; } catch { return; }
       if (stopped) return;
-      setEventConnected(true); setByChannel(summary.byChannel);
-      if (summary.telegram) setStatus(summary.telegram);
+      setEventConnected(true); setEventAt(Date.now()); setByChannel(summary.byChannel);
+      if (summary.telegram) { setStatus(summary.telegram); setStatusAt(Date.now()); }
       const revision = `${summary.revision}:${summary.unread}`;
       if (revision === lastRevision || fetching) return;
       lastRevision = revision; fetching = true;
@@ -92,7 +99,7 @@ function App() {
           }
         }
         initialized = true; page.items.forEach(n => known.add(n.id));
-        setNotificationPage(page);
+        setNotificationPage(page); setDashboardRevision(n => n + 1);
       } catch (e) { if (!stopped) setError((e as Error).message); lastRevision = null; }
       finally { fetching = false; }
     };
@@ -100,7 +107,7 @@ function App() {
     return () => { stopped = true; events.close(); };
   }, []);
   async function notificationAction(path: string) {
-    try { await mutate(path, 'POST'); await refreshNotifications(); }
+    try { await mutate(path, 'POST'); await refreshNotifications(); setDashboardRevision(n => n + 1); }
     catch (e) { setError((e as Error).message); }
   }
   async function selectMessage(message: ResearchMessage, context: 'search' | 'archive' = 'search') {
@@ -161,7 +168,7 @@ function App() {
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('hradar-theme', theme); }, [theme]);
   async function checkStatus(signal?: AbortSignal) {
     setChecking(true);
-    try { setStatus(await request<TelegramStatus>('/api/telegram/status', signal)); setError(''); }
+    try { setStatus(await request<TelegramStatus>('/api/telegram/status', signal)); setStatusAt(Date.now()); setError(''); }
     catch (error) { if (!signal?.aborted) { setStatus(null); setError((error as Error).message); } }
     finally { if (!signal?.aborted) setChecking(false); }
   }
@@ -184,7 +191,8 @@ function App() {
     finally { setLoading(false); }
   }
   const visible = result?.messages.filter(m => (m.text ?? '').toLocaleLowerCase('ru').includes(filter.toLocaleLowerCase('ru')) && (!applied || (m.explanation ?? explanations[m.id])?.matches)) ?? [];
-  const statusLabel = checking ? 'Проверяем соединение' : status?.authorized ? (status.connectionState && status.connectionState !== 'Ready' ? 'Telegram переподключается' : 'Telegram подключён') : status ? 'Требуется вход в Telegram' : 'Backend недоступен';
+  const statusFresh = !!statusAt && statusClock - statusAt < 60_000;
+  const statusLabel = checking ? 'Проверяем соединение' : status && !statusFresh ? 'Нет актуальных данных о Telegram' : status?.authorized ? (status.connectionState === 'Ready' ? 'Telegram подключён' : status.connectionState ? 'Telegram переподключается' : 'Состояние Telegram неизвестно') : status ? 'Требуется вход в Telegram' : 'Backend недоступен';
   if (status && !status.authorized) return <Onboarding onReady={() => void checkStatus()} />;
   const showDetails = detailsOpen && selected && screen === selectionContext;
   function view(id: Screen, children: ReactNode) {
@@ -194,15 +202,15 @@ function App() {
     <Navigation screen={screen} navigate={next => next === 'archive' ? openArchive() : navigate(next)} unread={notificationPage.unread} theme={theme} toggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')} open={navigationOpen} close={closeNavigation} />
     <main className="workspace-main" inert={navigationOpen || undefined}>
       <header className="workspace-header"><button id="navigation-toggle" className="navigation-toggle icon-button" aria-label="Открыть навигацию" aria-expanded={navigationOpen} aria-controls="workspace-navigation" onClick={() => setNavigationOpen(true)}>☰</button>
-        <div><h1 ref={heading} tabIndex={-1}>{screenTitles[screen]}</h1><span role="status" className={`connection-status ${status?.authorized ? 'online' : ''}`}>{statusLabel}</span></div>
+        <div><h1 ref={heading} tabIndex={-1}>{screenTitles[screen]}</h1><span role="status" className={`connection-status ${statusFresh && status?.authorized && status.connectionState === 'Ready' ? 'online' : ''}`}>{statusLabel}</span></div>
         <button className="icon-button" aria-label="Обновить статус" disabled={checking} onClick={() => void checkStatus()}>↻</button>
         {selected && screen === selectionContext && !detailsOpen && <button className="text-button" onClick={() => setDetailsOpen(true)}>Открыть детали</button>}
       </header>
       {error && <p className="error" role="alert">{error}</p>}
       <div className={`workspace-layout ${showDetails ? 'with-details' : ''}`}>
         <div className="workspace-content">
-          {view('overview', <section className="data-screen overview-screen"><p className="section-eyebrow">РАБОЧЕЕ ПРОСТРАНСТВО</p><h2>Всё для работы с публикациями</h2><p className="helper">Здесь появится общий обзор проектов и активности. Пока выберите действие или откройте нужный раздел слева.</p><div className="overview-actions"><button className="primary-button" onClick={() => navigate('search')}>Начать поиск</button><button className="secondary-button" onClick={() => navigate('projects')}>Открыть проекты</button><button className="secondary-button" onClick={() => navigate('sources')}>Добавить источники</button></div></section>)}
-          {view('projects', <Projects active={screen === 'projects'} />)}
+          {view('overview', <Dashboard active={screen === 'overview' && !checking} revision={dashboardRevision} eventConnected={eventConnected} eventAt={eventAt} navigate={navigate} openNotification={openNotification} openProject={(id, edit) => { setProjectIntent({ id, edit }); navigate('projects'); }} />)}
+          {view('projects', <Projects active={screen === 'projects'} intent={projectIntent} />)}
           {view('sources', <Sources sources={sources} unread={byChannel} refresh={refreshResearch} onMessages={source => void loadMessages(undefined, source)} onArchive={openArchive} />)}
           {view('templates', <div className="data-screen"><Templates templates={templates} channels={sources} refresh={refreshResearch} onRun={t => void runSearch(t)} onError={setError} /></div>)}
           {view('saved', <SavedResults />)}

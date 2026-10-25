@@ -250,3 +250,14 @@ one macOS build number and share it across architectures and signing. Packaging
 checks the generated JAR version; image/DMG smoke checks short version, build number
 and distribution metadata. See [VERSIONING.md](VERSIONING.md) for synchronization,
 SemVer/tag rules and the limits of monotonic allocation on ephemeral CI runners.
+
+## Automatic version tags
+
+Fast CI master pushes reuse `macos-distribution.yml` after frontend/backend checks.
+The final `tag-version` job creates an annotated stable version tag only for the
+exact successful merged-PR SHA and a changed `appVersion`. Feature/PR/manual runs
+skip it. Permissions are scoped to the tag job (`contents: write`,
+`pull-requests: read`); installer provenance permissions remain on installer jobs.
+The existing installer workflow remains independently available for PR checks and
+manual builds. Tagging neither signs nor publishes a Release. See VERSIONING.md
+for unchanged versions, collisions, concurrency and reruns.
