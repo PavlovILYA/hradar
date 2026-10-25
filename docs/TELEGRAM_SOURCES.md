@@ -1,6 +1,18 @@
 # Telegram source series
 
-## Scope and current support (PR A, 0.4.0)
+## Status and verified baseline
+
+[PR #11](https://github.com/PavlovILYA/hradar/pull/11) is merged into master at
+`1ceb87156093c4b232561270de5f921c8fb17149`; final functional SHA
+`447551a7e1ce0ba2af5d20799800676cbbc1608b`, app 0.4.0, schema 10.
+[Fast CI](https://github.com/PavlovILYA/hradar/actions/runs/40187356225) and
+[macOS Installers](https://github.com/PavlovILYA/hradar/actions/runs/40187356218)
+both passed on that SHA, including ARM64/Intel production UI/lifecycle smoke.
+Stage A is implemented and automated-test verified; live-account/manual acceptance
+is still pending. **B and C have not started.** New work starts from freshly fetched
+master in a new feature worktree; do not reuse the merged feature branch.
+
+## Scope and current support (A, 0.4.0)
 
 This is the first of three sequential PRs. It establishes actual persistent source
 identity, account-chat selection and migration, while preserving the working public
@@ -94,18 +106,97 @@ Source metadata stays in `~/.hradar/data/research.sqlite`, with owner-only 600
 file permissions inside existing 700 profile directories. No new credentials
 store is introduced. Storage layout stays `~/.hradar`; no directory migration was added.
 
-## Next PRs / manual E2E on owned test chats
+## Ordered implementation plan: B then C
 
-B: typed source references in reads/search/archive and CRM; nullable usernames;
-`GetChatHistory`, `SearchChatMessages(chatId, MessageTopic, ...)`, captions, bounded
-pages, scoped archive cursors and source loss. `GetForumTopicHistory` uses actual
-forumTopicId. No private data reaches bot/MCP merely because local processing works.
+This is an implementation plan, not completed functionality. Keep the A catalog,
+public-channel adapters, matching rules, one TDLib session and local auth intact.
+Do not add external sharing as a side effect of local processing.
 
-C: explicit local monitoring switches, cursor/restart/access-loss tests, shared
-publication deduplication across whole groups/topics, comment/linked discussion
-mapping via `GetMessageProperties.canGetMessageThread`, `GetMessageThread` and
-`GetMessageThreadHistory`. Do not substitute a root message ID for forumTopicId.
-External sharing needs a separately reviewed permission policy and actual access.
+### B — local reading, search, archive and CRM
+
+1. Trace `SourceModels`/`SourceCatalogService`, `TdlibGateway`, `SearchService`,
+   `HistorySyncService`/`HistoryRoutes`, `RecruitmentProjectService`, `Repositories`,
+   `HistoryArchive`/Projects and all shared consumers before changing contracts.
+   Introduce a typed selected-source read reference resolving the saved key to its
+   chatId/scope. Keep legacy username REST/search paths as compatibility adapters;
+   reject unselected scopes rather than falling back to the whole chat.
+2. Implement bounded whole-chat reads using `GetChatHistory`, forum reads using
+   `GetForumTopicHistory(chatId, forumTopicId, ...)`, and source search using the
+   pinned `SearchChatMessages(chatId, MessageTopic, ...)`. Verify generated bindings
+   again; use typed scope arguments and reject missing scope fields rather than
+   silently searching the whole chat. Use `MessageTopicForum`, never substitute a thread/root ID. Keep global
+   public search separate with its existing limits and no implicit joins.
+3. Recheck actual source access at read time. Support cloud personal chats, basic
+   groups, public/private supergroups/channels and selected forums/topics. Handle
+   text/captions, short inclusive pages, duplicates, cancellation, no cursor progress,
+   inaccessible history, 429/FLOOD_WAIT and connection loss. Short pages alone do
+   not mean exhaustion. Fetch original links only through supported TDLib results;
+   show unavailable links honestly. Do not promise history Telegram withholds.
+4. Design the next forward-only migration before writes: scope-aware archive jobs,
+   cursor/checkpoints and scope membership referencing shared `(chatId,messageId)`
+   publication rows. Existing schema10 history/CRM/template references use legacy
+   IDs/usernames; add stable source references without deleting or guessing identity.
+   Preserve all v10 data and add a real v10 fixture plus rollback/reopen tests.
+5. Wire source selection into recent messages, one/multiple-source search, bounded
+   explicit history import, archive filters and project criteria. Keep Kanban, notes,
+   ratings/manual classification and old public projects working. Local project
+   storage/read support must not silently activate monitoring before C. Adjust
+   Dashboard guidance/counts to distinguish catalog selection from processing.
+6. Audit privacy **before** private bodies enter shared tables: `repo.channels()`,
+   `RecruiterService`, BotWorkspace/BotInbox, notifications/outbox, saved results,
+   MCP capability/archive/publication-request routes and original-message context.
+   Leave `channels()` public-only; use scoped local ports. Shared archive/CRM stores
+   must not make private bodies/metadata visible to bot operators or existing MCP
+   grants. Also check sources changing public -> private; no blanket export grant.
+7. Acceptance: fake port tests for every supported type, two topics and whole-chat
+   overlap, short/duplicate/repeated imports, access loss/recovery, cancellation and
+   reopen, v10 preservation, cross-chat identical message IDs, denied Bot/MCP reads.
+   Browser tests must exercise recent/search/archive/project/cards and safe errors,
+   not just selectors. Run existing regressions and both hosted installer jobs.
+
+B stops at local reads/search/archive/CRM. Do not enable new private subscriptions,
+external exports or discussion-thread selection while claiming B complete.
+
+### C — explicit monitoring, topics and discussion threads
+
+1. Start from merged B, inspect its actual schema/read ports and plan another forward
+   migration only if needed. Extend `SubscriptionService`/`NotificationService` via
+   those ports; preserve deterministic AND/OR/NOT, durable state and cancellation.
+2. Add an explicit per-source local monitoring switch and scoped subscriptions.
+   New/private sources default off. Adding a source/project or an old ALL rule must
+   not auto-enable it. Establish a checkpoint when enabled; never notify all history.
+3. Route live `Message.topicId` updates and bounded recovery to selected scopes.
+   Persist cursors per subscription/scope; atomically deduplicate shared publications
+   and matches so whole-group + topic overlap does not duplicate notifications.
+   Cover restart, lost permissions/left/banned groups, rate waits, unavailable
+   history, pauses and explicit resume without dropping or resending old events.
+4. Enable discussion selection only from actual TDLib-provided accessible message
+   metadata: check `GetMessageProperties.canGetMessageThread`, use
+   `GetMessageThread` -> `MessageThreadInfo.chatId/messageThreadId`, then
+   `GetMessageThreadHistory`. Its documented `messageId` anchor argument must not
+   be assumed interchangeable with the stored thread ID. Channel comments may
+   belong to a linked supergroup. Preserve returned identity/access; never
+   construct thread IDs or t.me links.
+   Forum `forumTopicId:Int` remains distinct from `messageThreadId:Long`.
+5. Separate local notifications from external delivery at both query and enqueue/
+   send boundaries. Private source content defaults to no Bot/MCP/AI/export access.
+   Any external sharing requires an explicit separately reviewed per-source and
+   recipient permission decision, current-access revalidation and queue revocation
+   semantics. If this policy is not authorized, keep sharing unavailable; local
+   monitoring can still be implemented without granting it.
+6. Acceptance: fake live/recovery/restart/thread/topic cases, duplicate and out-of-order
+   updates, bounded backlog, permission/rate failures, source switch and revocation,
+   overlap exactly-once match creation, and explicit absence of private Bot/MCP data.
+   Browser tests cover local switches/status/notifications and correct publication
+   opening/read state. Require backend/frontend/Python/version/privacy checks and
+   both hosted architectures; document remaining real delivery limits honestly.
+
+For each behavior-changing PR, bump one MINOR from then-current master via
+`gradle.properties` + `scripts/version.py sync/check` (B would be 0.5.0 if still
+0.4.0). Preserve compatibility; owner must separately decide any incompatible
+pre-1.0 contract/migration change. No automatic merge, manual tag or Release.
+
+## Manual E2E still required on owned test chats
 
 After backup and a controlled launch with one account/session:
 1. Create your own cloud conversation, ordinary group, private/public supergroup,
@@ -132,7 +223,7 @@ schema9->10 preservation and restart, and isolation from public Bot/MCP adapters
 It does not include B's private/scoped message search/archive/CRM or C's monitoring
 and discussion-thread processing. These must remain separate sequential PRs.
 
-The failed macOS run40155481458 exposed two architecture-independent UI issues:
+The failed macOS run 40155481458 exposed two architecture-independent UI issues:
 ARM64's offline navigation test observed a late archive initialization overwrite
 an edited limit; Intel's actual production smoke selected duplicate text spanning
 the hidden cached Dashboard and active Projects screen. The fixes preserve drafts
@@ -146,9 +237,10 @@ or changing its identity. Known Telegram access-denial errors are handled withou
 publishing their raw text; transient/rate-limit and identity errors are not silently
 reclassified. Recheck can recover availability after access returns.
 
-Automated coverage at this checkpoint:162 Kotlin tests,61 offline browser tests,
+Automated coverage at this checkpoint: 162 Kotlin tests, 61 offline browser tests,
 29 Python safeguards and version/JAR/build checks. Manual Telegram account E2E
 above is still not claimed. Catalog lists remain bounded samples of known chats;
 secret/special topic chats are excluded, UNKNOWN is not a read grant, and no
-private source is automatically subscribed or exported. Hosted workflow results
-must be checked against the current PR SHA before considering CI complete.
+private source is automatically subscribed or exported. The successful PR workflow links above verify the final functional SHA. They do
+not imply that a later master workflow, tag, signed release or physical Mac test
+has succeeded; check those separately.
