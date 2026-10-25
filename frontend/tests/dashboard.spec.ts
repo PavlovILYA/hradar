@@ -18,6 +18,7 @@ test.beforeEach(async ({ page, request }, testInfo) => {
     if (path === '/api/telegram/status') return route.fulfill({ json: { authorizationState: 'Ready', authorized: true, connectionState: 'Ready' } });
     if (path === '/api/channels' || path === '/api/templates' || path === '/api/monitoring') return route.fulfill({ json: [] });
     if (path === '/api/notifications') return route.fulfill({ json: { items: [], unread: 0, cursor: null } });
+    if (path === '/api/projects') return route.fulfill({ json: { items: [], total: 0 } });
     if (path === '/api/events') return route.abort();
     if (/^\/api\/messages\/-?\d+\/\d+\/link$/.test(path)) return route.fulfill({ json: { link: 'https://t.me/synthetic_source/1' } });
     if (path === '/api/history/syncs') return route.fulfill({ json: [] });

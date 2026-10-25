@@ -1,5 +1,30 @@
 # hradar — Development status / session handoff
 
+## Dashboard and workspace setup — 2026-10-25
+
+VERIFIED: PR #9 is merged; `feat/workspace-dashboard` is isolated at
+`hradar-dashboard`, based on fetched origin/master 88b2cee. Dashboard uses five
+existing read-only endpoints for exact active-project/unread/source/subscription
+counts, bounded recent projects/notifications and Telegram state. Existing SSE
+and notification opening/read semantics are reused. No backend/auth/SQLite or
+Telegram-login source changes. Setup derives dependencies from saved facts and
+explicitly checks criteria of the latest active project, not all projects.
+
+VERIFIED: Canonical appVersion is 0.3.0 (MINOR for Dashboard), synchronized by
+scripts/version.py. Frontend production build and backend build passed (150 Kotlin
+tests, zero failures/errors/skips). Offline browsers cover empty/partial/populated
+workspace, unknown/failed/stale data, disconnected Telegram, monitoring, read flow,
+rapid navigation, drafts, mobile and themes: all 51 offline tests passed.
+Synthetic visual checks use no personal data. Existing backend/session left intact.
+
+NOT VERIFIED: Real account/phone delivery, physical-Mac acceptance and GitHub
+installer jobs for this branch. Dashboard health means observed read/event state,
+not proof of successful external notification delivery. API inventory and setup
+scope: docs/DASHBOARD.md. No merge, tag, release or application replacement.
+
+NEXT ACTION: Complete final browser/workflow checks, commit Dashboard and the
+separately requested automatic-tag CI changes separately, push and open one PR.
+
 ## Unified navigation and application version — 2026-10-25
 
 VERIFIED: `feat/unified-navigation` starts at fetched `origin/master` fa65a5f

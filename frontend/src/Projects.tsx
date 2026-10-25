@@ -17,7 +17,9 @@ const blank: Criteria = { name: '', description: '', required: [], desired: [], 
 const terms = (value: string) => value.split(',').map(x => x.trim()).filter(Boolean);
 const date = (value: number) => new Date(value).toLocaleString('ru');
 
-export function Projects({ active = true }: { active?: boolean } = {}) {
+export interface ProjectIntent { id?: string; edit?: boolean }
+export function Projects({ active = true, intent = null }: { active?: boolean; intent?: ProjectIntent | null } = {}) {
+  const consumedIntent = useRef<ProjectIntent | null>(null);
   const [projects, setProjects] = useState<Page<Project>>({ items: [], total: 0 });
   const openingProject = useRef<AbortController | null>(null);
   useEffect(() => () => openingProject.current?.abort(), []);
@@ -47,6 +49,12 @@ export function Projects({ active = true }: { active?: boolean } = {}) {
     } catch(e) { if (!c.signal.aborted) setError((e as Error).message); }
     finally { if (openingProject.current === c) openingProject.current = null; }
   }
+  useEffect(() => {
+    if (!active || !intent || consumedIntent.current === intent) return;
+    consumedIntent.current = intent;
+    if (intent.id) void openProject(intent.id, intent.edit);
+    else { openingProject.current?.abort(); setSelected(null); setForm({ ...blank }); }
+  }, [active, intent]);
   async function save(e: FormEvent) {
     e.preventDefault(); if (!form || savingProject.current) return;
     openingProject.current?.abort(); savingProject.current = true; setSaving(true); setBusy(true); setError('');
