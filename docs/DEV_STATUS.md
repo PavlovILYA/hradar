@@ -1,5 +1,24 @@
 # hradar — Development status / session handoff
 
+## Authorized real source launch — 2026-10-25
+
+VERIFIED: Owner clarified that local deployment must use the existing ~/.hradar
+profile, not a synthetic substitute. Previous owned backend was stopped cleanly;
+a consistent database backup was created in owner-only
+`~/.hradar/backups/before-source-catalog-20261025-054026/` (directory700/files600).
+The source-built0.4.0 backend now uses that profile, with the existing saved API
+settings/session handled by the app itself; secret values/session contents were
+not inspected. Metadata-only check confirms schema10 and database permissions600.
+One backend listens on127.0.0.1:8080 (PID85359); current source UI on5173
+(PID85701). Both prior synthetic preview processes and old source UI were stopped.
+The user browser was opened at http://127.0.0.1:5173/ without a synthetic banner.
+
+NOT VERIFIED: No actual private-chat catalog/history was queried by agent tools;
+real account E2E remains an owner action. PR A still has the B/C processing limits.
+This update changes launch instructions/handoff only; version remains0.4.0.
+NEXT ACTION: use the running real UI; do not start a second session. Future source
+updates follow the real-profile launch rule in AGENTS.md, not an automatic demo.
+
 ## Telegram source catalog — series A (0.4.0) — 2026-10-25
 
 VERIFIED: PR #10 merged into fetched origin/master 6c94c94; isolated worktree
