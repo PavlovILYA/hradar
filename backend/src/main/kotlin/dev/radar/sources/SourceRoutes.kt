@@ -14,7 +14,7 @@ import kotlinx.coroutines.*
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 
-fun Application.configureSourceRoutes(service: SourceCatalogService, repo: Repositories) {
+fun Application.configureSourceRoutes(service: SourceCatalogService, repo: Repositories, reader: SourceReadService? = null, archive: SourceArchiveService? = null) {
     val local = createRouteScopedPlugin("SourceCatalogLocalAccess") {
         onCall { call ->
             call.response.headers.append("Cache-Control", "no-store")
@@ -34,6 +34,43 @@ fun Application.configureSourceRoutes(service: SourceCatalogService, repo: Repos
                 if (text.length > 4096) throw BadRequestException("Некорректный источник")
                 val input = try { Json.decodeFromString<SaveSourceInput>(text) } catch (_: SerializationException) { throw BadRequestException("Некорректный источник") }
                 call.respond(HttpStatusCode.Created, service.save(input))
+            }
+            if (reader != null && archive != null) {
+                fun io.ktor.server.application.ApplicationCall.key() = parameters["key"].orEmpty().also { require(it.length in 1..36) { "Некорректный источник" } }
+                fun io.ktor.server.application.ApplicationCall.before(): Long? = request.queryParameters["before"]?.let { value ->
+                    (value.toLongOrNull() ?: throw BadRequestException("Некорректный курсор")).also { require(it > 0) { "Некорректный курсор" } }
+                }
+                fun io.ktor.server.application.ApplicationCall.limit(): Int = request.queryParameters["limit"]?.let { value ->
+                    (value.toIntOrNull() ?: throw BadRequestException("Некорректный лимит")).also { require(it in 1..100) { "Некорректный лимит" } }
+                } ?: 50
+                get("/{key}/messages") { call.respond(reader.recent(call.key(), call.before() ?: 0, call.limit())) }
+                get("/{key}/messages/{message}") {
+                    val id = call.parameters["message"]?.toLongOrNull() ?: throw BadRequestException("Некорректное сообщение")
+                    call.respond(reader.detail(call.key(), id))
+                }
+                get("/{key}/archive") {
+                    val key = call.key(); val before = call.before(); val limit = call.limit(); val query = call.request.queryParameters["query"].orEmpty()
+                    call.respond(withContext(Dispatchers.IO) { repo.sourceArchive(key, limit, before, query) })
+                }
+                get("/{key}/sync") {
+                    val key = call.key()
+                    call.respond(withContext(Dispatchers.IO) {
+                        val source = repo.sources().firstOrNull { it.key == key } ?: throw ResourceNotFound()
+                        repo.sourceSync(key) ?: SourceSyncRecord(key, source.chatId, source.title)
+                    })
+                }
+                post("/{key}/sync") {
+                    val key = call.key()
+                    val text = call.receiveText()
+                    require(text.length <= 1024) { "Некорректный импорт" }
+                    val input = if (text.isBlank()) dev.radar.history.HistorySyncOptions() else Json.decodeFromString<dev.radar.history.HistorySyncOptions>(text)
+                    call.respond(HttpStatusCode.Accepted, archive.start(key, input.maxMessages))
+                }
+                post("/{key}/stop") {
+                    val key = call.key()
+                    val source = withContext(Dispatchers.IO) { repo.sources().firstOrNull { it.key == key } } ?: throw ResourceNotFound()
+                    call.respond(archive.stop(key) ?: SourceSyncRecord(key, source.chatId, source.title))
+                }
             }
             post("/{key}/refresh") {
                 val key = call.parameters["key"].orEmpty()

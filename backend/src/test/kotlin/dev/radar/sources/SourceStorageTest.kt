@@ -33,7 +33,7 @@ class SourceStorageTest {
         return path
     }
     private fun snapshot(path: Path): Map<String, List<List<String?>>> = DriverManager.getConnection("jdbc:sqlite:$path").use { db ->
-        val names = db.createStatement().use { s -> s.executeQuery("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name!='telegram_sources'").use { r -> buildList { while (r.next()) add(r.getString(1)) } } }
+        val names = db.createStatement().use { s -> s.executeQuery("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name!='telegram_sources' AND name NOT LIKE 'local_%'").use { r -> buildList { while (r.next()) add(r.getString(1)) } } }
         names.associateWith { name -> db.createStatement().use { s -> s.executeQuery("SELECT * FROM $name ORDER BY rowid").use { r -> buildList { while (r.next()) add((1..r.metaData.columnCount).map(r::getString)) } } } }
     }
     @Test fun forwardMigrationPreservesEveryLegacyTableIncludingPendingAndArchivedData() {

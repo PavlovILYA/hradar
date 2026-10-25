@@ -93,7 +93,7 @@ class RecruitmentProjectTest {
             repo.decidePublication(123, 7, ResearchMessage(1, source.id, 1700000000, "Synthetic java", source.title, source.username), "SAVED")
         }
         DriverManager.getConnection("jdbc:sqlite:$path").use { db -> db.createStatement().use { st ->
-            listOf("telegram_sources", "bot_access", "bot_invitations", "recruitment_cards", "recruitment_templates", "recruitment_projects", "recruitment_publications").forEach { st.execute("DROP TABLE $it") }; st.execute("PRAGMA user_version=7")
+            listOf("local_project_publications", "local_source_membership", "local_source_sync", "local_publications", "telegram_sources", "bot_access", "bot_invitations", "recruitment_cards", "recruitment_templates", "recruitment_projects", "recruitment_publications").forEach { st.execute("DROP TABLE $it") }; st.execute("PRAGMA user_version=7")
         } }
         Repositories(path).use { repo ->
             assertEquals(1, repo.historyMessages(source.id, 10, null, "java").total); assertEquals("Old template", repo.templates().single().name); assertEquals(1, repo.savedResults().items.size); assertTrue(repo.botRegistered(123, 7))

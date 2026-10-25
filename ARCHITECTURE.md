@@ -68,7 +68,7 @@ See [`docs/MCP.md`](docs/MCP.md) and [`docs/CI.md`](docs/CI.md) for protocols an
 3. The user explicitly saves public channels. Resolving a username does **not** join that channel or subscribe the account to its updates.
 4. Saving a source for research is **not** the same as granting MCP access. The MCP allowlist is separate and initially empty/disabled.
 
-### Source catalog (series A)
+### Selected sources (series A/B)
 
 `SourceCatalogPort`/`TdlibSourceCatalog` maps account chat/forum metadata from the
 same TDLib gateway into explicit DTOs. `SourceCatalogService` offers bounded local
@@ -76,13 +76,25 @@ selection; schema10 `telegram_sources` identifies `(chatId, scopeKind, nativeSco
 with optional username. Existing public `monitored_channels` remains an isolated
 compatibility adapter synchronized by save/delete; new entries never enter Bot/MCP
 or ALL subscriptions. Source routes reuse desktop cookie/Host/Origin/CSRF security.
-Read/search/archive/CRM adaptation and scoped monitoring are sequential B/C work,
-not implemented by a selector alone. See [TELEGRAM_SOURCES.md](docs/TELEGRAM_SOURCES.md).
+`SourceReadService` resolves saved keys to chatId/scope and uses native whole-chat
+or forum-topic history/search; no public username resolution for saved sources.
+`SearchService` dispatches explicit sourceKeys to that local path, preserving global
+and legacy search contracts. `LocalProjectSearchService` uses these reads and local
+archive queries without broadening the public `RecruiterService` used by Bot.
+
+Schema11 adds isolated `local_publications` keyed `(chatId,messageId)`, scoped archive
+membership, durable import jobs and per-project scoped evidence. Old public archive
+rows are read in place for legacy keys, never copied/reclassified automatically.
+Local bodies do not enter Bot/MCP archive adapters, notifications or subscriptions.
+`SourceArchiveService` persists checkpoints/pages atomically; only explicit imports
+run. Projects accept additive sourceKeys while old sources/cards/criteria remain valid.
+Local source monitoring and discussion threads remain C. See
+[TELEGRAM_SOURCES.md](docs/TELEGRAM_SOURCES.md).
 
 ### Online search versus saved history
 
 - **Online search** uses TDLib-backed search methods for supported scopes, with bounded pagination and errors for unavailable/free-limited global search.
-- **Local archive search** reads only SQLite `imported_messages`; it must never silently call Telegram or impersonate an online result.
+- **Local archive search** reads SQLite `imported_messages` for legacy public adapters or isolated `local_publications` with selected-source membership for owner-local reads; it must never silently call Telegram or impersonate an online result.
 - Search templates have required terms (AND), alternatives (OR), and exclusions (NOT), with normalization and explainable matches. These are **text matching rules**, not verified candidate identities or AI-based judgments.
 
 ### Explicit history import
@@ -113,7 +125,7 @@ MCP is **a tool protocol, not an agent runtime**. The bot calls shared services 
 
 ## Local storage and security boundaries
 
-- SQLite: `~/.hradar/data/research.sqlite` (schema tracked via migrations; currently v9, including per-bot access and invitations).
+- SQLite: `~/.hradar/data/research.sqlite` (schema tracked via migrations; currently v11, including the local scoped archive and CRM evidence).
 - TDLib account session: `~/.hradar/tdlib/`. It is sensitive and never belongs in Git, logs, or MCP results.
 - Credentials: desktop owner-only `~/.hradar/config/telegram-api.json` for API ID/hash and `~/.hradar/config/telegram-bot.json` for the Bot API token. Development `.env`/environment may provide legacy `TG_BOT_TOKEN` and `TG_BOT_ALLOWED_USER_IDS`; saved bot settings take precedence. Tokens are never returned to UI or status endpoints.
 - `RuntimePaths` owns the paths. Startup checks the fixed port and migrates old files, including saved bot configuration, before opening SQLite or TDLib. Migration retains originals and verified private backups; see [`STORAGE_MIGRATION.md`](docs/STORAGE_MIGRATION.md).

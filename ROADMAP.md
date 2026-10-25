@@ -31,7 +31,9 @@ Build a local-first recruiting workspace centered on **explicitly permitted Tele
 
 - [x] A: stable scoped metadata catalog, explicit chat/forum selection, schema9 ->10
   migration and public/Bot/MCP compatibility isolation (0.4.0; see source PR evidence).
-- [ ] B: scoped chatId reading, search, archive and CRM for all normal accessible chats.
+- [x] B: scoped chatId reading, search, archive and CRM for normal accessible chats
+  and native forum topics (0.5.0, schema11; automated evidence in DEV_STATUS;
+  owned-account manual acceptance remains separate).
 - [ ] C: explicit private-source monitoring, topics/discussions, restart/dedup/access
   loss and separate local-versus-external delivery permissions.
 

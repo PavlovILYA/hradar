@@ -15,6 +15,7 @@ test('recruiter creates a project, searches, reviews Kanban and restores notes a
     }
     if (path === '/api/events') return route.abort();
     if (path === '/api/telegram/status') return reply({ authorizationState: 'Ready', authorized: true, connectionState: 'Ready' });
+    if (path === '/api/sources') return reply({ items: [] });
     if (path === '/api/channels') return reply([{ id: -1001, username: 'synthetic_jobs', title: 'Synthetic source' }]);
     if (path === '/api/templates' || path === '/api/monitoring') return reply([]);
     if (path === '/api/notifications') return reply({ items: [], unread: 0, cursor: null });

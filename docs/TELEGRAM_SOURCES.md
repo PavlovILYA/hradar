@@ -9,28 +9,120 @@
 [macOS Installers](https://github.com/PavlovILYA/hradar/actions/runs/40187356218)
 both passed on that SHA, including ARM64/Intel production UI/lifecycle smoke.
 Stage A is implemented and automated-test verified; live-account/manual acceptance
-is still pending. **B and C have not started.** New work starts from freshly fetched
+is still pending. This is the merged A baseline. Stage B implementation is described below; C remains pending. New work starts from freshly fetched
 master in a new feature worktree; do not reuse the merged feature branch.
 
-## Scope and current support (A, 0.4.0)
+## Stage B — owner-local processing (0.5.0, SQLite11)
 
-This is the first of three sequential PRs. It establishes actual persistent source
-identity, account-chat selection and migration, while preserving the working public
-channel application. It does **not** claim the full all-chat processing goal is done.
+Stage B adds actual reads/search/archive/CRM by saved source key. Account-specific
+live acceptance remains separate from fake-RPC/browser evidence in DEV_STATUS.
 
-| Source | Catalog/select/save/access recheck | Read/search/archive/CRM/monitoring |
-| --- | --- | --- |
-| Existing public channels added by username | Yes, migrated by existing chat ID | Existing functions preserved |
-| New catalog-selected public/private channels | Yes | B/C pending; no implicit legacy subscription |
-| Cloud personal chats, ordinary groups, public/private supergroups | Yes | B/C pending |
-| Forum supergroups / individual topics | Whole group or native forumTopicId | B/C pending |
-| Discussion/comment threads | Scope model reserved; saving explicitly rejected | C pending |
-| Secret chats / direct-message special topic types | Excluded | Unsupported, no fallback to whole chat |
+| Source | Catalog | Recent/detail/search | Explicit archive | Project / Kanban |
+| --- | --- | --- | --- | --- |
+| Cloud personal conversations (optional username) | Yes | Yes | Yes | Yes |
+| Basic groups | Yes | Yes | Yes | Yes |
+| Public/private supergroups | Yes | Yes | Yes | Yes |
+| Public/private channels | Yes | Yes | Yes | Yes |
+| Whole forum group | Yes | All available chat messages | Yes | Yes |
+| Individual saved forum topic | Yes | Native topic scope only | Scoped | Yes |
+| Discussion/comment message threads | Reserved; save rejected | C | C | C |
+| Secret / special direct-message topic chats | Excluded | Unsupported | Unsupported | Unsupported |
 
-The UI marks new catalog sources as metadata-only and explains that reading,
-projects and monitoring arrive in the next stages. No join, import, subscription,
-message export or external AI call is caused by adding a source. Dashboard's source
-metric explicitly counts the currently operational public search/project sources.
+Local reads are constrained by the authorized Telegram account's actual rights.
+Selection does not join chats, import history, subscribe to monitoring or grant
+Bot/MCP/AI access. Source UI exposes recent messages and manual archive actions;
+Search selects saved names/types, including parent group + topic name. Legacy
+public username/global search paths remain available.
+
+### Reading and search contracts
+
+`SourceReadService` resolves key -> saved chatId + validated SourceScope. Whole-chat
+reads use `GetChatHistory`; forum reads use `GetForumTopicHistory` with native Int
+forumTopicId. Search uses `SearchChatMessages.topicId = MessageTopicForum(id)`.
+MESSAGE_THREAD is rejected; there is no fallback to whole chat or ID conversion.
+Signatures were checked with javap against the pinned generated Java JAR.
+
+Pagination was also checked against the pinned native implementation: at offset 0,
+[`OrderedMessages::get_history`](https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/OrderedMessage.cpp#L397-L403)
+advances past an exact anchor; forum history uses
+[`lower_bound` and a decrement-before-read slice](https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L17980-L17996).
+Thus normal terminal pages are empty without inventing a message ID or using an
+unsupported positive offset. The reader additionally tolerates inclusive overlaps,
+keeps short-page continuations, and reports anomalous repeated cursors explicitly.
+These are source/API checks and fake regressions, not a live-account verification.
+
+`/api/sources/{key}/messages` returns bounded pages with nextCursor and explicit
+state; `/messages/{messageId}` fetches current details, edits and unavailable content.
+Text and supported media captions share the existing message extractor. Topic IDs,
+source key/title and message identity accompany results. Only TDLib-provided valid
+links are shown; cloud/private messages without a link remain openable locally.
+
+`POST /api/search` accepts mode=sources and sourceKeys (one to ten). Existing
+MatchingService AND/OR/NOT rules and template query semantics are reused. Local
+continuations are opaque, query/selection/template-bound, expire after ten minutes,
+retain publication dedup across overlapping chat/topic pages, and are bounded to
+128 states and 10000 inspected identities. Sorting uses date, chatId, messageId.
+Native failures retain completed sources and the failed cursor; 429/FLOOD_WAIT
+returns partial results with an explicit state. Cancellation propagates through
+cancellable gateway continuations (it does not cancel Telegram server-side work).
+
+### SQLite10 -> 11, imports and recovery
+
+The additive transaction creates `local_publications`, `local_source_membership`,
+`local_source_sync` and `local_project_publications`. The canonical local publication
+key is `(chatId,messageId)`; archive membership and CRM evidence retain selected
+source/scope separately. New local content never goes into `imported_messages` or
+legacy `recruitment_publications`. Existing public archives are queried in place
+for legacy keys, with newer local evidence taking precedence. No old JSON/history,
+CRM cards, notes, ratings, Bot state or public import cursors are rewritten.
+
+Explicit imports default to 1000, with 5000/10000 and deliberately chosen null
+(full accessible history). `SourceArchiveService` persists atomic pages/checkpoints,
+limits, USER/LIMIT pause, retry count and flood-wait deadline. Pause joins the worker;
+startup resumes RUNNING only. Source removal during RPC prevents late writes and
+cannot restore a deleted selection. Access loss retains archived rows/cursor and
+stops safely. Local imports start independently at newest, leaving old public jobs
+untouched. COMPLETED is an idempotent snapshot; it does not automatically rescan
+new posts or reconcile later deletions. Current details can re-read an individual
+message, and authoritative re-imported edits update the shared local row. Moving
+messages to another topic invalidates stale membership/evidence for the old topic.
+
+Before real upgrade, stop the single backend and back up the complete consistent
+profile with owner-only permissions, including SQLite WAL/SHM consistency. Schema11
+is forward-only: older binaries refuse it. Recovery restores the stopped pre-upgrade
+profile backup; never lower user_version or drop application tables in place.
+
+### Local CRM and privacy
+
+ProjectInput.sourceKeys is additive to the existing sources (legacy chat IDs).
+Local/mixed project searches reuse project criteria, budgets, continuation dedup
+and per-project evidence; source/scope is rechecked before creating a card. Saved
+Kanban cards keep their snapshots, stages, notes and rating across restart/removal.
+A project with local keys cannot subscribe; switching an existing subscribed project
+to local selection pauses its old public rule. Merely linking a source/template
+never enables new monitoring.
+
+Public `repo.channels()`, RecruiterService, CapabilityService, Bot workspaces/outbox
+and MCP grants retain their existing public-only inputs. Their archive/publication
+queries cannot read the new local tables. Owner-local REST retains exact Host/Origin,
+desktop capability/CSRF and no-store protections. No body/title is logged by new
+services; native errors are sanitized. Existing public-only external policies are
+not expanded by B; future monitoring/export changes require the C permission design.
+
+### Verification and manual acceptance
+
+See DEV_STATUS and STAGE_B_HANDOFF for exact final build/CI evidence. Automatic
+tests use synthetic sources and fake TDLib requests, temporary SQLite and offline
+Playwright. `scripts/test-source-browser.sh` exercises real local REST/services/
+SQLite behind the browser with fake native calls and never starts a TDLib client.
+
+Manual owned-chat acceptance: after a stopped-profile backup and controlled single
+backend upgrade, save each supported chat type plus two forum topics. Put distinct
+synthetic text/captions into both topics; verify whole-chat versus topic reads,
+search by name with no username, bounded import/pause/resume/restart and duplicate
+prevention. Create a project, search/archive/add a card, save stage/note/rating and
+restart. Revoke access and confirm safe errors with retained archive/card. Confirm
+Bot/MCP lists and notification queues acquire no selected local sources/content.
 
 ## Identity and native API
 
@@ -39,7 +131,7 @@ Canonical `telegram_sources` uniqueness is `(chat_id, scope_kind, scope_id)`.
 row key is only a local REST handle. Forum IDs are Int; thread IDs are Long.
 `CHAT`, `FORUM_TOPIC` and `MESSAGE_THREAD` are distinct; they never convert into
 each other. Publication identity remains `(chatId,messageId)` in existing tables;
-B/C will share these rows and deduplicate overlapping whole-chat/topic processing.
+B uses separate owner-local shared rows with scoped membership; legacy public rows remain intact.
 
 Pinned TDLib: bc9c263e2bfee06aaab41e82db51a103376030bc. Signatures were checked
 against the matching generated Java JAR and the [official pinned schema](https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/generate/scheme/td_api.tl).
@@ -95,7 +187,7 @@ Tests include a SQL fixture generated by the **actual 0.3.0 Repositories** using
 empty temporary database; synthetic archive/CRM/queue/cursor data are compared
 before/after/reopen. A forced DDL conflict rolls back the schema number and allows
 retry; malformed scopes and cross-parent topics are rejected. No real profile was
-read. Packaging/lifecycle smoke expects schema10 and refuses future schema11.
+read. A packaging smoke expected schema10; B smoke expects schema11 and refuses future schema12.
 
 Before upgrading a real profile, stop its single backend and make an owner-only
 backup of the complete profile/database including SQLite WAL/SHM consistency. Do
@@ -106,9 +198,9 @@ Source metadata stays in `~/.hradar/data/research.sqlite`, with owner-only 600
 file permissions inside existing 700 profile directories. No new credentials
 store is introduced. Storage layout stays `~/.hradar`; no directory migration was added.
 
-## Ordered implementation plan: B then C
+## Series checklist: B implementation and future C
 
-This is an implementation plan, not completed functionality. Keep the A catalog,
+The following records the agreed series scope; current B evidence is above and in DEV_STATUS. Keep the A catalog,
 public-channel adapters, matching rules, one TDLib session and local auth intact.
 Do not add external sharing as a side effect of local processing.
 

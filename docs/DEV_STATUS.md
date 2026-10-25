@@ -1,6 +1,40 @@
 # hradar — Development status / session handoff
 
-## Current handoff — universal Telegram sources — 2026-10-25
+## Stage B implementation checkpoint — 2026-10-25
+
+Branch `feat/telegram-source-reading` in isolated `hradar-sources-b`, base fetched
+`origin/master`565edd8 including PR#11 merge1ceb871. App0.5.0, schema11.
+Detailed code map, decisions, limits, commands and next-session recovery:
+[STAGE_B_HANDOFF.md](STAGE_B_HANDOFF.md). Previous A handoff below is historical.
+
+VERIFIED:
+- Actual saved-key/chatId/scope recent/detail/search for normal cloud chats, basic
+  groups, public/private supergroups/channels and wholeforums/native topics;
+  username optional, no public resolution for private saved sources.
+- Isolated scoped local archive with atomic forward10->11 migration, durable import
+  checkpoints/limits/pause/resume/restart/rate waits, publication dedup, moved-topic
+  membership invalidation and legacy archive read-in-place compatibility.
+- Additive sourceKeys in local/mixed CRM projects; manual cards, notes/rating/stage,
+  per-project scope evidence and restart persistence. Public Bot/MCP/archive adapters
+  do not query local tables; local subscriptions remain disabled pending C.
+- Final JDK21 `./gradlew :backend:build :backend:stageDesktop -PbundledWeb=true`
+  exit0:194tests,0failures/errors/skips. Frontend build exit0; full offline
+  Playwright63passed; Python29safeguards/version/staged-secret checks passed.
+- Independent whole-change review found a mixed-project legacy evidence regression;
+  corrected and covered for archive/favorite/template matches and wrong-source denial.
+  Scoped re-review reports no outstanding actionable findings.
+- Actual REST/services/temporary SQLite/fake-TDLib Playwright vertical workflow1passed;
+  topic recent/search/archive/project/card/note/rating/stage/reload. No live account.
+
+NOT VERIFIED: PR hosted workflows pending before first push;
+real Telegram account/manual Mac installation not exercised. Completed archives
+remain snapshots, searches have ephemeral bounded continuations. See handoff.
+Existing production447551a runtime/profile untouched; no second TDLib session.
+
+NEXT ACTION: commit/push this verified branch, open PR
+against master and inspect exact-head Fast/macOS CI. Do not merge/tag/publish.
+
+## Historical merged A handoff — universal Telegram sources — 2026-10-25
 
 ### VERIFIED: repository and CI
 
