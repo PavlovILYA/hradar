@@ -8,7 +8,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: fast-ci-${{ github.workflow }}-${{ github.ref }}
+  group: fast-ci-${{ github.workflow }}-${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && github.sha || github.ref }}
   cancel-in-progress: true
 jobs:
   frontend:
@@ -62,3 +62,38 @@ jobs:
         run: python3 -B -m unittest discover -s tests -v
       - name: Compile Kotlin and run fake-gateway/unit tests (no JNI)
         run: ./gradlew :backend:build --no-daemon --console=plain
+
+  installers:
+    name: Verified master macOS installers
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: [frontend, backend]
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/macos-distribution.yml
+
+  tag-version:
+    name: Tag verified merged application version
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: [frontend, backend, installers]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: read
+    concurrency:
+      group: app-version-tag-${{ github.sha }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify metadata and create immutable annotated tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -B scripts/version.py check
+          python3 -B scripts/tag-version.py
