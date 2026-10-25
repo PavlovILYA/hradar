@@ -13,6 +13,8 @@ class SourceCatalogService(private val port: SourceCatalogPort, private val repo
     private data class Snapshot(val ids: List<Long>, val offset: Int, val query: String, val filter: String, val expires: Long)
     private val pages = linkedMapOf<String, Snapshot>()
     private val lock = Mutex()
+    private fun unavailable(ex: TelegramRequestException) = ex.code in setOf(403, 404) ||
+        (ex.code == 400 && ex.reason in setOf("CHANNEL_PRIVATE", "CHANNEL_INVALID", "CHAT_ACCESS_DENIED", "CHAT_NOT_FOUND"))
     suspend fun browse(query: String = "", filter: String = "all", cursor: String? = null): SourcePage = withTimeout(25_000) {
         require(query.length <= 128 && filter in setOf("all", "private", "groups", "channels") && (cursor == null || cursor.length <= 36)) { "Некорректный запрос каталога" }
         lock.withLock {
@@ -25,7 +27,7 @@ class SourceCatalogService(private val port: SourceCatalogPort, private val repo
             while (offset < page.ids.size && result.size < 25 && scanned++ < 50) {
                 val id = page.ids[offset++]
                 val source = try { port.describe(id) } catch (ex: TelegramRequestException) {
-                    if (ex.code !in setOf(403, 404)) throw ex
+                    if (!unavailable(ex)) throw ex
                     null
                 } ?: continue
                 val accepts = when (filter) { "private" -> source.type == SourceType.PRIVATE; "groups" -> source.type in setOf(SourceType.BASIC_GROUP, SourceType.SUPERGROUP); "channels" -> source.type == SourceType.CHANNEL; else -> true }
@@ -59,7 +61,8 @@ class SourceCatalogService(private val port: SourceCatalogPort, private val repo
                 ScopeKind.FORUM_TOPIC -> port.topic(saved.chatId, saved.scope.forumTopicId!!)
                 ScopeKind.MESSAGE_THREAD -> throw IllegalArgumentException("Ветки обсуждений ещё не подключены")
             }
-        } catch (ex: TelegramRequestException) { if (ex.code !in setOf(403, 404)) throw ex; null }
+        } catch (_: SourceUnavailable) { null }
+        catch (ex: TelegramRequestException) { if (!unavailable(ex)) throw ex; null }
         return@withTimeout withContext(Dispatchers.IO) { repo.refreshSource(key, (current ?: saved.copy(access = SourceAccess.UNAVAILABLE)).copy(checkedAt = now())) }
     }
     suspend fun topics(chatId: Long, cursor: TopicCursor): TopicPage {

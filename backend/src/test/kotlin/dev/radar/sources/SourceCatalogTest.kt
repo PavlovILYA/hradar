@@ -122,4 +122,39 @@ class SourceCatalogTest {
         assertEquals(6, calls.size)
     }
 
+    @Test fun forumAccessLossUpdatesSavedTopicWithoutLosingIdentity(): Unit = runBlocking {
+        var banned = false
+        var isForum = true
+        var topicReads = 0
+        var privateError = false
+        var clock = 100L
+        val native = TdlibSourceCatalog { fn ->
+            when (fn) {
+                is TdApi.GetChat -> TdApi.Chat().apply { id = -1001; title = "Synthetic forum"; type = TdApi.ChatTypeSupergroup(1, false) }
+                is TdApi.GetSupergroup -> TdApi.Supergroup().apply { this.isForum = isForum; status = if (banned) TdApi.ChatMemberStatusBanned(0) else TdApi.ChatMemberStatusMember() }
+                is TdApi.GetForumTopic -> { topicReads++; if (privateError) throw TelegramRequestException(400, "CHANNEL_PRIVATE"); TdApi.ForumTopic().apply { info = TdApi.ForumTopicInfo().apply { chatId = -1001; forumTopicId = 11; name = "Synthetic topic" } } }
+                else -> error("Unexpected body or join request")
+            }
+        }
+        Repositories(Files.createTempDirectory("topic-access-loss-").resolve("db")).use { repo ->
+            val service = SourceCatalogService(native, repo) { clock }
+            val original = service.save(SaveSourceInput(-1001, SourceScope(ScopeKind.FORUM_TOPIC, 11)))
+            assertEquals(SourceAccess.AVAILABLE, original.access)
+            banned = true; clock = 200
+            val unavailable = service.refresh(original.key)
+            assertEquals(original.key, unavailable.key); assertEquals(original.scope, unavailable.scope)
+            assertEquals(SourceAccess.UNAVAILABLE, unavailable.access); assertEquals(200, unavailable.checkedAt)
+            assertEquals(1, topicReads); assertEquals(SourceAccess.UNAVAILABLE, repo.sources().single().access)
+            banned = false; clock = 300
+            assertEquals(SourceAccess.AVAILABLE, service.refresh(original.key).access)
+            isForum = false; clock = 400
+            assertEquals(SourceAccess.UNAVAILABLE, service.refresh(original.key).access)
+            assertEquals(2, topicReads)
+            isForum = true; privateError = true; clock = 500
+            assertEquals(SourceAccess.UNAVAILABLE, service.refresh(original.key).access)
+            assertEquals(original.key, repo.sources().single().key)
+            assertTrue(repo.channels().isEmpty()); assertTrue(repo.mcpSources().isEmpty())
+        }
+    }
+
 }

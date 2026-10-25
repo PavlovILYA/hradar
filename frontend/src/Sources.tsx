@@ -29,10 +29,10 @@ export function Sources({ sources, unread, refresh, onMessages, onArchive, activ
   const [username, setUsername] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  async function act(task: () => Promise<unknown>) {
+  async function act(task?: () => Promise<unknown>) {
     if (busy) return;
     setBusy(true); setError('');
-    try { await task(); await refresh(); await refreshCatalog(); }
+    try { if (task) await task(); await refresh(); await refreshCatalog(); }
     catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   }
@@ -47,7 +47,7 @@ export function Sources({ sources, unread, refresh, onMessages, onArchive, activ
     </form>
     {error && <p className="error" role="alert">{error}</p>}
     <label htmlFor="source-filter">Найти источник</label><input id="source-filter" type="search" value={filter} onChange={e => setFilter(e.target.value)} />
-    <button className="text-button" disabled={busy} onClick={() => void refresh().catch(e => setError((e as Error).message))}>Обновить источники</button>
+    <button className="text-button" disabled={busy} onClick={() => void act()}>Обновить источники</button>
     {!visible.length && <p className="helper">{sources.length ? 'Источники не найдены. Измените фильтр.' : 'Публичных источников пока нет. Выберите чат из Telegram или добавьте канал по username.'}</p>}
     {visible.map(source => <article className="source-record" key={source.id}><div><h3>{source.title}</h3><p>@{source.username}</p><small>Telegram ID: {source.id} · Публичный канал</small>{unread[source.id] > 0 && <small>Новых совпадений: {unread[source.id]}</small>}</div>
       <div className="source-actions"><button className="secondary-button" onClick={() => onMessages(source.username)}>Последние сообщения</button><button className="secondary-button" onClick={() => onArchive(source.username)}>Открыть архив</button><button className="text-button danger" disabled={busy} onClick={() => { if (window.confirm('Удалить сохранённый источник?')) void act(() => mutate(`/api/channels/${source.id}`, 'DELETE')); }}>Удалить источник</button></div>

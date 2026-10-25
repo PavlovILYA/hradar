@@ -70,7 +70,7 @@ class TdlibSourceCatalog(private val request: suspend (TdApi.Function<*>) -> TdA
     }
     private suspend fun forum(chatId: Long): TelegramSource {
         val source = describe(chatId)
-        require(source?.isForum == true && source.access != SourceAccess.UNAVAILABLE) { "Темы недоступны для этого чата" }
+        if (source?.isForum != true || source.access == SourceAccess.UNAVAILABLE) throw SourceUnavailable()
         return source
     }
     override suspend fun topics(chatId: Long, cursor: TopicCursor): TopicPage {

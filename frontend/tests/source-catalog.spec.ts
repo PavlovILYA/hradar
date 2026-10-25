@@ -10,9 +10,10 @@ const group = candidate(-2001, 'Synthetic community');
 const forum = candidate(-2002, 'Synthetic forum', { isForum: true });
 const topic = candidate(-2002, 'Synthetic forum', { isForum: true, scopeTitle: 'Synthetic topic', scope: { kind: 'FORUM_TOPIC', forumTopicId: 17 } });
 
-async function fixture(page: Page, options: { saved?: any[]; fail?: boolean; delayed?: boolean; delayedSaved?: boolean } = {}) {
+async function fixture(page: Page, options: { saved?: any[]; fail?: boolean; delayed?: boolean; delayedSaved?: boolean; failSaved?: boolean } = {}) {
   let saved = [...(options.saved ?? [])];
   let savedReads = 0;
+  let failSaved = options.failSaved;
   const writes: { path: string; body: any; csrf: string | undefined }[] = [];
   const catalogQueries: URLSearchParams[] = [];
   const topicQueries: URLSearchParams[] = [];
@@ -30,6 +31,7 @@ async function fixture(page: Page, options: { saved?: any[]; fail?: boolean; del
         const source = { ...(body.scope.kind === 'FORUM_TOPIC' ? topic : group), ...body, key: `saved-${writes.length}` };
         saved.push(source); return reply(source);
       }
+      if (failSaved) { failSaved = false; return route.fulfill({ status: 503, json: { error: 'Synthetic transient catalog failure' } }); }
       const snapshot = [...saved];
       if (options.delayedSaved && savedReads++ === 0) await new Promise(resolve => setTimeout(resolve, 600));
       return reply({ items: snapshot, cursor: null });
@@ -166,4 +168,14 @@ test('older saved-list responses cannot erase a newly selected source', async ({
   await expect(page.getByTestId('saved-catalog-source')).toContainText('Synthetic community');
   await page.waitForTimeout(700); // Deliberately let the older server snapshot arrive last.
   await expect(page.getByTestId('saved-catalog-source')).toContainText('Synthetic community');
+});
+
+
+test('refresh sources recovers the saved catalog after a transient load failure', async ({ page }) => {
+  await fixture(page, { saved: [{ ...group, key: 'synthetic-saved' }], failSaved: true });
+  await page.getByRole('button', { name: 'Закрыть выбор источника' }).click();
+  await expect(page.getByText('Каталог недоступен. Существующие публичные источники остаются доступны.')).toBeVisible();
+  await page.getByRole('button', { name: 'Обновить источники', exact: true }).click();
+  await expect(page.getByTestId('saved-catalog-source')).toContainText('Synthetic community');
+  await expect(page.getByText('Каталог недоступен. Существующие публичные источники остаются доступны.')).toHaveCount(0);
 });

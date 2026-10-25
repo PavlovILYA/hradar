@@ -122,3 +122,33 @@ After backup and a controlled launch with one account/session:
 8. In B/C acceptance, add known text/captions to both topics, use short/duplicate
    pages, repeat imports, restart monitoring and verify no cross-topic or repeated
    publication/notification and no bot/MCP delivery without explicit permission.
+
+
+## Stage A verification checkpoint (PR #11)
+
+A includes the metadata catalog for cloud users, groups, channels and forum topics,
+explicit save/delete/recheck, stable chat/scope identity without required username,
+schema9->10 preservation and restart, and isolation from public Bot/MCP adapters.
+It does not include B's private/scoped message search/archive/CRM or C's monitoring
+and discussion-thread processing. These must remain separate sequential PRs.
+
+The failed macOS run40155481458 exposed two architecture-independent UI issues:
+ARM64's offline navigation test observed a late archive initialization overwrite
+an edited limit; Intel's actual production smoke selected duplicate text spanning
+the hidden cached Dashboard and active Projects screen. The fixes preserve drafts
+and scope the smoke locator to the active screen, with an explicit Dashboard
+hydration check to keep the duplicate-text scenario covered. No workflow test or
+lifecycle assertion was removed; SQLite10 and native packaging checks had passed.
+
+A's saved-list Refresh now retries the catalog, and native forum access loss (or a
+forum ceasing to support topics) records UNAVAILABLE without reading topic content
+or changing its identity. Known Telegram access-denial errors are handled without
+publishing their raw text; transient/rate-limit and identity errors are not silently
+reclassified. Recheck can recover availability after access returns.
+
+Automated coverage at this checkpoint:162 Kotlin tests,61 offline browser tests,
+29 Python safeguards and version/JAR/build checks. Manual Telegram account E2E
+above is still not claimed. Catalog lists remain bounded samples of known chats;
+secret/special topic chats are excluded, UNKNOWN is not a read grant, and no
+private source is automatically subscribed or exported. Hosted workflow results
+must be checked against the current PR SHA before considering CI complete.

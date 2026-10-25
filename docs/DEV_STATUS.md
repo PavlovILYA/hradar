@@ -1,5 +1,40 @@
 # hradar — Development status / session handoff
 
+## PR #11 — stage A CI/readiness correction — 2026-10-25
+
+VERIFIED: Real logs from failed installer run40155481458, exact HEAD128a70d:
+ARM64 job121058417828 failed offline navigation test because asynchronous archive
+initialization overwrote the user's5000 draft limit with server1000. Intel
+job121058417735 passed offline tests but production smoke failed strict text
+selection: retained hidden Dashboard and active project list both contained the
+seeded project title. JAR/DMG/native/version checks passed before both failures;
+SQLite10/migration/lifecycle were not the cause. Both errors were reproduced
+locally before fixing, without changing retry/time limits or workflow gates.
+
+VERIFIED: Archive initialization now preserves an edited draft while untouched
+forms still load saved bounded/unlimited limits. Packaged smoke first hydrates the
+Dashboard, then selects the project inside the active Projects region; all prior
+card/note/stage/auth/lifecycle checks remain. Separate A review found/fixed catalog
+refresh not retrying its saved-list request and forum-topic access loss leaving
+stale AVAILABLE metadata. Typed observed-unavailability and known Telegram access
+errors now persist UNAVAILABLE with the same key/scope; other identity-validation,
+network and rate-limit errors remain distinct. No message reads were added.
+
+VERIFIED:162 Kotlin tests (zero failures/errors/skips),61 offline Playwright tests,
+frontend production build,29 Python safeguards, version/JAR checks passed. Added
+regressions deterministically delay archive responses, check untouched initialization,
+retry catalog503 and drive actual native metadata adapter through forum membership
+loss/recovery and known CHANNEL_PRIVATE rejection. Existing source/migration9->10,
+rollback/restart, legacy public, Bot/MCP isolation and credentials guards remain.
+Source production UI/lifecycle smoke also passed with the Dashboard hydrated,
+including cookie/CSRF, restart persistence, duplicate/foreign-port and future-schema
+refusal. Version remains0.4.0: fixes within the same pending MINOR PR, no new bump/tag.
+
+NEXT ACTION: push correction and require successful Fast CI and both macOS package
+jobs on that exact HEAD. Hosted results are not implied by local Intel/source
+checks. B/C are not started. Manual owned-account catalog/forum/access-loss E2E and
+physical-Mac acceptance remain required; see docs/TELEGRAM_SOURCES.md.
+
 ## Authorized real source launch — 2026-10-25
 
 VERIFIED: Owner clarified that local deployment must use the existing ~/.hradar

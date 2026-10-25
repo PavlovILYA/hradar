@@ -26,3 +26,6 @@ import kotlinx.serialization.Serializable
 @Serializable data class SourcePage(val items: List<TelegramSource>, val cursor: String? = null, val notice: String? = null)
 @Serializable data class TopicCursor(val date: Int = 0, val messageId: Long = 0, val forumTopicId: Int = 0)
 @Serializable data class TopicPage(val items: List<TelegramSource>, val next: TopicCursor? = null)
+
+/** Observed metadata denial, not an identity-validation or transient network error. */
+internal class SourceUnavailable : IllegalArgumentException("Темы недоступны для этого чата")
