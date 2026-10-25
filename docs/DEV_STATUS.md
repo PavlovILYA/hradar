@@ -1,99 +1,108 @@
 # hradar — Development status / session handoff
 
-## PR #11 — stage A CI/readiness correction — 2026-10-25
+## Current handoff — universal Telegram sources — 2026-10-25
 
-VERIFIED: Real logs from failed installer run40155481458, exact HEAD128a70d:
-ARM64 job121058417828 failed offline navigation test because asynchronous archive
-initialization overwrote the user's5000 draft limit with server1000. Intel
-job121058417735 passed offline tests but production smoke failed strict text
-selection: retained hidden Dashboard and active project list both contained the
-seeded project title. JAR/DMG/native/version checks passed before both failures;
-SQLite10/migration/lifecycle were not the cause. Both errors were reproduced
-locally before fixing, without changing retry/time limits or workflow gates.
+### VERIFIED: repository and CI
 
-VERIFIED: Archive initialization now preserves an edited draft while untouched
-forms still load saved bounded/unlimited limits. Packaged smoke first hydrates the
-Dashboard, then selects the project inside the active Projects region; all prior
-card/note/stage/auth/lifecycle checks remain. Separate A review found/fixed catalog
-refresh not retrying its saved-list request and forum-topic access loss leaving
-stale AVAILABLE metadata. Typed observed-unavailability and known Telegram access
-errors now persist UNAVAILABLE with the same key/scope; other identity-validation,
-network and rate-limit errors remain distinct. No message reads were added.
+- [PR #11](https://github.com/PavlovILYA/hradar/pull/11) is **MERGED** into master
+  (2026-10-25 11:30 UTC), merge commit `1ceb87156093c4b232561270de5f921c8fb17149`.
+  Its final functional SHA is `447551a7e1ce0ba2af5d20799800676cbbc1608b`.
+- Stage **A is implemented and automated-test verified**. B and C are not started;
+  full all-chat reading/search/CRM/monitoring is not implemented by the catalog.
+- Both PR workflows succeeded on that exact functional SHA:
+  [Fast CI](https://github.com/PavlovILYA/hradar/actions/runs/40187356225) and
+  [macOS Installers](https://github.com/PavlovILYA/hradar/actions/runs/40187356218).
+  ARM64 and Intel each passed native checks, packaging, offline browsers and
+  `Production UI and lifecycle smoke without Telegram/tools`.
+- Local checks: **162 Kotlin tests**, **61 offline Playwright tests**, **29 Python
+  safeguards**, frontend production build, bundled backend build/stage, version/JAR
+  checks and source production lifecycle smoke. No real Telegram account was used
+  by automated tests. Tracked/index secret scan passed before push.
+- App version **0.4.0** is canonical in `gradle.properties`; SQLite schema is **10**.
+  They are independent. This handoff is documentation-only: no version bump.
+- The separate [post-merge master run](https://github.com/PavlovILYA/hradar/actions/runs/40189170465)
+  was still running when checked. Do not infer its/tagging success from PR checks;
+  recheck it if relevant. Tags belong to CI; no manual tag/Release is authorized.
 
-VERIFIED:162 Kotlin tests (zero failures/errors/skips),61 offline Playwright tests,
-frontend production build,29 Python safeguards, version/JAR checks passed. Added
-regressions deterministically delay archive responses, check untouched initialization,
-retry catalog503 and drive actual native metadata adapter through forum membership
-loss/recovery and known CHANNEL_PRIVATE rejection. Existing source/migration9->10,
-rollback/restart, legacy public, Bot/MCP isolation and credentials guards remain.
-Source production UI/lifecycle smoke also passed with the Dashboard hydrated,
-including cookie/CSRF, restart persistence, duplicate/foreign-port and future-schema
-refusal. Version remains0.4.0: fixes within the same pending MINOR PR, no new bump/tag.
+### VERIFIED: A implementation and fixes
 
-NEXT ACTION: push correction and require successful Fast CI and both macOS package
-jobs on that exact HEAD. Hosted results are not implied by local Intel/source
-checks. B/C are not started. Manual owned-account catalog/forum/access-loss E2E and
-physical-Mac acceptance remain required; see docs/TELEGRAM_SOURCES.md.
+The catalog supports explicit metadata selection/save/delete/access recheck for
+cloud personal chats, basic groups, public/private supergroups and channels, and
+whole forums or native forum topics. `telegram_sources` uniquely identifies
+`(chatId, scopeKind, nativeScopeId)`; username is optional metadata, not identity.
+An opaque source key is a local row handle. Metadata DTOs exclude message bodies,
+drafts and user phone fields. Secret/special topic chats are excluded.
 
-## Authorized real source launch — 2026-10-25
+Schema 9 -> 10 adds the catalog transactionally and copies existing stored chat IDs.
+Legacy rows, templates, archives, CRM cards, notifications, bot data and cursors are
+preserved. The authentic empty v9 fixture came from 0.3.0 code; synthetic preservation,
+rollback/retry and reopen tests pass. Legacy public save/delete stays synchronized.
+New entries are local-only and never enter `repo.channels()`, ALL subscriptions,
+Bot menus/outbox or MCP grants. Cookie/Host/Origin/CSRF/no-store protections remain.
 
-VERIFIED: Owner clarified that local deployment must use the existing ~/.hradar
-profile, not a synthetic substitute. Previous owned backend was stopped cleanly;
-a consistent database backup was created in owner-only
-`~/.hradar/backups/before-source-catalog-20261025-054026/` (directory700/files600).
-The source-built0.4.0 backend now uses that profile, with the existing saved API
-settings/session handled by the app itself; secret values/session contents were
-not inspected. Metadata-only check confirms schema10 and database permissions600.
-One backend listens on127.0.0.1:8080 (PID85359); current source UI on5173
-(PID85701). Both prior synthetic preview processes and old source UI were stopped.
-The user browser was opened at http://127.0.0.1:5173/ without a synthetic banner.
+Fixed before merge, with regressions:
+- Stable keys survive username changes; source refresh cannot resurrect a deleted
+  row, and older browser responses cannot overwrite newer catalog state.
+- Refresh now retries `/api/sources`, including recovery after an initial failure.
+- Forum membership loss/non-forum metadata and known access denials persist
+  UNAVAILABLE with the same key/scope. Recovery can restore AVAILABLE. Identity,
+  transient-network and rate-limit errors are not blanket-caught as access loss.
+- Failed run [40155481458](https://github.com/PavlovILYA/hradar/actions/runs/40155481458)
+  had **two distinct UI causes**, not a SQLite/JNI/version failure: ARM64 job
+  `121058417828` observed late archive initialization overwrite selected 5000 with
+  server 1000; Intel job `121058417735` matched duplicate project text across a
+  hidden retained Dashboard and active Projects screen. An edited-limit guard fixes
+  the first; smoke hydrates Dashboard then scopes selection to active Projects for
+  the second. Existing CRM/auth/restart/future-schema assertions were retained.
 
-NOT VERIFIED: No actual private-chat catalog/history was queried by agent tools;
-real account E2E remains an owner action. PR A still has the B/C processing limits.
-This update changes launch instructions/handoff only; version remains0.4.0.
-NEXT ACTION: use the running real UI; do not start a second session. Future source
-updates follow the real-profile launch rule in AGENTS.md, not an automatic demo.
+### NOT VERIFIED / limits
 
-## Telegram source catalog — series A (0.4.0) — 2026-10-25
+- Account-specific catalog completeness, actual forum/access-loss behavior and
+  physical-Mac installation still need owner-controlled manual E2E. Fake tests and
+  hosted installer smoke do not prove live Telegram message/phone delivery.
+- New catalog entries, including public ones, are **metadata-only in A**. Their
+  reading/search/archive/CRM and monitoring controls are intentionally unavailable.
+  Existing username-based public-channel workflows remain functional.
+- Catalog pages are bounded samples of known chats, not exhaustive Telegram search.
+  Access is last observed metadata; UNKNOWN/AVAILABLE are not export/read grants.
+  Topic Int IDs and discussion-thread Long IDs are distinct. Thread saves are
+  explicitly rejected until C; no invented URLs or fallback to whole chat.
+- Details, native signatures, limits and manual checks: [TELEGRAM_SOURCES.md](TELEGRAM_SOURCES.md).
 
-VERIFIED: PR #10 merged into fetched origin/master 6c94c94; isolated worktree
-hradar-sources, branch feat/telegram-source-catalog. Schema10 adds stable chatId +
-discriminated native topic/thread scope identity, optional username and local
-metadata selection. Account main/archive/known-chat search, normal chat types and
-forum topics use pinned TDLib signatures through one existing gateway. Native
-Chat/ForumTopic bodies/drafts are never serialized. Secret/special topic chats are
-excluded; access UNKNOWN stays explicit. Legacy public paths synchronize atomically.
-New source entries are isolated from legacy ALL subscriptions, Bot and MCP.
+### Local runtime and safety
 
-VERIFIED: 161 Kotlin tests passed (zero failures/errors/skips), frontend production
-build, 58 offline Playwright scenarios and 29 Python safeguards. New tests include
-metadata-only native requests, exact topic offsets/ownership, bounded cursor/filter
-expiry, concurrent refresh/delete, reversed browser responses, CSRF/cookie/Origin
-and migration/restart/rollback. v9 SQL fixture was generated by real 0.3.0 code on an
-empty synthetic database; old archive/CRM/bot/notification rows compare unchanged.
-Compiler and JUnit XML confirm all new coroutine tests actually executed. Source
-production UI/lifecycle smoke passed on a temporary profile/alternate port with
-TDLib disabled; this is not proof of a native signed DMG or ARM64 installation.
+The last verified real source launch uses existing `~/.hradar`, backend on
+`127.0.0.1:8080`, UI at http://127.0.0.1:5173/. It runs functional SHA `447551a`;
+its frozen classpath is in `hradar-sources/build/local-runtime/447551a/`, separately
+from rebuild outputs. The synthetic preview was shut down. Do not assume process
+IDs remain valid: inspect listeners/cwd before stopping or starting anything.
+There must be one TDLib client/session. Do not read secret values/session contents.
+The app consumes saved settings itself; real updates use the profile per AGENTS.md.
+The original 9 -> 10 deployment was preceded by a stopped-database backup under
+`~/.hradar/backups/`. Database/secret files are owner-only 600, directories 700.
+This documentation task does not restart the app or touch user data.
 
-VERIFIED: Version 0.4.0 is a MINOR bump from canonical gradle.properties; sync/check
-and JAR metadata verification pass. No paths or user profiles moved. Existing
-backend PID84759 and real session were untouched. Independent review found two
-races (source resurrection and stale list overwrite); both fixed with regressions.
+### NEXT ACTION for a clean-context agent
 
-NOT VERIFIED / NEXT: Full all-chat reading/search/archive/CRM is PR B; explicit
-monitoring/notification topics/discussion threads and external-share policy are
-PR C. New catalog entries are deliberately metadata-only in A and labelled in UI.
-Older public functions remain operational. Actual Telegram account behavior,
-physical-Mac acceptance and hosted installers remain unverified for this branch.
-See docs/TELEGRAM_SOURCES.md for limits, dependency map, backup/recovery and owned
-chat E2E steps. Do not mistake a selected source for an active private subscription.
+1. Read AGENTS.md, this current section, TELEGRAM_SOURCES.md, ARCHITECTURE.md and
+   VERSIONING.md. Historical entries below are not current run/permission commands.
+2. `git fetch origin`; confirm current master includes PR #11. Create a new isolated
+   feature branch/worktree from **current** origin/master; do not continue the merged
+   A branch or alter main/other agents' worktrees. Preserve uncommitted work.
+3. Wait for an explicit B task before coding. Follow the ordered B plan and acceptance
+   gates in TELEGRAM_SOURCES.md. B must precede C; this handoff starts neither.
+4. Before any private message storage/read path, audit shared Bot/MCP/archive/saved
+   result adapters. Do not broaden `repo.channels()` or expose private data merely
+   because local UI processing now supports it. Keep old public contracts working.
+5. Use fake TDLib/temporary SQLite/browser fixtures for tests. Run backend build,
+   frontend build/offline browsers, Python/version/secret checks and source lifecycle
+   smoke; require both hosted architectures. B gets one next MINOR bump if authorized
+   (0.5.0 if master remains 0.4.0); C follows its then-current version policy.
 
-Local source preview: http://127.0.0.1:5190 with an explicit synthetic-data banner
-and fake API on5191; seven synthetic chat examples, no real Telegram. Prior working
-UI/backend remain in place. Real deployment would migrate the user's SQLite to10,
-so it was not performed under the task's prohibition on touching user data.
-NEXT ACTION: review/push PR A, inspect CI, then owner merge before starting B.
-No merge, manual version tag, Release or real-account test is authorized here.
+## Historical checkpoints — context only
+
+Entries below predate this handoff. Their pending actions, PIDs, CI availability
+and publication permissions may be obsolete; verify against current code/user task.
 
 ## Automatic stable version tags — 2026-10-25
 
