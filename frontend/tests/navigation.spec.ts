@@ -9,6 +9,7 @@ async function fixture(page: Page) {
     const url = new URL(route.request().url()), path = url.pathname, method = route.request().method();
     if (method !== 'GET') writes.push({ path, method, body: route.request().postData() ? route.request().postDataJSON() : null });
     const reply = (json: unknown) => route.fulfill({ json });
+    if (path === '/api/sources') return route.fulfill({ json: { items: [] } });
     if (path === '/api/events') return route.abort();
     if (path === '/api/telegram/status') return reply({ authorized: true, authorizationState: 'Ready', connectionState: 'Ready' });
     if (path === '/api/onboarding') return reply({ state: 'Ready', csrfToken: 'synthetic-csrf' });
@@ -146,4 +147,32 @@ test('desktop shutdown stays in application settings and uses the existing csrf 
   await page.getByRole('button', { name: 'Завершить hradar', exact: true }).click();
   await expect(page.locator('#root')).toHaveText('hradar завершён. Теперь можно закрыть вкладку.');
   expect(data.writes.filter(w => w.path === '/api/desktop/shutdown')).toHaveLength(1);
+});
+
+test('a late archive initialization cannot overwrite a selected import limit', async ({ page }) => {
+  await fixture(page);
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/history/telegram/sync', async route => {
+    await gate;
+    await route.fulfill({ json: { channelId: -1001, username: 'telegram', title: 'Delayed synthetic archive', status: 'IDLE', messageCount: 0, maxMessages: 1000, nextRetryAt: 0 } });
+  });
+  await navigate(page, 'Архив');
+  await page.getByLabel('Лимит сохранённых сообщений').selectOption('5000');
+  await navigate(page, 'Поиск');
+  const response = page.waitForResponse('**/api/history/telegram/sync');
+  release(); await response;
+  await expect(page.locator('#screen-archive .import-status')).toContainText('Импорт не запускался');
+  await navigate(page, 'Архив');
+  await expect(page.getByLabel('Лимит сохранённых сообщений')).toHaveValue('5000');
+});
+
+test('an untouched archive limit initializes from the server for bounded and unlimited imports', async ({ page }) => {
+  await fixture(page);
+  let limit: number | null = 10000;
+  await page.route('**/api/history/telegram/sync', route => route.fulfill({ json: { channelId: -1001, username: 'telegram', title: 'Synthetic archive', status: 'IDLE', messageCount: 0, maxMessages: limit, nextRetryAt: 0 } }));
+  await navigate(page, 'Архив');
+  await expect(page.getByLabel('Лимит сохранённых сообщений')).toHaveValue('10000');
+  limit = null; await page.reload(); await navigate(page, 'Архив');
+  await expect(page.getByLabel('Лимит сохранённых сообщений')).toHaveValue('all');
 });

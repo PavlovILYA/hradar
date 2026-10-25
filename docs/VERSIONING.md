@@ -2,7 +2,7 @@
 
 `appVersion` in root `gradle.properties` is the source of truth. The navigation
 feature introduces **0.2.0**. Application versions follow SemVer 2.0.0; SQLite's
-schema version (currently 9), pinned TDLib revision and JDK version are independent.
+schema version (currently 10), pinned TDLib revision and JDK version are independent.
 
 - PATCH: compatible bug fixes, for example `0.2.0` → `0.2.1`.
 - MINOR: compatible functionality, for example `0.2.1` → `0.3.0`.

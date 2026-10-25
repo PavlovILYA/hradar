@@ -20,6 +20,9 @@ try {
   await page.route('**/api/events', route => route.abort());
   await page.route('**/api/telegram/status', route => route.fulfill({ json: { authorized: true, authorizationState: 'Ready', connectionState: 'Ready' } }));
   await page.goto(`http://127.0.0.1:${process.env.HRADAR_SMOKE_PORT ?? '8080'}/#launch=${process.env.HRADAR_SMOKE_TOKEN}`);
+  // Hydrate the real Dashboard before leaving it: cached hidden views may contain
+  // the same project title as the project list, just as in the production UI.
+  await expect(page.getByRole('region', { name: 'Активные проекты', exact: true }).getByRole('button', { name: 'Installer CRM sentinel', exact: true })).toBeVisible();
   try {
     await page.getByRole('button', { name: 'Проекты', exact: true }).click();
   } catch (error) {
@@ -27,7 +30,9 @@ try {
     console.error('Page errors:', failures);
     throw error;
   }
-  await page.getByText('Installer CRM sentinel', { exact: true }).click();
+  const projects = page.getByRole('region', { name: 'Проекты', exact: true });
+  await expect(projects).toBeVisible();
+  await projects.getByRole('button').filter({ has: page.getByText('Installer CRM sentinel', { exact: true }) }).click();
   await page.getByText('Synthetic Java publication', { exact: true }).waitFor();
   await expect(page.getByLabel('Заметки')).toHaveValue('Synthetic preserved note');
   await expect(page.getByLabel('Стадия', { exact: true })).toHaveValue('CONTACTED');

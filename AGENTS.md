@@ -51,6 +51,19 @@ Choose minimal checks for the changed area; report exact outcomes:
 - Update **`ARCHITECTURE.md`** only for real architectural changes, **`ROADMAP.md`** for agreed scope/status changes, and **`docs/DEV_STATUS.md`** at a meaningful checkpoint/end of task with concise **VERIFIED / NOT VERIFIED / NEXT ACTION** evidence. Avoid rewriting them on every minor edit.
 - A task is done when its acceptance criteria are met and verified, not when files merely compile. State tests that ran, blockers, any unverified end-to-end scenario, and relevant commit hashes. If external verification requires user action, give exact steps instead of claiming success.
 
+## Local source launch after completion
+
+- The owner requests the real local source version after each completed task,
+  using the existing `~/.hradar` profile/session. Do not substitute a synthetic
+  demo unless explicitly requested; do not download installers.
+- Normal app startup may consume saved local settings. Agents must not inspect
+  secret values, login codes or session contents to launch it. Preserve one backend.
+- For an authorized source update requiring a tested forward migration, stop the
+  current owned backend cleanly and create an owner-only consistent database backup
+  outside Git before starting its replacement. Keep the session and settings intact.
+- Distinguish development/tests (fake ports and temporary data only) from the
+  explicitly requested real local launch. Report the actual URL and any limitation.
+
 ## Application versioning
 
 - Before completing **every task**, explicitly decide whether a version bump is required. Update the canonical source when needed and state the decision, version and reason in the final report.

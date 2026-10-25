@@ -211,7 +211,7 @@ function App() {
         <div className="workspace-content">
           {view('overview', <Dashboard active={screen === 'overview' && !checking} revision={dashboardRevision} eventConnected={eventConnected} eventAt={eventAt} navigate={navigate} openNotification={openNotification} openProject={(id, edit) => { setProjectIntent({ id, edit }); navigate('projects'); }} />)}
           {view('projects', <Projects active={screen === 'projects'} intent={projectIntent} />)}
-          {view('sources', <Sources sources={sources} unread={byChannel} refresh={refreshResearch} onMessages={source => void loadMessages(undefined, source)} onArchive={openArchive} />)}
+          {view('sources', <Sources active={screen === 'sources'} sources={sources} unread={byChannel} refresh={refreshResearch} onMessages={source => void loadMessages(undefined, source)} onArchive={openArchive} />)}
           {view('templates', <div className="data-screen"><Templates templates={templates} channels={sources} refresh={refreshResearch} onRun={t => void runSearch(t)} onError={setError} /></div>)}
           {view('saved', <SavedResults />)}
           {view('bot', <BotIntegration />)}

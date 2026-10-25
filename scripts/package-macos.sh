@@ -63,6 +63,6 @@ ditto -c -k --sequesterRsrc --keepParent "$OUT/hradar.app" "$OUT/hradar-$VERSION
 python3 - "$OUT" "$ARCH" "$VERSION" "$SHORT_VERSION" "$MAC_VERSION" <<'PY'
 import json,os,pathlib,subprocess,sys
 out=pathlib.Path(sys.argv[1])
-(out/'distribution.json').write_text(json.dumps({'version':sys.argv[3], 'macShortVersion':sys.argv[4], 'sqliteSchemaVersion':9, 'features':['recruitment-crm','telegram-bot-settings'], 'macBundleVersion':sys.argv[5], 'architecture':sys.argv[2], 'minimumMacOS':'15.0', 'signedAndNotarized':os.environ.get('HRADAR_SIGN')=='true', 'commit':os.environ.get('GITHUB_SHA'), 'run':os.environ.get('GITHUB_RUN_ID'), 'jdk':subprocess.check_output([os.environ['JAVA_HOME']+'/bin/java','--version'],text=True), 'native':json.load(open('.tdlib-build/release/tdlib-artifact.json'))},indent=2)+'\n')
+(out/'distribution.json').write_text(json.dumps({'version':sys.argv[3], 'macShortVersion':sys.argv[4], 'sqliteSchemaVersion':10, 'features':['recruitment-crm','telegram-bot-settings'], 'macBundleVersion':sys.argv[5], 'architecture':sys.argv[2], 'minimumMacOS':'15.0', 'signedAndNotarized':os.environ.get('HRADAR_SIGN')=='true', 'commit':os.environ.get('GITHUB_SHA'), 'run':os.environ.get('GITHUB_RUN_ID'), 'jdk':subprocess.check_output([os.environ['JAVA_HOME']+'/bin/java','--version'],text=True), 'native':json.load(open('.tdlib-build/release/tdlib-artifact.json'))},indent=2)+'\n')
 PY
 python3 -B scripts/version.py verify-distribution --path "$OUT/distribution.json" --build-number "$MAC_VERSION" --arch "$ARCH"

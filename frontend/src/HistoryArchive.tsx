@@ -22,6 +22,7 @@ export function HistoryArchive({ username, autoStart, authorized, onSelect, onSo
   const generation = useRef(0);
   const busyRef = useRef(false);
   const initialStart = useRef(autoStart);
+  const limitEdited = useRef(false);
 
   async function loadPage(before: number | null, term = appliedQuery, signal?: AbortSignal) {
     const params = new URLSearchParams({ limit: '50', query: term });
@@ -62,11 +63,12 @@ export function HistoryArchive({ username, autoStart, authorized, onSelect, onSo
   useEffect(() => {
     const controller = new AbortController();
     generation.current++;
+    limitEdited.current = false;
     setSync(null); setPage(emptyPage); setCursors([null]); setAppliedQuery(''); setQuery(''); setError('');
     void Promise.all([refresh(controller.signal), loadPage(null, '', controller.signal)]).then(([state, data]) => {
       if (!controller.signal.aborted) {
         setPage(data);
-        setMaxMessages(state?.maxMessages === null ? 'all' : String(state?.maxMessages ?? 1000));
+        if (!limitEdited.current) setMaxMessages(state?.maxMessages === null ? 'all' : String(state?.maxMessages ?? 1000));
         if (initialStart.current) { initialStart.current = false; void start(); }
       }
     }).catch(e => { if (!controller.signal.aborted) setError((e as Error).message); });
@@ -107,7 +109,7 @@ export function HistoryArchive({ username, autoStart, authorized, onSelect, onSo
     {archives.length > 0 && <label>Сохранённые архивы<select aria-label="Сохранённые архивы" value={archives.some(a => a.username === source) ? source : ''} onChange={e => selectSource(e.target.value)}><option value="" disabled>Выберите архив</option>{archives.map(a => <option value={a.username} key={a.channelId}>{a.title || '@' + a.username} · {a.messageCount}</option>)}</select></label>}
     <div className="import-status" aria-live="polite"><strong>{sync ? labels[sync.status] : 'Проверяем состояние…'}</strong><span>Загружено сообщений: <b data-testid="history-count">{sync?.messageCount ?? 0}</b></span>{sync?.status === 'RUNNING' && <small>Общее количество заранее неизвестно. Порции — до 100 сообщений.</small>}{sync?.nextRetryAt && sync.nextRetryAt > Date.now() ? <small>Следующая попытка: {new Date(sync.nextRetryAt).toLocaleTimeString('ru-RU')}</small> : null}</div>
     {sync?.error && <p className="error" role="alert">{sync.error}</p>}{error && <p className="error" role="alert">{error}</p>}
-    <label>Лимит сохранённых сообщений<select aria-label="Лимит сохранённых сообщений" value={maxMessages} disabled={busy || sync?.status === 'RUNNING'} onChange={e => setMaxMessages(e.target.value)}><option value="1000">1000 сообщений</option><option value="5000">5000 сообщений</option><option value="10000">10000 сообщений</option><option value="all">Вся доступная история · без ограничения</option></select></label>
+    <label>Лимит сохранённых сообщений<select aria-label="Лимит сохранённых сообщений" value={maxMessages} disabled={busy || sync?.status === 'RUNNING'} onChange={e => { limitEdited.current = true; setMaxMessages(e.target.value); }}><option value="1000">1000 сообщений</option><option value="5000">5000 сообщений</option><option value="10000">10000 сообщений</option><option value="all">Вся доступная история · без ограничения</option></select></label>
     <p className="helper">Лимит — общее число сообщений в архиве канала. Безлимитная загрузка запускается только после явного выбора «Вся доступная история».</p>
     {sync?.pauseReason === 'LIMIT' && <p className="helper">Достигнут выбранный лимит. Увеличьте его, чтобы продолжить загрузку с сохранённого курсора.</p>}
     <div className="archive-actions"><button className="primary-button" disabled={busy || !authorized || !sync || sync.status === 'RUNNING' || sync.status === 'COMPLETED' || (maxMessages !== 'all' && Number(maxMessages) <= (sync?.messageCount ?? 0))} onClick={() => void start()}>{sync?.status === 'FAILED' || sync?.status === 'PAUSED' ? 'Продолжить загрузку' : sync?.status === 'RUNNING' ? 'Импорт выполняется' : sync?.status === 'COMPLETED' ? 'История загружена' : 'Начать загрузку'}</button>{sync?.status === 'RUNNING' && <button className="secondary-button" disabled={busy} onClick={() => void stop()}>Остановить загрузку</button>}<button className="secondary-button" disabled={busy} onClick={async () => { try { await refresh(); await show(cursors[cursors.length - 1], appliedQuery, cursors); } catch (e) { setError((e as Error).message); } }}>Обновить архив</button></div>

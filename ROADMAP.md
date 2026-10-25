@@ -27,6 +27,17 @@ Build a local-first recruiting workspace centered on **explicitly permitted Tele
 | **Operational safeguards** | Clear states for rate limiting and offline Telegram; reasonable request budgets; regressions for cancellation, reconnect and deduplication; no unnecessary re-fetch of whole archives. |
 | **Documentation consistency** | `README.md`, `ARCHITECTURE.md`, `ROADMAP.md`, `AGENTS.md`, `docs/CI.md`, `docs/MCP.md` describe the actual state, with `DEV_STATUS.md` holding current proof. |
 
+## Active series — account Telegram sources
+
+- [x] A: stable scoped metadata catalog, explicit chat/forum selection, schema9 ->10
+  migration and public/Bot/MCP compatibility isolation (0.4.0; see source PR evidence).
+- [ ] B: scoped chatId reading, search, archive and CRM for all normal accessible chats.
+- [ ] C: explicit private-source monitoring, topics/discussions, restart/dedup/access
+  loss and separate local-versus-external delivery permissions.
+
+Full all-chat recruiting support is incomplete until B/C. No automatic joins,
+secret chats, second Telegram session or private-source sharing are authorized.
+
 ## Next — P1 recruiting workflows
 
 1. [x] **Vacancy/project workspace:** one hiring project per vacancy, role criteria, approved sources, saved searches and review queue. Implemented with per-project publication Kanban, notes, ratings, filters, pagination and SQLite persistence; see docs/RECRUITMENT_PROJECTS.md.

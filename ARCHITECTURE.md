@@ -68,6 +68,17 @@ See [`docs/MCP.md`](docs/MCP.md) and [`docs/CI.md`](docs/CI.md) for protocols an
 3. The user explicitly saves public channels. Resolving a username does **not** join that channel or subscribe the account to its updates.
 4. Saving a source for research is **not** the same as granting MCP access. The MCP allowlist is separate and initially empty/disabled.
 
+### Source catalog (series A)
+
+`SourceCatalogPort`/`TdlibSourceCatalog` maps account chat/forum metadata from the
+same TDLib gateway into explicit DTOs. `SourceCatalogService` offers bounded local
+selection; schema10 `telegram_sources` identifies `(chatId, scopeKind, nativeScopeId)`
+with optional username. Existing public `monitored_channels` remains an isolated
+compatibility adapter synchronized by save/delete; new entries never enter Bot/MCP
+or ALL subscriptions. Source routes reuse desktop cookie/Host/Origin/CSRF security.
+Read/search/archive/CRM adaptation and scoped monitoring are sequential B/C work,
+not implemented by a selector alone. See [TELEGRAM_SOURCES.md](docs/TELEGRAM_SOURCES.md).
+
 ### Online search versus saved history
 
 - **Online search** uses TDLib-backed search methods for supported scopes, with bounded pagination and errors for unavailable/free-limited global search.
