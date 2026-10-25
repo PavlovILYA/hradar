@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { request } from './api';
 import type { MonitoredChannel, TelegramStatus } from './api';
 interface Config { enabled: boolean; endpoint: string; tools: { name: string; description: string }[]; allowedSources: MonitoredChannel[]; availableSources: MonitoredChannel[]; csrfToken: string; readOnly: boolean }
-export function McpIntegration() {
+export function McpIntegration({ active = true }: { active?: boolean } = {}) {
   const [config, setConfig] = useState<Config | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -10,7 +10,7 @@ export function McpIntegration() {
   const [status, setStatus] = useState<TelegramStatus | null>(null);
   const [username, setUsername] = useState('');
   async function refresh() { setConfig(await request<Config>('/api/integrations/mcp')); }
-  useEffect(() => { void refresh().catch(e => setError((e as Error).message)); }, []);
+  useEffect(() => { if (active) void refresh().catch(e => setError((e as Error).message)); }, [active]);
   async function change(path: string, method: string, body: unknown) {
     if (!config) return;
     setBusy(true); setError('');

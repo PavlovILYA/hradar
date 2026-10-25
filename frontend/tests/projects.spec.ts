@@ -1,3 +1,4 @@
+import { openSection } from './navigation-helpers';
 import { test, expect } from '@playwright/test';
 
 test('recruiter creates a project, searches, reviews Kanban and restores notes after reload', async ({ page }, testInfo) => {
@@ -32,7 +33,7 @@ test('recruiter creates a project, searches, reviews Kanban and restores notes a
     if (path === '/api/projects/p1/cards/c1') { Object.assign(cards[0], route.request().postDataJSON(), { updatedAt: cards[0].updatedAt + 1000 }); return reply(cards[0]); }
     throw new Error(`Unmocked offline request: ${method} ${path}`);
   });
-  await page.goto('/'); await page.getByRole('button', { name: 'Проекты', exact: true }).click();
+  await page.goto('/'); await openSection(page, 'Проекты');
   await expect(page.getByRole('heading', { name: 'Проектов пока нет' })).toBeVisible();
   await page.getByRole('button', { name: 'Создать проект', exact: true }).click();
   await page.getByLabel('Название проекта').fill('Senior Java Backend');
@@ -68,11 +69,11 @@ test('recruiter creates a project, searches, reviews Kanban and restores notes a
   const interested = page.getByRole('region', { name: 'Интересные', exact: true });
   await expect(interested.locator('.recruitment-card')).toHaveCount(1);
   await expect(interested.getByLabel('Заметки')).toHaveValue('Проверить опыт с PostgreSQL');
-  await page.locator('.message-area').evaluate(el => { el.scrollTop = 0; });
+  await page.getByRole('region', { name: 'Проекты', exact: true }).evaluate(el => { el.scrollTop = 0; });
   await page.screenshot({ path: testInfo.outputPath('projects-desktop.png'), fullPage: true });
   await page.getByLabel('Поиск внутри проекта').fill('no-match'); await expect(interested.locator('.recruitment-card')).toHaveCount(0);
   await page.getByLabel('Поиск внутри проекта').fill(''); await expect(interested.locator('.recruitment-card')).toHaveCount(1);
-  await page.reload(); await page.getByRole('button', { name: 'Проекты', exact: true }).click(); await page.locator('.project-tile').click();
+  await page.reload(); await openSection(page, 'Проекты'); await page.locator('.project-tile').click();
   await expect(interested.getByLabel('Заметки')).toHaveValue('Проверить опыт с PostgreSQL');
   await expect(interested.getByLabel('Интерес', { exact: true })).toHaveValue('5');
   await expect(interested.getByRole('link', { name: 'Оригинал в Telegram' })).toHaveAttribute('href', message.link);
@@ -80,7 +81,7 @@ test('recruiter creates a project, searches, reviews Kanban and restores notes a
   await interested.getByLabel('Стадия', { exact: true }).selectOption('CONTACTED'); await interested.getByRole('button', { name: 'Сохранить карточку' }).click();
   await expect(page.getByRole('region', { name: 'Связались', exact: true }).locator('.recruitment-card')).toHaveCount(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.locator('.message-area').evaluate(el => { el.scrollTop = 0; });
+  await page.getByRole('region', { name: 'Проекты', exact: true }).evaluate(el => { el.scrollTop = 0; });
   await page.screenshot({ path: testInfo.outputPath('projects-mobile.png'), fullPage: true });
   await page.getByRole('button', { name: 'Настроить критерии' }).click(); await page.getByLabel('Статус проекта').selectOption('ARCHIVED'); await page.getByRole('button', { name: 'Сохранить проект' }).click();
   await expect(page.getByText('Проект архивирован.', { exact: false })).toBeVisible();

@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing reviewed vX.Y.Z tag (this workflow never creates tags)
+        description: Existing reviewed SemVer vX.Y.Z[-prerelease] tag (this workflow never creates tags)
         required: true
         type: string
       run_id:
@@ -52,5 +52,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           HRADAR_TAG: ${{ inputs.tag }}
         run: |
-          [[ "$HRADAR_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$HRADAR_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$ ]]
           gh release create "$HRADAR_TAG" release-assets/* --repo '${{ github.repository }}' --verify-tag --prerelease --title "hradar $HRADAR_TAG" --notes 'Signed and notarized macOS installers. See distribution metadata and checksums.'

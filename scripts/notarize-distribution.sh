@@ -3,9 +3,8 @@ set -euo pipefail
 ARCH="${1:?architecture required}"
 WORK="${2:?downloaded unsigned artifact directory required}"
 : "${JAVA_HOME:?JDK 21 required}"
-VERSION=0.1.0
-# macOS CFBundleVersion/jpackage requires a non-zero leading component.
-MAC_VERSION=1.0.0
+VERSION="$(python3 -B scripts/version.py get)"
+python3 -B scripts/version.py verify-distribution --path "$WORK/distribution.json" --arch "$ARCH" --build-number "${HRADAR_BUILD_NUMBER:-}"
 APP="$WORK/hradar.app"
 ditto -x -k "$WORK/hradar-$VERSION-$ARCH.app.zip" "$WORK"
 bash scripts/sign-macos.sh "$APP"

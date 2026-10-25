@@ -17,7 +17,7 @@ const blank: Criteria = { name: '', description: '', required: [], desired: [], 
 const terms = (value: string) => value.split(',').map(x => x.trim()).filter(Boolean);
 const date = (value: number) => new Date(value).toLocaleString('ru');
 
-export function Projects() {
+export function Projects({ active = true }: { active?: boolean } = {}) {
   const [projects, setProjects] = useState<Page<Project>>({ items: [], total: 0 });
   const openingProject = useRef<AbortController | null>(null);
   useEffect(() => () => openingProject.current?.abort(), []);
@@ -33,11 +33,12 @@ export function Projects() {
   const [offset, setOffset] = useState(0);
   const [revision, setRevision] = useState(0);
   useEffect(() => {
+    if (!active) return;
     const c = new AbortController(); setBusy(true); setError('');
     Promise.all([request<Page<Project>>(`/api/projects?limit=25&offset=${offset}&status=${status}&query=${encodeURIComponent(query)}`, c.signal), request<MonitoredChannel[]>('/api/channels', c.signal), request<SearchTemplate[]>('/api/templates', c.signal)])
       .then(([p, s, t]) => { setProjects(p); setSources(s); setTemplates(t); }).catch(e => { if (!c.signal.aborted) setError(e.message); }).finally(() => { if (!c.signal.aborted) setBusy(false); });
     return () => c.abort();
-  }, [status, query, offset, revision]);
+  }, [status, query, offset, revision, active]);
   async function openProject(id: string, edit = false) {
     openingProject.current?.abort(); const c = new AbortController(); openingProject.current = c; setError('');
     try {

@@ -1,3 +1,4 @@
+import { openSection } from './navigation-helpers';
 import { test, expect } from '@playwright/test';
 
 // Live tests are explicit. Offline tests block all backend traffic and use synthetic data.
@@ -28,6 +29,7 @@ test.beforeEach(async ({ page, request }, testInfo) => {
 
 test('loads real Telegram messages through the frontend proxy', { tag: '@telegram' }, async ({ page }) => {
   await page.goto('/');
+  await openSection(page, 'Поиск');
   await expect(page.getByRole('status')).toHaveText('Telegram подключён');
   await expect(page.getByRole('heading', { name: 'Здесь появятся сообщения канала' })).toBeVisible();
   await page.screenshot({ path: '/tmp/hradar-desktop.png', fullPage: true });
@@ -42,6 +44,7 @@ test('loads real Telegram messages through the frontend proxy', { tag: '@telegra
 
 test('shows real missing-channel error without stale messages', { tag: '@telegram' }, async ({ page }) => {
   await page.goto('/');
+  await openSection(page, 'Поиск');
   await expect(page.getByRole('status')).toHaveText('Telegram подключён');
   await page.getByLabel('Username канала').fill('@hradar_missing_test_9x7q2');
   await page.getByRole('button', { name: 'Получить сообщения' }).click();
@@ -51,6 +54,7 @@ test('shows real missing-channel error without stale messages', { tag: '@telegra
 
 test('validates username before making a history request', async ({ page }) => {
   await page.goto('/');
+  await openSection(page, 'Поиск');
   await expect(page.getByRole('status')).toHaveText('Telegram подключён');
   await page.getByLabel('Username канала').fill('bad!');
   await page.getByRole('button', { name: 'Получить сообщения' }).click();
@@ -61,6 +65,7 @@ test('displays a backend error and retries status', async ({ page }) => {
   await page.route('**/api/events', route => route.abort());
   await page.route('**/api/telegram/status', route => route.fulfill({ status: 502, body: '' }));
   await page.goto('/');
+  await openSection(page, 'Поиск');
   await expect(page.getByRole('status')).toHaveText('Backend недоступен');
   await expect(page.getByRole('button', { name: 'Получить сообщения' })).toBeDisabled();
   await expect(page.getByRole('alert')).toBeVisible();
@@ -73,6 +78,7 @@ test('displays a backend error and retries status', async ({ page }) => {
 test('renders empty history and media without text safely', async ({ page }) => {
   await page.route('**/api/telegram/chats/**', route => route.fulfill({ json: [] }));
   await page.goto('/');
+  await openSection(page, 'Поиск');
   await expect(page.getByRole('status')).toHaveText('Telegram подключён');
   await page.getByRole('button', { name: 'Получить сообщения' }).click();
   await expect(page.getByRole('heading', { name: 'В канале пока нет доступных сообщений' })).toBeVisible();
@@ -91,8 +97,9 @@ test('renders empty history and media without text safely', async ({ page }) => 
 test('mobile layout fits the viewport', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
+  await openSection(page, 'Поиск');
   await expect(page.getByRole('status')).toHaveText('Telegram подключён');
-  await page.getByRole('button', { name: 'Открыть источники' }).click();
+  await openSection(page, 'Поиск');
   await page.getByRole('button', { name: 'Получить сообщения' }).click();
   await expect(page.locator('.message-card')).toHaveCount(10, { timeout: 30_000 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
@@ -101,10 +108,12 @@ test('mobile layout fits the viewport', async ({ page }) => {
 
 test('theme persists and publication details show actual message IDs', async ({ page }) => {
   await page.goto('/');
+  await openSection(page, 'Поиск');
   await expect(page.getByRole('status')).toHaveText('Telegram подключён');
   await page.getByRole('button', { name: 'Тёмная тема' }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.reload();
+  await openSection(page, 'Поиск');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.getByRole('button', { name: 'Получить сообщения' }).click();
   await expect(page.locator('.message-card')).toHaveCount(10);
@@ -118,7 +127,8 @@ test('creates edits pauses and deletes a template through the real API', { tag: 
   const name = `E2E research ${Date.now()}`;
   const edited = name + ' edited';
   await page.goto('/');
-  await page.getByRole('button', { name: 'Шаблоны', exact: true }).click();
+  await openSection(page, 'Поиск');
+  await openSection(page, 'Шаблоны');
   await page.getByRole('button', { name: 'Создать шаблон' }).click();
   await page.getByLabel('Название шаблона').fill(name);
   await page.getByLabel('Запрос Telegram', { exact: true }).fill('Java');
@@ -135,7 +145,7 @@ test('creates edits pauses and deletes a template through the real API', { tag: 
   await card.getByRole('button', { name: 'Пауза', exact: true }).click();
   await expect(card).toContainText('Приостановлен');
   await page.reload();
-  await page.getByRole('button', { name: 'Шаблоны', exact: true }).click();
+  await openSection(page, 'Шаблоны');
   await expect(card).toContainText('Приостановлен');
   await card.getByRole('button', { name: 'Удалить', exact: true }).click();
   await expect(card).toHaveCount(0);
@@ -143,6 +153,7 @@ test('creates edits pauses and deletes a template through the real API', { tag: 
 
 test('searches Telegram history with paging and original links', { tag: '@telegram' }, async ({ page }) => {
   await page.goto('/');
+  await openSection(page, 'Поиск');
   await expect(page.getByRole('status')).toHaveText('Telegram подключён');
   await page.getByLabel('Сообщений', { exact: true }).fill('5');
   await page.getByLabel('Поисковый запрос').fill('features');
@@ -160,7 +171,8 @@ test('notification center shows explanation and marks an item read', async ({ pa
   await page.route('**/api/notifications', route => route.fulfill({ json: { items: [item], unread: item.read ? 0 : 1, cursor: null } }));
   await page.route('**/api/notifications/synthetic-test/read', route => { item.read = true; return route.fulfill({ json: { deleted: true } }); });
   await page.goto('/');
-  await page.getByRole('button', { name: /^Уведомления \d+$/ }).click();
+  await openSection(page, 'Поиск');
+  await openSection(page, 'Уведомления');
   await expect(page.locator('.notification-card')).toHaveCount(1);
   await expect(page.locator('.match-reason')).toContainText('Java, Spring, Kafka');
   await page.getByRole('button', { name: 'Отметить прочитанным' }).click();
@@ -173,6 +185,7 @@ test('notification center shows explanation and marks an item read', async ({ pa
 test('global free limit is explicit and never substitutes channel results', async ({ page }) => {
   await page.route('**/api/search', route => route.fulfill({ json: { messages: [], cursor: '', state: 'free_limit', notice: 'Бесплатный глобальный поиск недоступен. Stars не расходуются.' } }));
   await page.goto('/');
+  await openSection(page, 'Поиск');
   await page.getByLabel('Область поиска').selectOption('global');
   await page.getByLabel('Поисковый запрос').fill('synthetic query');
   await page.getByRole('button', { name: 'Искать в Telegram' }).click();
@@ -182,8 +195,9 @@ test('global free limit is explicit and never substitutes channel results', asyn
 
 test('real local archive paginates and searches through backend', { tag: '@telegram' }, async ({ page }) => {
   await page.goto('/');
+  await openSection(page, 'Поиск');
   await expect(page.getByRole('status')).toHaveText('Telegram подключён');
-  await page.getByRole('button', { name: 'Локальный архив', exact: true }).click();
+  await openSection(page, 'Архив');
   await expect(page.getByText('Доступная история загружена', { exact: true })).toBeVisible();
   await expect(page.locator('.history-archive .message-card')).toHaveCount(50);
   await page.getByRole('button', { name: 'Следующая страница архива' }).click();
@@ -209,8 +223,9 @@ test('archive resumes a failed import and displays progress without percentages'
   await page.route('**/api/history/syncs', route => route.fulfill({ json: [state()] }));
   await page.route('**/api/history/telegram/messages?**', route => route.fulfill({ json: { messages: [], total: 0, nextCursor: null, query: '' } }));
   await page.goto('/');
+  await openSection(page, 'Поиск');
   await expect(page.getByRole('status')).toHaveText('Telegram подключён');
-  await page.getByRole('button', { name: 'Локальный архив', exact: true }).click();
+  await openSection(page, 'Архив');
   await expect(page.getByRole('alert')).toContainText('Сетевая ошибка');
   await page.getByRole('button', { name: 'Продолжить загрузку' }).click();
   await expect(page.getByTestId('history-count')).toHaveText('110');
@@ -233,8 +248,9 @@ test('history stop preserves cursor and explicit limit controls resume', async (
   await page.route('**/api/history/syncs', route => route.fulfill({ json: [state()] }));
   await page.route('**/api/history/telegram/messages?**', route => route.fulfill({ json: { messages: [{ id: 10, channelId: -1001, date: 1700000000, text: 'Synthetic saved message' }], total: 1000, nextCursor: null, query: '' } }));
   await page.goto('/');
+  await openSection(page, 'Поиск');
   await expect(page.getByRole('status')).toHaveText('Telegram подключён');
-  await page.getByRole('button', { name: 'Локальный архив', exact: true }).click();
+  await openSection(page, 'Архив');
   await expect(page.getByLabel('Лимит сохранённых сообщений')).toBeDisabled();
   await page.getByRole('button', { name: 'Остановить загрузку' }).click();
   await expect(page.getByText('Загрузка приостановлена', { exact: true })).toBeVisible();
@@ -259,6 +275,7 @@ test('opening history settings never automatically requests unlimited import', a
   await page.route('**/api/history/syncs', route => route.fulfill({ json: [] }));
   await page.route('**/api/history/telegram/messages?**', route => route.fulfill({ json: { messages: [], total: 0, nextCursor: null, query: '' } }));
   await page.goto('/');
+  await openSection(page, 'Поиск');
   await expect(page.getByRole('status')).toHaveText('Telegram подключён');
   await page.getByRole('button', { name: 'Настроить загрузку истории' }).click();
   await expect(page.getByRole('button', { name: 'Начать загрузку' })).toBeEnabled();
@@ -272,14 +289,15 @@ test('online and archive searches use separate APIs and retain channel switching
   await page.route('**/api/search', route => { onlineRequests++; return route.fulfill({ json: { messages: [], cursor: '', state: 'ok', notice: null } }); });
   await page.route('**/api/history/**/messages?**', route => { archiveRequests++; return route.fulfill({ json: { messages: [], total: 0, nextCursor: null, query: '' } }); });
   await page.goto('/');
+  await openSection(page, 'Поиск');
   await expect(page.getByRole('status').first()).toHaveText('Telegram подключён');
   await page.getByLabel('Поисковый запрос').fill('Java');
   await page.getByRole('button', { name: 'Искать в Telegram' }).click();
   expect(onlineRequests).toBe(1); expect(archiveRequests).toBe(0);
   await expect(page.getByText('Источник результатов: Telegram API. Локальный архив не используется.')).toBeVisible();
-  await page.getByRole('button', { name: 'Локальный архив', exact: true }).click();
+  await openSection(page, 'Архив');
   await expect(page.getByText('Источник результатов: локальный архив SQLite. Поиск не обращается к Telegram API.')).toBeVisible();
-  await expect(page.getByLabel('Поисковый запрос')).toHaveCount(0);
+  await expect(page.getByLabel('Поисковый запрос')).not.toBeVisible();
   await page.getByLabel('Поиск по всей сохранённой истории').fill('Java');
   await page.getByRole('button', { name: 'Найти в истории' }).click();
   await expect(page.getByText('В сохранённой истории нет совпадений')).toBeVisible();
@@ -287,7 +305,7 @@ test('online and archive searches use separate APIs and retain channel switching
   await page.getByLabel('Канал для истории').fill('@telegramtips');
   await page.getByRole('button', { name: 'Открыть архив', exact: true }).click();
   await expect(page.getByLabel('Канал для истории')).toHaveValue('@telegramtips');
-  await page.getByRole('button', { name: 'Поиск в Telegram', exact: true }).click();
+  await openSection(page, 'Поиск');
   await expect(page.getByLabel('Username канала')).toHaveValue('@telegramtips');
   expect(onlineRequests).toBe(1);
 });
@@ -318,6 +336,8 @@ test('SSE updates and reconnect deduplicate desktop notices and click opens the 
     Object.defineProperty(window, 'Notification', { value: FakeNotice });
   });
   await page.goto('/');
+  await openSection(page, 'Поиск');
+  await openSection(page, 'Уведомления');
   await page.getByRole('button', { name: 'Разрешить desktop-уведомления' }).click();
   await expect(page.getByRole('button', { name: 'Desktop-уведомления разрешены' })).toBeDisabled();
   async function emit(revision: number, unread: number) {
@@ -327,7 +347,7 @@ test('SSE updates and reconnect deduplicate desktop notices and click opens the 
     }, { revision, unread });
   }
   await emit(0, 0);
-  await expect(page.getByRole('button', { name: 'Уведомления 0', exact: true })).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'Основная навигация' }).getByRole('button', { name: 'Уведомления', exact: true }).locator('.badge')).toHaveText('0');
   hasItem = true; await emit(1, 1);
   await expect.poll(() => page.evaluate(() => (window as unknown as { testNotices: unknown[] }).testNotices.length)).toBe(1);
   const notice = await page.evaluate(() => {
@@ -349,6 +369,7 @@ test('SSE updates and reconnect deduplicate desktop notices and click opens the 
 
 test('real SSE can disconnect and reconnect with a fresh summary', { tag: '@telegram' }, async ({ page }) => {
   await page.goto('/');
+  await openSection(page, 'Поиск');
   const summaries = await page.evaluate(async () => {
     const result: { unread: number; revision: number }[] = [];
     for (let i = 0; i < 2; i++) {
@@ -386,7 +407,8 @@ test('MCP settings require explicit enable and source grants and reuse the capab
   });
   await page.route('**/api/capabilities/get_telegram_status', route => { statusCalls++; return route.fulfill({ json: { ok: true, data: { authorized: true, authorizationState: 'Ready', connectionState: 'Ready' }, error: null } }); });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Интеграции → MCP', exact: true }).click();
+  await openSection(page, 'Поиск');
+  await openSection(page, 'MCP');
   await expect(page.getByText('MCP выключен', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Проверить Telegram через общий API' })).toBeDisabled();
   await expect(page.getByLabel(/Synthetic public source/)).not.toBeChecked();
@@ -424,7 +446,8 @@ test('bot integration shows optional configuration and persistent delivery statu
   });
   await page.route('**/api/integrations/bot', route => route.fulfill({ json: state }));
   await page.goto('/');
-  await page.getByRole('button', { name: 'Интеграции → Telegram Bot', exact: true }).click();
+  await openSection(page, 'Поиск');
+  await openSection(page, 'Telegram Bot');
   const panel = page.getByRole('region', { name: 'Интеграции Bot API', exact: true });
   await expect(panel.getByText('Бот выключен', { exact: true })).toBeVisible();
   await panel.getByLabel('Токен бота').fill('123:synthetic');
@@ -451,7 +474,7 @@ test('bot integration shows optional configuration and persistent delivery statu
   await expect(panel.getByText(/Боту требуется внимание/)).toBeVisible();
   await expect(panel.locator('dd')).toHaveText(['1', '3', '2', '1']);
   await expect(panel.getByText(/Повторим после/)).toBeVisible();
-  await page.getByRole('button', { name: 'Поиск в Telegram', exact: true }).click();
+  await openSection(page, 'Поиск');
   await expect(page.getByRole('heading', { name: 'Поиск в Telegram', exact: true })).toBeVisible();
 });
 
@@ -466,7 +489,8 @@ test('saved publications display bot decisions, statuses and bounded pagination'
     return route.fulfill({ json: { items: [{ id: older ? 'synthetic-older' : 'synthetic-new', status, sequence: older ? 1 : 2, updatedAt: 1700000000000, message: { id: older ? 1 : 2, channelId: -1001, date: 1700000000, text: status === 'REJECTED' ? 'Synthetic rejected publication' : older ? 'Synthetic older saved publication' : 'Synthetic saved publication', title: 'Synthetic jobs', username: 'synthetic_jobs', link: 'https://t.me/synthetic_jobs/2' } }], nextCursor: !older && status === 'SAVED' ? 2 : null } });
   });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Избранное', exact: true }).click();
+  await openSection(page, 'Поиск');
+  await openSection(page, 'Избранное');
   await expect(page.getByRole('heading', { name: 'Избранное и решения' })).toBeVisible();
   await expect(page.getByText('Synthetic saved publication', { exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Открыть оригинал ↗' })).toHaveAttribute('href', 'https://t.me/synthetic_jobs/2');
@@ -476,7 +500,7 @@ test('saved publications display bot decisions, statuses and bounded pagination'
   await expect(page.getByText('Synthetic rejected publication', { exact: true })).toBeVisible();
   await expect(page.getByText('Synthetic older saved publication', { exact: true })).not.toBeVisible();
   expect(pages).toBe(3);
-  await page.getByRole('button', { name: 'Поиск в Telegram', exact: true }).click();
+  await openSection(page, 'Поиск');
   await expect(page.getByRole('heading', { name: 'Избранное и решения' })).not.toBeVisible();
 });
 
@@ -485,10 +509,11 @@ test('subscriptions created in the bot become visible through the shared templat
   let created = false;
   await page.route('**/api/templates', route => route.fulfill({ json: created ? [{ id: 'synthetic-bot-rule', name: 'Synthetic phone subscription', required: ['java'], any: [], excluded: ['junior'], telegramQuery: 'java', sourceMode: 'selected', sources: [-1001], active: true, subscribed: true }] : [] }));
   await page.goto('/');
-  await page.getByRole('button', { name: 'Шаблоны', exact: true }).click();
+  await openSection(page, 'Поиск');
+  await openSection(page, 'Шаблоны');
   await expect(page.getByRole('button', { name: 'Обновить подписки' })).toBeVisible();
   created = true;
   await page.getByRole('button', { name: 'Обновить подписки' }).click();
-  await expect(page.getByText('Synthetic phone subscription', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Шаблоны', exact: true }).getByText('Synthetic phone subscription', { exact: true })).toBeVisible();
   await expect(page.getByText(/Мониторинг включён/)).toBeVisible();
 });
