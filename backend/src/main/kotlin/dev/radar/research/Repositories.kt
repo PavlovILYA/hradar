@@ -4,12 +4,14 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 import java.sql.Connection
 import java.sql.DriverManager
 import java.util.UUID
 import dev.radar.history.*
 import dev.radar.bot.*
 import dev.radar.telegram.TelegramMessage
+import dev.radar.sources.*
 
 /** All JDBC work is serialized, and invoked on Dispatchers.IO by services/routes. */
 class Repositories(path: Path) : AutoCloseable {
@@ -20,12 +22,14 @@ class Repositories(path: Path) : AutoCloseable {
     init {
         Files.createDirectories(path.toAbsolutePath().parent)
         db = DriverManager.getConnection("jdbc:sqlite:${path.toAbsolutePath()}")
+        try {
+        Files.setPosixFilePermissions(path.toAbsolutePath(), PosixFilePermissions.fromString("rw-------"))
         db.createStatement().use { s ->
             s.execute("PRAGMA foreign_keys=ON")
             s.execute("PRAGMA busy_timeout=5000")
             s.execute("PRAGMA journal_mode=WAL")
             val version = s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) }
-            check(version <= 9) { "Database schema is newer than this application" }
+            check(version <= 10) { "Database schema is newer than this application" }
             if (version == 0) transaction {
                 s.execute("CREATE TABLE monitored_channels(id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, data TEXT NOT NULL)")
                 s.execute("CREATE TABLE search_templates(id TEXT PRIMARY KEY, data TEXT NOT NULL)")
@@ -92,8 +96,14 @@ class Repositories(path: Path) : AutoCloseable {
                 s.execute("CREATE INDEX bot_invitations_open ON bot_invitations(bot_id,expires_at) WHERE used_at IS NULL AND recalled_at IS NULL")
                 s.execute("PRAGMA user_version=9")
             }
+            if (version < 10) transaction {
+                s.execute("CREATE TABLE telegram_sources(source_key TEXT PRIMARY KEY,chat_id INTEGER NOT NULL,scope_kind TEXT NOT NULL CHECK(scope_kind IN ('CHAT','FORUM_TOPIC','MESSAGE_THREAD')),scope_id INTEGER NOT NULL,legacy_channel_id INTEGER UNIQUE REFERENCES monitored_channels(id) ON DELETE CASCADE,data TEXT NOT NULL,UNIQUE(chat_id,scope_kind,scope_id))")
+                channels().forEach { channel -> saveSource(legacySource(channel)) }
+                s.execute("PRAGMA user_version=10")
+            }
 
-        }
+
+        } } catch (ex: Throwable) { db.close(); throw ex }
     }
     private fun <T> transaction(block: () -> T): T {
         db.autoCommit = false
@@ -109,13 +119,45 @@ class Repositories(path: Path) : AutoCloseable {
         args.forEachIndexed { i, value -> s.setObject(i + 1, value) }
         s.executeQuery().use { r -> buildList { while (r.next()) add(read(r)) } }
     }
+    private fun legacySource(channel: MonitoredChannel) = TelegramSource(chatId = channel.id, type = SourceType.CHANNEL,
+        title = channel.title, username = channel.username, isPublic = true, access = SourceAccess.UNKNOWN, legacyChannel = true)
+    @Synchronized fun sources(): List<TelegramSource> {
+        val subscriptions = templates().filter { it.active && it.subscribed && it.sourceMode != "global" }
+        return rows("SELECT data FROM telegram_sources ORDER BY rowid") { json.decodeFromString<TelegramSource>(it.getString(1)) }.map { source ->
+            source.copy(monitoringEnabled = source.legacyChannel && subscriptions.any { it.sourceMode == "all" || source.chatId in it.sources })
+        }
+    }
+    @Synchronized fun saveSource(input: TelegramSource): TelegramSource = atomic {
+        input.scope.validate()
+        require(input.scope.kind != ScopeKind.FORUM_TOPIC || (input.type == SourceType.SUPERGROUP && input.isForum)) { "Тема должна принадлежать форумной супергруппе" }
+        require(!input.isPublic || (input.type in setOf(SourceType.CHANNEL, SourceType.SUPERGROUP) && !input.username.isNullOrBlank())) { "Некорректная публичность источника" }
+        require(input.chatId != 0L && input.title.length <= 256 && (input.username?.length ?: 0) <= 32) { "Некорректный источник" }
+        val old = rows("SELECT data FROM telegram_sources WHERE chat_id=? AND scope_kind=? AND scope_id=?", listOf(input.chatId, input.scope.kind.name, input.scope.nativeId())) { json.decodeFromString<TelegramSource>(it.getString(1)) }.firstOrNull()
+        require(old != null || rows("SELECT COUNT(*) FROM telegram_sources") { it.getInt(1) }.single() < 500) { "Каталог поддерживает до 500 выбранных областей" }
+        require(old?.legacyChannel != true || (input.type == SourceType.CHANNEL && input.isPublic && !input.username.isNullOrBlank())) { "Источник больше не публичный. Отключите старый публичный источник перед добавлением в локальный каталог" }
+        val source = input.copy(key = old?.key ?: UUID.randomUUID().toString(), legacyChannel = input.legacyChannel || old?.legacyChannel == true, monitoringEnabled = false)
+        update("INSERT INTO telegram_sources VALUES(?,?,?,?,?,?) ON CONFLICT(chat_id,scope_kind,scope_id) DO UPDATE SET legacy_channel_id=excluded.legacy_channel_id,data=excluded.data", source.key, source.chatId, source.scope.kind.name, source.scope.nativeId(), if (source.legacyChannel) source.chatId else null, json.encodeToString(source))
+        source
+    }
+    @Synchronized fun refreshSource(key: String, input: TelegramSource): TelegramSource = atomic {
+        val existing = rows("SELECT data FROM telegram_sources WHERE source_key=?", listOf(key)) { json.decodeFromString<TelegramSource>(it.getString(1)) }.firstOrNull() ?: throw ResourceNotFound()
+        require(existing.chatId == input.chatId && existing.scope == input.scope) { "Telegram вернул другую область" }
+        saveSource(input)
+    }
+    @Synchronized fun deleteSource(key: String): Boolean = atomic {
+        val source = rows("SELECT data FROM telegram_sources WHERE source_key=?", listOf(key)) { json.decodeFromString<TelegramSource>(it.getString(1)) }.firstOrNull() ?: return@atomic false
+        if (source.legacyChannel) deleteChannel(source.chatId) else update("DELETE FROM telegram_sources WHERE source_key=?", key) > 0
+    }
     @Synchronized fun channels(): List<MonitoredChannel> = rows("SELECT data FROM monitored_channels ORDER BY username") { json.decodeFromString<MonitoredChannel>(it.getString(1)) }
     @Synchronized fun saveChannel(channel: MonitoredChannel): MonitoredChannel {
         require(channels().size < 10 || channels().any { it.id == channel.id }) { "MVP поддерживает до 10 отслеживаемых источников" }
-        update("INSERT INTO monitored_channels VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET username=excluded.username,data=excluded.data", channel.id, channel.username, json.encodeToString(channel))
+        atomic {
+            update("INSERT INTO monitored_channels VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET username=excluded.username,data=excluded.data", channel.id, channel.username, json.encodeToString(channel))
+            saveSource(legacySource(channel))
+        }
         return channel
     }
-    @Synchronized fun deleteChannel(id: Long): Boolean = transaction {
+    @Synchronized fun deleteChannel(id: Long): Boolean = atomic {
         // Keep template JSON and normalized sources consistent, pausing empty selected templates.
         templates().filter { id in it.sources }.forEach { t ->
             val remaining = t.sources - id

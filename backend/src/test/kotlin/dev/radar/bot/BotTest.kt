@@ -173,7 +173,7 @@ class BotTest {
             f.repo.recordMatch(rule, f.publication())
         }
         DriverManager.getConnection("jdbc:sqlite:$path").use { db -> db.createStatement().use { s ->
-            s.execute("DROP TABLE bot_access"); s.execute("DROP TABLE bot_invitations"); s.execute("DROP TABLE bot_publish_request"); s.execute("DROP TABLE bot_publish_permission"); s.execute("DROP TABLE bot_workspace"); s.execute("DROP TABLE publication_decisions"); s.execute("DROP INDEX matches_date"); s.execute("ALTER TABLE matched_messages DROP COLUMN message_date"); s.execute("PRAGMA user_version=5")
+            s.execute("DROP TABLE telegram_sources"); s.execute("DROP TABLE bot_access"); s.execute("DROP TABLE bot_invitations"); s.execute("DROP TABLE bot_publish_request"); s.execute("DROP TABLE bot_publish_permission"); s.execute("DROP TABLE bot_workspace"); s.execute("DROP TABLE publication_decisions"); s.execute("DROP INDEX matches_date"); s.execute("ALTER TABLE matched_messages DROP COLUMN message_date"); s.execute("PRAGMA user_version=5")
         } }
         Fixture(path).use { f ->
             assertEquals(2L, f.repo.botOffset(123)); assertTrue(f.repo.botRegistered(123, 7))
@@ -327,7 +327,7 @@ class BotTest {
             repo.saveHistoryPage(state, listOf(TelegramMessage(1, 1700000000, "Synthetic Java", channel.id)))
         }
         DriverManager.getConnection("jdbc:sqlite:$path").use { db -> db.createStatement().use { s ->
-            listOf("bot_access", "bot_invitations", "bot_publish_request", "bot_publish_permission", "bot_outbox", "bot_recipients", "bot_state").forEach { s.execute("DROP TABLE $it") }; s.execute("DROP TABLE bot_workspace"); s.execute("DROP TABLE publication_decisions"); s.execute("DROP INDEX matches_date"); s.execute("ALTER TABLE matched_messages DROP COLUMN message_date"); s.execute("PRAGMA user_version=4")
+            listOf("telegram_sources", "bot_access", "bot_invitations", "bot_publish_request", "bot_publish_permission", "bot_outbox", "bot_recipients", "bot_state").forEach { s.execute("DROP TABLE $it") }; s.execute("DROP TABLE bot_workspace"); s.execute("DROP TABLE publication_decisions"); s.execute("DROP INDEX matches_date"); s.execute("ALTER TABLE matched_messages DROP COLUMN message_date"); s.execute("PRAGMA user_version=4")
         } }
         Fixture(path).use { f ->
             assertEquals(channel, f.repo.channels().single()); assertEquals(1, f.repo.unreadCount())

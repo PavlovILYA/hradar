@@ -9,6 +9,7 @@ async function fixture(page: Page) {
     const url = new URL(route.request().url()), path = url.pathname, method = route.request().method();
     if (method !== 'GET') writes.push({ path, method, body: route.request().postData() ? route.request().postDataJSON() : null });
     const reply = (json: unknown) => route.fulfill({ json });
+    if (path === '/api/sources') return route.fulfill({ json: { items: [] } });
     if (path === '/api/events') return route.abort();
     if (path === '/api/telegram/status') return reply({ authorized: true, authorizationState: 'Ready', connectionState: 'Ready' });
     if (path === '/api/onboarding') return reply({ state: 'Ready', csrfToken: 'synthetic-csrf' });

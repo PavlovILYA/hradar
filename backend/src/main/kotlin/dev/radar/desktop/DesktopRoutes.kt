@@ -22,12 +22,13 @@ fun Application.configureDesktopSecurity(token: String?, csrf: String) {
             val api = path.startsWith("/api/")
             val login = path.startsWith("/api/onboarding") || path == "/api/desktop/shutdown"
             val botSettings = path.startsWith("/api/integrations/bot")
+            val sourceSettings = path == "/api/sources" || path.startsWith("/api/sources/") || path.startsWith("/api/source-catalog")
             val mutation = call.request.httpMethod !in setOf(HttpMethod.Get, HttpMethod.Head)
             if (!validHost || !validOrigin || (token != null && api && call.request.cookies["hradar-desktop"] != token) ||
-                ((login || botSettings) && mutation && (origin == null || call.request.headers["X-Hradar-CSRF"] != csrf))) {
+                ((login || botSettings || sourceSettings) && mutation && (origin == null || call.request.headers["X-Hradar-CSRF"] != csrf))) {
                 call.respondText("{\"error\":\"Доступ запрещён\"}", ContentType.Application.Json, HttpStatusCode.Forbidden)
             }
-            if (login || botSettings || path == "/desktop/launch") call.response.headers.append("Cache-Control", "no-store")
+            if (login || botSettings || sourceSettings || path == "/desktop/launch") call.response.headers.append("Cache-Control", "no-store")
             call.response.headers.append("Referrer-Policy", "no-referrer")
             call.response.headers.append("X-Content-Type-Options", "nosniff")
             call.response.headers.append("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")

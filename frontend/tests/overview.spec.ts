@@ -16,6 +16,7 @@ async function fixture(page: Page, options: { empty?: boolean; criteria?: boolea
     const path = new URL(route.request().url()).pathname; paths.push(route.request().url());
     const method = route.request().method();
     if (method !== 'GET') writes.push(path);
+    if (path === '/api/sources') return route.fulfill({ json: { items: [] } });
     if (path === '/api/events') return route.abort();
     if (fail === 'all' || fail === path) return route.fulfill({ status: 503, json: { error: 'Синтетическая ошибка' } });
     const reply = (json: unknown) => route.fulfill({ json });

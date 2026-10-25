@@ -51,6 +51,14 @@ Choose minimal checks for the changed area; report exact outcomes:
 - Update **`ARCHITECTURE.md`** only for real architectural changes, **`ROADMAP.md`** for agreed scope/status changes, and **`docs/DEV_STATUS.md`** at a meaningful checkpoint/end of task with concise **VERIFIED / NOT VERIFIED / NEXT ACTION** evidence. Avoid rewriting them on every minor edit.
 - A task is done when its acceptance criteria are met and verified, not when files merely compile. State tests that ran, blockers, any unverified end-to-end scenario, and relevant commit hashes. If external verification requires user action, give exact steps instead of claiming success.
 
+## Local source preview after completion
+
+- The owner requests a local source launch after each completed task. Reuse the
+  single running backend/session when compatible; do not download installers.
+- If deployment would migrate real user data under a no-user-data constraint,
+  keep that backend untouched and open a separate clearly labelled synthetic
+  source preview. Report its URL and limits; never present fake data as live Telegram.
+
 ## Application versioning
 
 - Before completing **every task**, explicitly decide whether a version bump is required. Update the canonical source when needed and state the decision, version and reason in the final report.

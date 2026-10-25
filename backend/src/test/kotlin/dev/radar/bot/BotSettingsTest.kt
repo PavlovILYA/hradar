@@ -185,7 +185,7 @@ class BotSettingsTest {
         val path = Files.createTempDirectory("bot-v9-rollback").resolve("db.sqlite")
         Repositories(path).use { repo -> repo.saveBotAccess(123, 7, "owner", "Owner", null) }
         DriverManager.getConnection("jdbc:sqlite:$path").use { db -> db.createStatement().use { s ->
-            s.execute("DROP TABLE bot_access"); s.execute("DROP TABLE bot_invitations")
+            s.execute("DROP TABLE telegram_sources"); s.execute("DROP TABLE bot_access"); s.execute("DROP TABLE bot_invitations")
             s.execute("PRAGMA user_version=8"); s.execute("CREATE VIEW bot_access AS SELECT id FROM bot_state")
         } }
         assertFails { Repositories(path).close() }

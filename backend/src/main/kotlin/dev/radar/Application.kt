@@ -1,5 +1,7 @@
 package dev.radar
 
+import dev.radar.sources.*
+
 import dev.radar.desktop.*
 import io.ktor.server.http.content.staticResources
 import dev.radar.api.configureRoutes
@@ -146,6 +148,7 @@ fun main() {
         configureSavedRoutes(repositories)
         configureRoutes(telegram)
         configureResearchRoutes(telegram, repositories, matching, search, notifications)
+        configureSourceRoutes(SourceCatalogService(TdlibSourceCatalog(telegram::executeRead), repositories), repositories)
         configureHistoryRoutes(telegram, repositories, historySync)
     }
     val marker = paths.data.resolve("desktop-instance.json")
