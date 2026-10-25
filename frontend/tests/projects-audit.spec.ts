@@ -16,6 +16,7 @@ async function fixture(page: Page, options: { delayedProject?: boolean; failedCo
     const reply = (json: unknown, status = 200) => route.fulfill({ json, status });
     if (path === '/api/events') return route.abort();
     if (path === '/api/telegram/status') return reply({ authorized: true, authorizationState: 'Ready', connectionState: 'Ready' });
+    if (path === '/api/sources') return reply({ items: [] });
     if (path === '/api/channels') return reply([{ id: -1001, title: 'Synthetic source', username: 'synthetic_jobs' }]);
     if (path === '/api/templates') return reply(project.criteria.templateIds.length ? [template] : []);
     if (path === '/api/monitoring') return reply([]);

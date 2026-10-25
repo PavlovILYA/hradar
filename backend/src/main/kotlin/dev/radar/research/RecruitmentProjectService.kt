@@ -6,7 +6,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.coroutineContext
 import java.util.UUID
 
-class RecruitmentProjectService(private val repo: Repositories, private val matching: MatchingService, private val subscriptions: SubscriptionService, private val recruiter: RecruiterService, private val searchTimeoutMs: Long = 20_000) {
+class RecruitmentProjectService(private val repo: Repositories, private val matching: MatchingService, private val subscriptions: SubscriptionService, private val recruiter: RecruiterService, private val searchTimeoutMs: Long = 20_000, private val localSearch: LocalProjectSearchService? = null) {
     // Ephemeral, opaque continuations: bounded memory, no user data or migration in cursors.
     private data class Continuation(val project: RecruitmentProject, val query: String, val mode: String,
         val sourceCursor: String, val seen: Set<Pair<Long, Long>>, val expiresAt: Long)
@@ -31,7 +31,7 @@ class RecruitmentProjectService(private val repo: Repositories, private val matc
     }
     fun save(input: ProjectInput, id: String? = null): RecruitmentProject {
         require(input.name.trim().length in 1..100 && input.description.length <= 20000) { "Название: 1–100 символов; описание: до 20000" }
-        require(input.sources.distinct().size == input.sources.size && input.sources.size in 1..10) { "Выберите от 1 до 10 источников" }
+        require(input.sources.distinct().size == input.sources.size && input.sources.size + input.sourceKeys.size in 1..10 && input.sourceKeys.distinct().size == input.sourceKeys.size) { "Выберите от 1 до 10 источников" }
         require(input.templateIds.size <= 50 && input.templateIds.distinct().size == input.templateIds.size) { "Некорректные связи шаблонов" }
         fun terms(values: List<String>): List<String> {
             require(values.size <= 20 && values.all { it.trim().length in 1..100 }) { "До 20 требований, каждое 1–100 символов" }
@@ -52,8 +52,11 @@ class RecruitmentProjectService(private val repo: Repositories, private val matc
     }
     fun statistics(id: String): ProjectStatistics { get(id); return repo.recruitmentStatistics(id) }
     fun add(id: String, input: AddPublication): RecruitmentCard {
-        val project = get(id); require(input.channelId < 0 && input.messageId > 0) { "Некорректная публикация" }
-        val evidence = repo.recruitmentPublication(input.channelId, input.messageId) ?: throw ResourceNotFound()
+        val project = get(id); require(input.channelId != 0L && input.messageId > 0) { "Некорректная публикация" }
+        val evidence = (if (input.sourceKey == null && input.channelId in project.criteria.sources)
+            repo.recruitmentPublication(input.channelId, input.messageId)
+                ?: repo.localProjectPublication(project, input.channelId, input.messageId)
+            else repo.localProjectPublication(project, input.channelId, input.messageId, input.sourceKey)) ?: throw ResourceNotFound()
         // Shared publication evidence may carry another project's/template's explanation.
         val message = evidence.copy(explanation = explain(project, evidence.text))
         return repo.addRecruitmentCard(id, message, classifier.classify(message.text), project)
@@ -75,10 +78,11 @@ class RecruitmentProjectService(private val repo: Repositories, private val matc
         val previous = request.cursor.takeIf { it.isNotEmpty() }?.let(::continuation)
         require(previous == null || previous.project == project && previous.query == request.query && previous.mode == request.mode) { "Условия изменились. Начните поиск заново" }
         val savedSources = repo.channels().map { it.id }.toSet()
-        if (project.criteria.sources.isEmpty() || project.criteria.sources.none { it in savedSources })
+        if (project.criteria.sourceKeys.isEmpty() && (project.criteria.sources.isEmpty() || project.criteria.sources.none { it in savedSources }))
             return ProjectSearchPage(state = "no_sources", notice = "Сохраните Telegram-источники и выберите их в настройках проекта.")
         require(project.criteria.sources.all { it in savedSources }) { "Один из источников удалён. Обновите источники проекта" }
-        if (request.mode == "archive" && repo.recruitmentArchiveSize(project.criteria.sources) == 0L)
+        require(project.criteria.sourceKeys.all { key -> repo.sources().any { it.key == key } }) { "Один из источников удалён. Обновите источники проекта" }
+        if (request.mode == "archive" && project.criteria.sourceKeys.isEmpty() && repo.recruitmentArchiveSize(project.criteria.sources) == 0L)
             return ProjectSearchPage(state = "archive_empty", exhausted = true)
 
         var sourceCursor = previous?.sourceCursor.orEmpty()
@@ -95,7 +99,9 @@ class RecruitmentProjectService(private val repo: Repositories, private val matc
             visited.add(sourceCursor)
             val result = try {
                 withTimeoutOrNull(remainingMs) {
-                    recruiter.find(request.query, request.mode, project.criteria.sources, sourceCursor,
+                    if (project.criteria.sourceKeys.isNotEmpty()) {
+                        requireNotNull(localSearch) { "Локальный поиск не подключён" }.find(project.criteria, request.query, request.mode, sourceCursor, minOf(10 - messages.size, 10_000 - seen.size))
+                    } else recruiter.find(request.query, request.mode, project.criteria.sources, sourceCursor,
                         minOf(10 - messages.size, 10_000 - seen.size), withLinks = false)
                 }
             } catch (e: TelegramRequestException) {
@@ -127,7 +133,8 @@ class RecruitmentProjectService(private val repo: Repositories, private val matc
         val limitReached = !exhausted && (pages == 5 && messages.size < 10 || state == "search_timeout" || seen.size >= 10_000)
         if (state == "ok" && limitReached) state = "budget"
         // Persist only actual matching evidence, transactionally bound to the criteria snapshot.
-        repo.rememberRecruitmentResults(project, messages)
+        if (project.criteria.sourceKeys.isNotEmpty()) repo.rememberLocalProjectResults(project, messages)
+        else repo.rememberRecruitmentResults(project, messages)
         val cursor = if (exhausted || seen.size >= 10_000) "" else remember(Continuation(project, request.query, request.mode,
             sourceCursor, seen.toSet(), System.currentTimeMillis() + 10 * 60_000))
         return ProjectSearchPage(messages, cursor, state, notice, scanned, messages.size, pages, limitReached, exhausted,
@@ -136,6 +143,7 @@ class RecruitmentProjectService(private val repo: Repositories, private val matc
     /** Explicitly requested subscription; desired terms never become mandatory OR conditions. */
     fun subscribe(id: String): SearchTemplate {
         val project = get(id); require(project.criteria.status == ProjectStatus.ACTIVE) { "Проект архивирован" }
+        require(project.criteria.sourceKeys.isEmpty()) { "Мониторинг выбранных локальных источников появится на этапе C" }
         return repo.recruitmentSubscribe(id, project, subscriptions, rule(project).copy(id = recruitmentSubscriptionId(id), subscribed = true))
     }
 }

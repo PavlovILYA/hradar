@@ -39,7 +39,7 @@ class StorageMigrationTest {
         paths.prepare()
         assertEquals("synthetic-binlog", Files.readString(paths.session.resolve("td.binlog")))
         assertEquals("synthetic-sqlite", Files.readString(paths.session.resolve("files/cache.sqlite")))
-        assertEquals(10, DriverManager.getConnection("jdbc:sqlite:${paths.database}").use { c -> c.createStatement().use { s -> s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) } } })
+        assertEquals(11, DriverManager.getConnection("jdbc:sqlite:${paths.database}").use { c -> c.createStatement().use { s -> s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) } } })
         assertEquals(ApiCredentials(12345, "a".repeat(32)), paths.loadCredentials())
         assertTrue(Files.exists(oldDb))
         assertTrue(Files.exists(oldSession.resolve("td.binlog")))
@@ -238,6 +238,18 @@ class StorageMigrationTest {
         DriverManager.getConnection("jdbc:sqlite:$oldDb").use {
             assertFailsWith<IllegalStateException> { paths.prepare() }
         }
+    }
+
+    @Test fun `SQLite11 missing local archive tables is rejected before storage copy`() = fixture { paths ->
+        Files.createDirectories(paths.data)
+        val oldDb = paths.data.resolve("research.sqlite")
+        Repositories(oldDb).use { }
+        DriverManager.getConnection("jdbc:sqlite:$oldDb").use { db ->
+            db.createStatement().use { it.execute("DROP TABLE local_project_publications") }
+        }
+        assertFailsWith<IllegalStateException> { paths.prepare() }
+        assertFalse(Files.exists(paths.database))
+        assertTrue(Files.exists(oldDb))
     }
 
     @Test fun `SQLite with v8 header but missing schema is rejected`() = fixture { paths ->

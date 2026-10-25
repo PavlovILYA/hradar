@@ -6,12 +6,12 @@ import kotlinx.serialization.Serializable
 @Serializable enum class RecruitmentStage { NEW, INTERESTING, CONTACTED, IN_PROGRESS, REJECTED }
 @Serializable enum class PublicationKind { CANDIDATE, EMPLOYER, OTHER, INSUFFICIENT }
 @Serializable data class Classification(val kind: PublicationKind, val reason: String)
-@Serializable data class ProjectInput(val name: String, val description: String = "", val required: List<String> = emptyList(), val desired: List<String> = emptyList(), val excluded: List<String> = emptyList(), val sources: List<Long> = emptyList(), val templateIds: List<String> = emptyList(), val status: ProjectStatus = ProjectStatus.ACTIVE)
+@Serializable data class ProjectInput(val name: String, val description: String = "", val required: List<String> = emptyList(), val desired: List<String> = emptyList(), val excluded: List<String> = emptyList(), val sources: List<Long> = emptyList(), val templateIds: List<String> = emptyList(), val status: ProjectStatus = ProjectStatus.ACTIVE, val sourceKeys: List<String> = emptyList())
 @Serializable data class RecruitmentProject(val id: String, val criteria: ProjectInput, val createdAt: Long, val updatedAt: Long)
 @Serializable data class ProjectPage(val items: List<RecruitmentProject>, val total: Int)
 @Serializable data class RecruitmentCard(val id: String, val projectId: String, val message: ResearchMessage, val stage: RecruitmentStage = RecruitmentStage.NEW, val notes: String = "", val interest: Int = 0, val classification: Classification, val manualKind: PublicationKind? = null, val createdAt: Long, val updatedAt: Long)
 @Serializable data class CardUpdate(val stage: RecruitmentStage, val notes: String = "", val interest: Int = 0, val manualKind: PublicationKind? = null)
-@Serializable data class AddPublication(val channelId: Long, val messageId: Long)
+@Serializable data class AddPublication(val channelId: Long, val messageId: Long, val sourceKey: String? = null)
 @Serializable data class CardPage(val items: List<RecruitmentCard>, val total: Int)
 @Serializable data class ProjectStatistics(val total: Int, val stages: Map<RecruitmentStage, Int>)
 @Serializable data class ProjectMatchesPage(val messages: List<ResearchMessage>, val nextCursor: Long? = null)

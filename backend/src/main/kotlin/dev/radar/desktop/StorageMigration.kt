@@ -182,13 +182,14 @@ internal class StorageMigration(private val paths: RuntimePaths) {
             DriverManager.getConnection("jdbc:sqlite:${path.toUri()}?mode=ro").use { db ->
                 db.createStatement().use { statement ->
                     val version = statement.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) }
-                    check(version in 1..10) { "Неизвестная версия старой SQLite" }
+                    check(version in 1..11) { "Неизвестная версия старой SQLite" }
                     val required = buildSet {
                         addAll(listOf("monitored_channels", "search_templates"))
                         if (version >= 2) add("imported_messages")
                         if (version >= 8) addAll(listOf("recruitment_projects", "recruitment_cards"))
                         if (version >= 9) addAll(listOf("bot_access", "bot_invitations"))
                         if (version >= 10) add("telegram_sources")
+                        if (version >= 11) addAll(listOf("local_publications", "local_source_membership", "local_source_sync", "local_project_publications"))
                     }
                     val actual = statement.executeQuery("SELECT name FROM sqlite_master WHERE type='table'").use { rows ->
                         buildSet { while (rows.next()) add(rows.getString(1)) }

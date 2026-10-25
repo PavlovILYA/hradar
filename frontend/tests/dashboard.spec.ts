@@ -16,6 +16,7 @@ test.beforeEach(async ({ page, request }, testInfo) => {
   await page.route('**/api/**', route => {
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/telegram/status') return route.fulfill({ json: { authorizationState: 'Ready', authorized: true, connectionState: 'Ready' } });
+    if (path === '/api/sources') return route.fulfill({ json: { items: [] } });
     if (path === '/api/channels' || path === '/api/templates' || path === '/api/monitoring') return route.fulfill({ json: [] });
     if (path === '/api/notifications') return route.fulfill({ json: { items: [], unread: 0, cursor: null } });
     if (path === '/api/projects') return route.fulfill({ json: { items: [], total: 0 } });

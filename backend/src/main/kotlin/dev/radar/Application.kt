@@ -87,6 +87,8 @@ fun main() {
         (telegram.executeRead(TdApi.GetMessageLink().apply { this.chatId = chatId; this.messageId = messageId }) as TdApi.MessageLink).link
     })
     val monitoring = MonitoringService(telegram, repositories, search, notifications)
+    val sourceReader = dev.radar.sources.SourceReadService(repositories, telegram::executeRead)
+    val sourceArchive = dev.radar.sources.SourceArchiveService(repositories, { key, cursor -> sourceReader.recent(key, cursor, 100) }, { telegram.getStatus().let { it.authorized && it.connectionState == "Ready" } })
     val historySync = HistorySyncService(repositories, telegram::getHistoryPage, { telegram.getStatus().let { it.authorized && it.connectionState == "Ready" } })
     val readPort = TdlibReadPort(telegram, search)
     val capabilities = CapabilityService(readPort, repositories)
@@ -144,11 +146,11 @@ fun main() {
         }
         configureCapabilities(capabilities, readPort, repositories)
         configureBotRoutes(bot)
-        configureRecruitmentRoutes(RecruitmentProjectService(repositories, matching, subscriptions, recruiter))
+        configureRecruitmentRoutes(RecruitmentProjectService(repositories, matching, subscriptions, recruiter, localSearch = LocalProjectSearchService(repositories, RecruiterSearchPort(search::search))))
         configureSavedRoutes(repositories)
         configureRoutes(telegram)
         configureResearchRoutes(telegram, repositories, matching, search, notifications)
-        configureSourceRoutes(SourceCatalogService(TdlibSourceCatalog(telegram::executeRead), repositories), repositories)
+        configureSourceRoutes(SourceCatalogService(TdlibSourceCatalog(telegram::executeRead), repositories), repositories, sourceReader, sourceArchive)
         configureHistoryRoutes(telegram, repositories, historySync)
     }
     val marker = paths.data.resolve("desktop-instance.json")
@@ -158,7 +160,7 @@ fun main() {
         if (!cleaned.compareAndSet(false, true)) return
         try {
             server.stop(500, 3000)
-            historySync.close(); monitoring.close(); bot.close(); telegram.close(); repositories.close()
+            sourceArchive.close(); historySync.close(); monitoring.close(); bot.close(); telegram.close(); repositories.close()
             if (launchToken != null) Files.deleteIfExists(marker)
         } finally { lease.close(); stopped.countDown() }
     }
@@ -166,7 +168,7 @@ fun main() {
     try {
         // Bind first. A competing unrelated listener must never cause a second account client.
         server.start(wait = false)
-        if (!DesktopRuntime.smoke) { telegram.start(); bot.start(); monitoring.start(); historySync.resumePending() }
+        if (!DesktopRuntime.smoke) { telegram.start(); bot.start(); monitoring.start(); historySync.resumePending(); sourceArchive.resumePending() }
         if (launchToken != null) {
             val temporaryMarker = Files.createTempFile(paths.data, "desktop-", ".tmp", java.nio.file.attribute.PosixFilePermissions.asFileAttribute(java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")))
             try {

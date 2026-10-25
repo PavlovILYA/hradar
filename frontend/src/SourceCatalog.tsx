@@ -20,17 +20,17 @@ export function sameSource(a: TelegramSource, b: TelegramSource) {
 const sourceId = (source: TelegramSource) => `${source.chatId}:${source.scope.kind}:${source.scope.forumTopicId ?? source.scope.messageThreadId ?? 0}`;
 const types = { PRIVATE: 'Личный чат', BASIC_GROUP: 'Группа', SUPERGROUP: 'Супергруппа', CHANNEL: 'Канал' };
 const accesses = { AVAILABLE: 'Доступен', UNKNOWN: 'Доступ не подтверждён', UNAVAILABLE: 'Недоступен' };
-export async function sourceRequest<T>(path: string, signal?: AbortSignal, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, { ...init, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(25_000)]) : AbortSignal.timeout(25_000) });
+export async function sourceRequest<T>(path: string, signal?: AbortSignal, init: RequestInit = {}, timeoutMs = 25_000): Promise<T> {
+  const response = await fetch(path, { ...init, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs) });
   if (!response.ok) throw new Error(response.status === 429 ? 'Telegram ограничил частоту запросов. Повторите позже.' :
     response.status === 403 ? 'Доступ запрещён. Обновите страницу и проверьте доступ к источнику.' :
       response.status === 503 ? 'Telegram недоступен. Проверьте подключение и авторизацию.' : 'Не удалось выполнить запрос. Повторите попытку.');
   return response.json() as Promise<T>;
 }
-export async function sourceMutation<T>(path: string, method: 'POST' | 'DELETE', body?: unknown, signal?: AbortSignal) {
+export async function sourceMutation<T>(path: string, method: 'POST' | 'DELETE', body?: unknown, signal?: AbortSignal, timeoutMs = 25_000) {
   const auth = await sourceRequest<{ csrfToken: string }>('/api/onboarding', signal);
   if (!auth.csrfToken) throw new Error('Не удалось подтвердить запрос. Обновите страницу.');
-  return sourceRequest<T>(path, signal, { method, headers: { 'Content-Type': 'application/json', 'X-Hradar-CSRF': auth.csrfToken }, body: body === undefined ? undefined : JSON.stringify(body) });
+  return sourceRequest<T>(path, signal, { method, headers: { 'Content-Type': 'application/json', 'X-Hradar-CSRF': auth.csrfToken }, body: body === undefined ? undefined : JSON.stringify(body) }, timeoutMs);
 }
 
 export function SourceBrowser({ saved, onAdded, onClose }: { saved: TelegramSource[]; onAdded: () => Promise<void>; onClose: () => void }) {
@@ -130,7 +130,7 @@ export function SourceBrowser({ saved, onAdded, onClose }: { saved: TelegramSour
   }
   return <section className="source-browser" aria-label="Выбор Telegram-источника" onKeyDown={event => { if (event.key === 'Escape' && !saving) { event.stopPropagation(); onClose(); } }}>
     <header><h3 ref={heading} tabIndex={-1}>Добавить из Telegram</h3><button className="text-button" disabled={saving} onClick={onClose}>Закрыть выбор источника</button></header>
-    <p className="helper">Выберите доступный чат или тему. Сохраняется только описание источника. Чтение сообщений, поиск, архив, CRM и мониторинг для новых типов источников пока недоступны. Добавление не вступает в чат и не импортирует историю.</p>
+    <p className="helper">Выберите доступный чат или тему. После сохранения доступны чтение, поиск, ручной архив и проекты. Мониторинг новых источников пока недоступен. Добавление не вступает в чат и не импортирует историю.</p>
     <form className="catalog-search" onSubmit={event => { event.preventDefault(); setAppliedQuery(query.trim()); setRevision(value => value + 1); }}>
       <div><label htmlFor="catalog-query">Поиск в Telegram</label><input id="catalog-query" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Название чата или username" /></div>
       <div><label htmlFor="catalog-filter">Тип чата</label><select id="catalog-filter" value={filter} onChange={event => setFilter(event.target.value as Filter)}><option value="all">Все чаты</option><option value="private">Личные чаты</option><option value="groups">Группы</option><option value="channels">Каналы</option></select></div>

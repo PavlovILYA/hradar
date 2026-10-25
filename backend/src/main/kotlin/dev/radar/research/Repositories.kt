@@ -29,7 +29,7 @@ class Repositories(path: Path) : AutoCloseable {
             s.execute("PRAGMA busy_timeout=5000")
             s.execute("PRAGMA journal_mode=WAL")
             val version = s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) }
-            check(version <= 10) { "Database schema is newer than this application" }
+            check(version <= 11) { "Database schema is newer than this application" }
             if (version == 0) transaction {
                 s.execute("CREATE TABLE monitored_channels(id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, data TEXT NOT NULL)")
                 s.execute("CREATE TABLE search_templates(id TEXT PRIMARY KEY, data TEXT NOT NULL)")
@@ -100,6 +100,13 @@ class Repositories(path: Path) : AutoCloseable {
                 s.execute("CREATE TABLE telegram_sources(source_key TEXT PRIMARY KEY,chat_id INTEGER NOT NULL,scope_kind TEXT NOT NULL CHECK(scope_kind IN ('CHAT','FORUM_TOPIC','MESSAGE_THREAD')),scope_id INTEGER NOT NULL,legacy_channel_id INTEGER UNIQUE REFERENCES monitored_channels(id) ON DELETE CASCADE,data TEXT NOT NULL,UNIQUE(chat_id,scope_kind,scope_id))")
                 channels().forEach { channel -> saveSource(legacySource(channel)) }
                 s.execute("PRAGMA user_version=10")
+            }
+            if (version < 11) transaction {
+                s.execute("CREATE TABLE local_publications(chat_id INTEGER NOT NULL,message_id INTEGER NOT NULL,date INTEGER NOT NULL,normalized_text TEXT NOT NULL,data TEXT NOT NULL,PRIMARY KEY(chat_id,message_id))")
+                s.execute("CREATE TABLE local_source_membership(source_key TEXT NOT NULL REFERENCES telegram_sources(source_key) ON DELETE CASCADE,chat_id INTEGER NOT NULL,message_id INTEGER NOT NULL,PRIMARY KEY(source_key,chat_id,message_id),FOREIGN KEY(chat_id,message_id) REFERENCES local_publications(chat_id,message_id) ON DELETE CASCADE)")
+                s.execute("CREATE TABLE local_source_sync(source_key TEXT PRIMARY KEY REFERENCES telegram_sources(source_key) ON DELETE CASCADE,data TEXT NOT NULL)")
+                s.execute("CREATE TABLE local_project_publications(project_id TEXT NOT NULL REFERENCES recruitment_projects(id) ON DELETE CASCADE,source_key TEXT NOT NULL REFERENCES telegram_sources(source_key) ON DELETE CASCADE,chat_id INTEGER NOT NULL,message_id INTEGER NOT NULL,PRIMARY KEY(project_id,source_key,chat_id,message_id),FOREIGN KEY(chat_id,message_id) REFERENCES local_publications(chat_id,message_id) ON DELETE CASCADE)")
+                s.execute("PRAGMA user_version=11")
             }
 
 
@@ -377,6 +384,101 @@ class Repositories(path: Path) : AutoCloseable {
         val messages = page.take(limit)
         return HistoryPage(messages, messages.lastOrNull()?.id?.takeIf { page.size > limit }, total, query)
     }
+    // Owner-local archive only. Public Bot/MCP/Recruiter adapters never query these tables.
+    private fun selectedSource(key: String): TelegramSource = sources().firstOrNull { it.key == key } ?: throw ResourceNotFound()
+    private fun sourceContains(source: TelegramSource, message: ResearchMessage): Boolean = message.channelId == source.chatId &&
+        (source.scope.kind == ScopeKind.CHAT || source.scope.kind == ScopeKind.FORUM_TOPIC && source.scope.forumTopicId == message.forumTopicId)
+    private fun sourceMessage(source: TelegramSource, message: ResearchMessage) = message.copy(
+        sourceKey = source.key, title = source.title, username = source.username, scopeTitle = source.scopeTitle)
+    private fun writeLocalPublication(message: ResearchMessage) {
+        require(message.id > 0 && message.channelId != 0L)
+        update("INSERT INTO local_publications VALUES(?,?,?,?,?) ON CONFLICT(chat_id,message_id) DO UPDATE SET date=excluded.date,normalized_text=excluded.normalized_text,data=excluded.data",
+            message.channelId, message.id, message.date, MatchingService().normalize(message.text.orEmpty()), json.encodeToString(message))
+        // A native move between forum topics changes scope membership while retaining
+        // publication identity. Never expose its new body through an old selected topic.
+        val incompatible = "SELECT source_key FROM telegram_sources WHERE chat_id=? AND scope_kind='FORUM_TOPIC' AND (? IS NULL OR scope_id!=?)"
+        val affectedKeys = rows("SELECT source_key FROM local_source_membership WHERE chat_id=? AND message_id=? AND source_key IN ($incompatible)",
+            listOf(message.channelId, message.id, message.channelId, message.forumTopicId, message.forumTopicId)) { it.getString(1) }
+        update("DELETE FROM local_source_membership WHERE chat_id=? AND message_id=? AND source_key IN ($incompatible)",
+            message.channelId, message.id, message.channelId, message.forumTopicId, message.forumTopicId)
+        update("DELETE FROM local_project_publications WHERE chat_id=? AND message_id=? AND source_key IN ($incompatible)",
+            message.channelId, message.id, message.channelId, message.forumTopicId, message.forumTopicId)
+        affectedKeys.forEach { key -> sourceSync(key)?.let { state ->
+            val count = rows("SELECT COUNT(*) FROM local_source_membership WHERE source_key=?", listOf(key)) { it.getInt(1) }.single()
+            writeSourceState(state.copy(messageCount = count, updatedAt = System.currentTimeMillis()))
+        } }
+    }
+    @Synchronized fun sourceSync(key: String): SourceSyncRecord? = rows("SELECT data FROM local_source_sync WHERE source_key=?", listOf(key)) { json.decodeFromString<SourceSyncRecord>(it.getString(1)) }.firstOrNull()
+    @Synchronized fun sourceSyncs(): List<SourceSyncRecord> = rows("SELECT data FROM local_source_sync ORDER BY source_key") { json.decodeFromString<SourceSyncRecord>(it.getString(1)) }
+    private fun writeSourceState(state: SourceSyncRecord) {
+        update("INSERT INTO local_source_sync VALUES(?,?) ON CONFLICT(source_key) DO UPDATE SET data=excluded.data", state.sourceKey, json.encodeToString(state))
+    }
+    @Synchronized fun beginSourceSync(key: String, maxMessages: Int? = 1000): SourceSyncRecord = atomic {
+        require(maxMessages == null || maxMessages in setOf(1000, 5000, 10000)) { "Лимит: 1000, 5000, 10000 или вся история" }
+        val source = selectedSource(key)
+        require(source.scope.kind != ScopeKind.MESSAGE_THREAD) { "Ветки обсуждений ещё не поддерживаются" }
+        val old = sourceSync(key)
+        if (old?.status == SyncStatus.RUNNING || old?.status == SyncStatus.COMPLETED) return@atomic old
+        val state = (old ?: SourceSyncRecord(key, source.chatId, source.title)).copy(
+            status = SyncStatus.RUNNING, retryCount = 0, error = null, maxMessages = maxMessages, pauseReason = null,
+            // An explicit resume never evades Telegram's durable flood-wait deadline.
+            updatedAt = System.currentTimeMillis())
+        writeSourceState(state)
+        state
+    }
+    @Synchronized fun saveSourcePage(state: SourceSyncRecord, messages: List<ResearchMessage>): SourceSyncRecord = atomic {
+        val source = sources().firstOrNull { it.key == state.sourceKey }
+            ?: return@atomic state.copy(status = SyncStatus.FAILED, error = "Источник удалён")
+        require(state.channelId == source.chatId && messages.size <= 100)
+        messages.forEach { message ->
+            require(sourceContains(source, message)) { "Сообщение не принадлежит выбранной области" }
+            writeLocalPublication(message)
+            update("INSERT OR IGNORE INTO local_source_membership VALUES(?,?,?)", source.key, message.channelId, message.id)
+        }
+        val count = rows("SELECT COUNT(*) FROM local_source_membership WHERE source_key=?", listOf(source.key)) { it.getInt(1) }.single()
+        state.copy(messageCount = count, updatedAt = System.currentTimeMillis()).also(::writeSourceState)
+    }
+    @Synchronized fun sourceArchive(key: String, limit: Int = 50, before: Long? = null, query: String = ""): SourceArchivePage {
+        require(limit in 1..100 && (before == null || before > 0) && query.length <= 256)
+        val source = selectedSource(key)
+        val normalized = MatchingService().normalize(query)
+        val localFrom = "local_publications p JOIN local_source_membership m ON p.chat_id=m.chat_id AND p.message_id=m.message_id"
+        val localWhere = "m.source_key=? AND instr(p.normalized_text,?)>0"
+        val args = listOf(key, normalized)
+        val countLocal = rows("SELECT COUNT(*) FROM $localFrom WHERE $localWhere", args) { it.getInt(1) }.single()
+        val local = rows("SELECT p.data FROM $localFrom WHERE $localWhere AND p.message_id<? ORDER BY p.message_id DESC LIMIT ?", args + listOf(before ?: Long.MAX_VALUE, limit + 1)) { json.decodeFromString<ResearchMessage>(it.getString(1)) }
+        // Existing public archives are read in place. Local copies take precedence by publication identity.
+        val legacyWhere = "i.channel_id=? AND instr(i.normalized_text,?)>0 AND NOT EXISTS(SELECT 1 FROM local_source_membership m WHERE m.source_key=? AND m.chat_id=i.channel_id AND m.message_id=i.message_id)"
+        val legacyArgs = listOf(source.chatId, normalized, key)
+        val legacy = if (source.legacyChannel && source.scope.kind == ScopeKind.CHAT) rows("SELECT i.message_id,i.date,i.text FROM imported_messages i WHERE $legacyWhere AND i.message_id<? ORDER BY i.message_id DESC LIMIT ?", legacyArgs + listOf(before ?: Long.MAX_VALUE, limit + 1)) {
+            ResearchMessage(it.getLong(1), source.chatId, it.getInt(2), it.getString(3), source.title, source.username)
+        } else emptyList()
+        val countLegacy = if (source.legacyChannel && source.scope.kind == ScopeKind.CHAT) rows("SELECT COUNT(*) FROM imported_messages i WHERE $legacyWhere", legacyArgs) { it.getInt(1) }.single() else 0
+        val combined = (local + legacy).sortedByDescending { it.id }
+        val messages = combined.take(limit).map { sourceMessage(source, it) }
+        return SourceArchivePage(messages, messages.lastOrNull()?.id?.takeIf { combined.size > limit }, countLocal + countLegacy, query)
+    }
+    private fun projectSourceKeys(project: RecruitmentProject): Set<String> = project.criteria.sourceKeys.toSet() +
+        sources().filter { it.legacyChannel && it.chatId in project.criteria.sources }.map { it.key }
+    @Synchronized fun rememberLocalProjectResults(project: RecruitmentProject, messages: List<ResearchMessage>) = atomic {
+        require(project(project.id) == project) { "Проект изменился" }
+        messages.forEach { message ->
+            val key = message.sourceKey ?: throw IllegalArgumentException("Не указан источник")
+            require(key in projectSourceKeys(project)) { "Источник не выбран в проекте" }
+            val source = selectedSource(key)
+            require(sourceContains(source, message)) { "Сообщение не принадлежит выбранной области" }
+            writeLocalPublication(message)
+            update("INSERT OR IGNORE INTO local_project_publications VALUES(?,?,?,?)", project.id, key, message.channelId, message.id)
+        }
+    }
+    @Synchronized fun localProjectPublication(project: RecruitmentProject, chat: Long, message: Long, sourceKey: String? = null): ResearchMessage? {
+        val evidence = rows("SELECT e.source_key,p.data FROM local_project_publications e JOIN local_publications p ON p.chat_id=e.chat_id AND p.message_id=e.message_id WHERE e.project_id=? AND e.chat_id=? AND e.message_id=?", listOf(project.id, chat, message)) {
+            it.getString(1) to json.decodeFromString<ResearchMessage>(it.getString(2))
+        }
+        return evidence.firstNotNullOfOrNull { (key, publication) ->
+            sources().firstOrNull { it.key == key && (sourceKey == null || sourceKey == key) && key in projectSourceKeys(project) && sourceContains(it, publication) }?.let { sourceMessage(it, publication) }
+        }
+    }
     @Synchronized fun mcpEnabled(): Boolean = rows("SELECT enabled FROM mcp_settings WHERE id=1") { it.getInt(1) != 0 }.single()
     private fun cancelAgentPublications() {
         update("UPDATE bot_publish_request SET state='CANCELLED' WHERE state='PENDING'")
@@ -513,11 +615,11 @@ class Repositories(path: Path) : AutoCloseable {
     }
     @Synchronized fun writeProject(input: ProjectInput, id: String? = null): RecruitmentProject = atomic {
         val old = id?.let { project(it) ?: throw ResourceNotFound() }
-        require(input.sources.all { source -> channels().any { it.id == source } }) { "Источник не сохранён" }
+        require(input.sources.all { source -> channels().any { it.id == source } } && input.sourceKeys.all { key -> sources().any { it.key == key && it.scope.kind != ScopeKind.MESSAGE_THREAD } }) { "Источник не сохранён" }
         require(input.templateIds.all { template(it) != null }) { "Шаблон не найден" }
         template(recruitmentSubscriptionId(id ?: ""))?.let { owned ->
-            val active = input.status == ProjectStatus.ACTIVE
-            saveValidatedTemplate(owned.copy(name = input.name, required = input.required, any = emptyList(), excluded = input.excluded, telegramQuery = input.required.firstOrNull() ?: input.name, sources = input.sources, active = active && owned.active), MatchingService(), true)
+            val active = input.status == ProjectStatus.ACTIVE && input.sourceKeys.isEmpty()
+            saveValidatedTemplate(owned.copy(name = input.name, required = input.required, any = emptyList(), excluded = input.excluded, telegramQuery = input.required.firstOrNull() ?: input.name, sources = if (input.sourceKeys.isNotEmpty() && input.sources.isEmpty()) owned.sources else input.sources, active = active && owned.active, subscribed = input.sourceKeys.isEmpty() && owned.subscribed), MatchingService(), true)
         }
         val now = System.currentTimeMillis()
         val value = RecruitmentProject(id ?: UUID.randomUUID().toString(), input, old?.createdAt ?: now, now)
@@ -540,7 +642,8 @@ class Repositories(path: Path) : AutoCloseable {
         val project = project(projectId) ?: throw ResourceNotFound()
         require(expected == null || project == expected) { "Проект изменился. Повторите добавление" }
         require(project.criteria.status == ProjectStatus.ACTIVE) { "Проект архивирован" }
-        require(message.channelId in project.criteria.sources && channels().any { it.id == message.channelId }) { "Источник не разрешён в проекте" }
+        require((message.channelId in project.criteria.sources && channels().any { it.id == message.channelId }) ||
+            localProjectPublication(project, message.channelId, message.id) != null) { "Источник не разрешён в проекте" }
         val now = System.currentTimeMillis()
         val card = RecruitmentCard(UUID.randomUUID().toString(), projectId, message, classification = classification, createdAt = now, updatedAt = now)
         update("INSERT INTO recruitment_cards VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(project_id,channel_id,message_id) DO NOTHING", card.id, projectId, message.channelId, message.id, card.stage.name, 0, MatchingService().normalize(message.text.orEmpty()), "", json.encodeToString(card), now, now)

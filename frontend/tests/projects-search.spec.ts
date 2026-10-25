@@ -11,6 +11,7 @@ async function open(page: Page, pages: unknown[], sources = true) {
     const reply = (json: unknown) => route.fulfill({ json });
     if (path === '/api/events') return route.abort();
     if (path === '/api/telegram/status') return reply({ authorized: true, authorizationState: 'Ready', connectionState: 'Ready' });
+    if (path === '/api/sources') return reply({ items: [] });
     if (path === '/api/channels') return reply(sources ? [{ id: -1001, title: 'Synthetic source', username: 'synthetic_jobs' }] : []);
     if (path === '/api/templates' || path === '/api/monitoring') return reply([]);
     if (path === '/api/notifications') return reply({ items: [], unread: 0, cursor: null });
