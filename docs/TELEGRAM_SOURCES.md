@@ -12,6 +12,70 @@ Stage A is implemented and automated-test verified; live-account/manual acceptan
 is still pending. This is the merged A baseline. Stage B implementation is described below; C remains pending. New work starts from freshly fetched
 master in a new feature worktree; do not reuse the merged feature branch.
 
+## Stage C — explicit owner-local monitoring and discussions
+
+Implementation is on `feat/telegram-sources-stage-c`; final verification and version
+are recorded in DEV_STATUS. Local processing is separate from external permissions.
+
+- Saved cloud chats, basic groups, public/private supergroups/channels, whole forums,
+  native topics and verified discussion threads can be explicitly linked to existing
+  active text-rule templates. New sources/projects and legacy ALL never enable this.
+- Sources has a separate local-monitor panel with enable/pause/resume, template,
+  checkpoint/recovery/error/retry state. Notifications has a distinct local match list
+  with read actions and source-aware details. No new navigation or hostname/port policy.
+- Activation checkpoints the available head and time, without emitting old history.
+  Resume retains the durable checkpoint and recovers the paused backlog in bounded
+  turns. Native callbacks enqueue only; history recovery is authoritative after
+  queue overflow/offline/restart. Live out-of-order messages do not advance recovery.
+- Four reader pages of up to100 publications are processed per pair per turn (each
+  reader page may use up to5 short native history subpages). A remaining cursor is
+  durable; no claim of unlimited catch-up or complete history Telegram withholds.
+  429/FLOOD_WAIT deadlines are durable globally and per pair, including the first
+  activation that failed before a subscription existed. Access errors preserve state
+  and safe retry status; source/template changes during IO prevent late commits.
+- Matching uses existing AND/OR/NOT. Publication identity is(chatId,messageId), local
+  match identity(templateId,chatId,messageId). Overlapping whole-chat/topic subscriptions
+  to the same rule produce one match; distinct rules retain separate explanations.
+- SQLite11->12 adds three local tables transactionally: local_subscriptions,
+  local_matches, local_monitoring_limits. Existing B archive, cards, notes, ratings,
+  public imports, templates and queues are preserved. Migration recovery restores a
+  stopped consistent pre12 profile backup; never lower user_version. Old binaries
+  refuse schema12, and lifecycle smoke must reject future schema13.
+- Local matches never enter public notifications/matched_messages, repo.channels,
+  Bot workspaces/operator lists, MCP, export tools or outbox. No local external grant
+  exists and no external delivery is scheduled, including after local access removal.
+  Existing external permissions are not expanded; exactly-once external delivery is
+  not promised. Saved owner-local evidence remains local after access loss/removal;
+  current details then show unavailable access rather than a fabricated original URL.
+
+### Verified native discussion identity
+
+Select an existing message in a saved source and open current details. A native
+canGetMessageThread flag enables explicit discussion selection. GetMessageThread's
+returned chatId and messageThreadId define the saved scope; linked channel comments
+may resolve to another supergroup. Original anchor chat/message fields are retained
+separately, never inferred from a thread ID. Each read rechecks the anchor properties,
+thread mapping and target access. GetMessageThreadHistory takes the original anchor;
+SearchChatMessages takes target chatId and MessageTopicThread. No user-entered IDs,
+secret chats, implicit joins or generic TDLib calls are exposed. Native forum targets
+remain separately selected MessageTopicForum; a forum is not reclassified as a thread.
+
+Pinned bc9c263e semantics were verified against generated Java signatures and
+[MessagesManager](https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L17999-L18108):
+the original anchor resolves the linked discussion group internally; normal thread
+roots receive a native MessageTopicThread when thread reply metadata exists. Strict
+scope checks do not use null-topic/root fallbacks.
+
+Manual QA (owned synthetic chats only): save each supported type, create an active
+AND/OR/NOT template, explicitly activate it for one source, verify no old-history
+flood, publish new synthetic matching/nonmatching text/captions, inspect local matches
+and read state. Enable the same rule on whole forum and one topic, confirm one match
+for overlap and no cross-topic results. Pause, publish a few synthetic posts, resume
+and restart to verify bounded recovery/no duplicates. Revoke source access and verify
+safe status with checkpoint retained. Open a permitted channel discussion and confirm
+returned linked-group identity, recent/search/archive. Check Bot/MCP/outbox remain
+unchanged. Automated fake updates do not establish real Telegram or OS delivery.
+
 ## Stage B — owner-local processing (0.5.0, SQLite11)
 
 Stage B adds actual reads/search/archive/CRM by saved source key. Account-specific
@@ -25,7 +89,7 @@ live acceptance remains separate from fake-RPC/browser evidence in DEV_STATUS.
 | Public/private channels | Yes | Yes | Yes | Yes |
 | Whole forum group | Yes | All available chat messages | Yes | Yes |
 | Individual saved forum topic | Yes | Native topic scope only | Scoped | Yes |
-| Discussion/comment message threads | Reserved; save rejected | C | C | C |
+| Discussion/comment message threads | Explicit native message discovery (C) | Scoped | Scoped | Yes |
 | Secret / special direct-message topic chats | Excluded | Unsupported | Unsupported | Unsupported |
 
 Local reads are constrained by the authorized Telegram account's actual rights.
@@ -249,7 +313,7 @@ Do not add external sharing as a side effect of local processing.
 B stops at local reads/search/archive/CRM. Do not enable new private subscriptions,
 external exports or discussion-thread selection while claiming B complete.
 
-### C — explicit monitoring, topics and discussion threads
+### C — agreed acceptance checklist (implementation described above)
 
 1. Start from merged B, inspect its actual schema/read ports and plan another forward
    migration only if needed. Extend `SubscriptionService`/`NotificationService` via

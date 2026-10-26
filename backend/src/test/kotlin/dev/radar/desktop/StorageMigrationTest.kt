@@ -39,7 +39,7 @@ class StorageMigrationTest {
         paths.prepare()
         assertEquals("synthetic-binlog", Files.readString(paths.session.resolve("td.binlog")))
         assertEquals("synthetic-sqlite", Files.readString(paths.session.resolve("files/cache.sqlite")))
-        assertEquals(11, DriverManager.getConnection("jdbc:sqlite:${paths.database}").use { c -> c.createStatement().use { s -> s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) } } })
+        assertEquals(12, DriverManager.getConnection("jdbc:sqlite:${paths.database}").use { c -> c.createStatement().use { s -> s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) } } })
         assertEquals(ApiCredentials(12345, "a".repeat(32)), paths.loadCredentials())
         assertTrue(Files.exists(oldDb))
         assertTrue(Files.exists(oldSession.resolve("td.binlog")))

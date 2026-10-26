@@ -82,6 +82,7 @@ class TdlibGateway(
     @Volatile private var connectionState = "Initializing"
     private lateinit var client: Client
     @Volatile var messageListener: ((TdApi.Message) -> Unit)? = null
+    @Volatile var localMessageListener: ((TdApi.Message) -> Unit)? = null
 
     val onboarding = Onboarding(send = ::rawRequest)
 
@@ -170,7 +171,10 @@ class TdlibGateway(
 
     private fun onUpdate(update: TdApi.Object) {
         if (update is TdApi.UpdateConnectionState) connectionState = update.state.javaClass.simpleName.removePrefix("ConnectionState")
-        if (update is TdApi.UpdateNewMessage) messageListener?.invoke(update.message)
+        if (update is TdApi.UpdateNewMessage) {
+            messageListener?.invoke(update.message)
+            localMessageListener?.invoke(update.message)
+        }
         if (update is TdApi.UpdateAuthorizationState) {
             val state = update.authorizationState
             authState = state.javaClass.simpleName.removePrefix("AuthorizationState")

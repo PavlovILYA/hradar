@@ -1,5 +1,36 @@
 # hradar — Development status / session handoff
 
+## Stage C implementation checkpoint — 2026-10-26
+
+Isolated worktree `hradar-sources-c`, branch `feat/telegram-sources-stage-c`, base
+fetched master6760635 (PR#13 merged), app0.6.0/schema12. Detailed handoff:
+[STAGE_C_HANDOFF.md](STAGE_C_HANDOFF.md). No other worktree/profile was modified.
+
+VERIFIED:
+- Explicit owner-local source/template monitoring, activation checkpoint/no old-history
+  flood, durable per-pair recovery, pause/resume, bounded backlog and out-of-order/overlap
+  dedup. Local matches/subscriptions/rate deadline use isolated SQLite12 tables.
+- Native-confirmed discussion discovery preserves original anchor separately from
+  returned chat/thread; linked-group reads/search/archive/CRM enforce native scope.
+- Targeted backend41tests passed, including fake-native source matrix, cancellation,
+  HTTP security, access/rate errors and authentic schema11 migration rollback/reopen.
+- Targeted Playwright2passed. Final JDK21 `./gradlew :backend:build
+  :backend:stageDesktop -PbundledWeb=true` exit0:219tests,0failures/errors/skips.
+  Frontend production build exit0; full offline Playwright65passed; Python29safeguards
+  and canonical version check passed. Full suites ran once before PR.
+- Scoped feature review and retry-fix re-review have no open findings. Latest master
+  rechecked immediately before completion:6760635/app0.5.0, no incoming parallel PR.
+  MINOR0.6.0 is synchronized; schema12 remains independent.
+
+NOT VERIFIED: hosted Fast CI/macOS ARM64+Intel checks before initial PR push;
+  live Telegram/account/OS/phone/manual installation are not exercised.
+No local external permission/send path exists; no Bot/MCP/outbox expansion.
+
+NEXT ACTION: review the DRAFT PR for feat/telegram-sources-stage-c and hosted Fast/
+macOS ARM64+Intel results. Agent checks status once, never polls/dispatches. Owner QA
+is in handoff. If parallel URL/port PR lands first, integrate master, choose next
+MINOR and repeat affected checks before merge. No merge/tag/Release or real startup.
+
 ## Stage B implementation checkpoint — 2026-10-25
 
 Branch `feat/telegram-source-reading` in isolated `hradar-sources-b`, base fetched

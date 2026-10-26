@@ -21,7 +21,7 @@ data class SearchTemplate(
 @Serializable
 data class MatchExplanation(val matches: Boolean, val foundRequired: List<String>, val foundAny: List<String>, val foundExcluded: List<String>, val missingRequired: List<String>)
 @Serializable
-data class ResearchMessage(val id: Long, val channelId: Long, val date: Int, val text: String?, val title: String, val username: String?, val link: String? = null, val explanation: MatchExplanation? = null, val sourceKey: String? = null, val forumTopicId: Int? = null, val scopeTitle: String? = null, val availability: String = "available")
+data class ResearchMessage(val id: Long, val channelId: Long, val date: Int, val text: String?, val title: String, val username: String?, val link: String? = null, val explanation: MatchExplanation? = null, val sourceKey: String? = null, val forumTopicId: Int? = null, val scopeTitle: String? = null, val availability: String = "available", val messageThreadId: Long? = null, val canGetMessageThread: Boolean? = null)
 @Serializable
 data class SearchRequest(val mode: String = "channel", val query: String = "", val usernames: List<String> = emptyList(), val templateId: String? = null, val limit: Int = 20, val cursor: String = "", val withLinks: Boolean = true, val sourceKeys: List<String> = emptyList())
 @Serializable

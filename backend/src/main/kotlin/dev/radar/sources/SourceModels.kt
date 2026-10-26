@@ -21,6 +21,7 @@ import kotlinx.serialization.Serializable
     val isPublic: Boolean = false, val access: SourceAccess = SourceAccess.UNKNOWN,
     val isForum: Boolean = false, val protectedContent: Boolean = false,
     val legacyChannel: Boolean = false, val monitoringEnabled: Boolean = false, val checkedAt: Long = 0,
+    val threadAnchorChatId: Long? = null, val threadAnchorMessageId: Long? = null,
 )
 @Serializable data class SaveSourceInput(val chatId: Long, val scope: SourceScope = SourceScope())
 @Serializable data class SourcePage(val items: List<TelegramSource>, val cursor: String? = null, val notice: String? = null)
