@@ -101,6 +101,33 @@ Local source monitoring and discussion threads remain C. See
 
 `HistorySyncService` requests pages (up to 100 messages each) and atomically saves messages and cursor. It supports `IDLE`, `RUNNING`, `PAUSED`, `COMPLETED`, `FAILED`; caps of 1,000/5,000/10,000 or an **explicitly chosen** unbounded import; idempotent cancellation; safe continuation; and handling of Telegram rate limits. Paused-by-user tasks stay paused across restarts; previously running tasks can recover. A completed archive is a **snapshot**, not a continuously reconciled copy of edits/deletions.
 
+### Owner-local scoped monitoring and discussions (C)
+
+`LocalMonitoringService` owns explicit `(sourceKey,templateId)` subscriptions.
+Activation reads the current head before committing the initial checkpoint; ordinary
+selection/project changes and legacy ALL templates never create these pairs. Native
+callbacks on the same TdlibGateway only enqueue hints. The worker validates current
+scope/access, reuses MatchingService and writes isolated local matches/checkpoints.
+Recovery keeps a per-pair head/cursor and processes at most four reader pages of up
+to 100 publications per turn; it continues after restart rather than resetting the
+checkpoint. Out-of-order live hints never move the recovery checkpoint. Pauses keep
+state; global and per-pair retry deadlines survive restart, including failed initial
+activation. Unique `(templateId,chatId,messageId)` merges whole-chat/topic overlap.
+
+Schema12 adds `local_subscriptions`, `local_matches` and a singleton
+`local_monitoring_limits` deadline. None feeds public matches/notifications, legacy
+ALL, Bot, MCP or outbox. Source/template/generation snapshots are rechecked inside
+the same transaction as match and checkpoint writes. Existing public monitoring
+continues through its existing callback and tables; local delivery grants do not exist.
+
+Discussion selection is owner-explicit from a current selected message. Native
+GetMessageProperties/canGetMessageThread and GetMessageThread establish the target
+chat/thread; the original chat/message anchor is stored separately. Thread history
+uses that original anchor, and search uses MessageTopicThread. Every read revalidates
+mapping/access and checks native scope. Linked-group comments retain their returned
+chat identity. Forum topics remain MessageTopicForum with Int IDs; they never become
+Long discussion IDs. See TELEGRAM_SOURCES for pinned semantics and manual QA.
+
 ### Monitoring and notifications
 
 ```text
@@ -125,7 +152,7 @@ MCP is **a tool protocol, not an agent runtime**. The bot calls shared services 
 
 ## Local storage and security boundaries
 
-- SQLite: `~/.hradar/data/research.sqlite` (schema tracked via migrations; currently v11, including the local scoped archive and CRM evidence).
+- SQLite: `~/.hradar/data/research.sqlite` (schema tracked via migrations; currently v12, including owner-local scoped subscriptions and matches).
 - TDLib account session: `~/.hradar/tdlib/`. It is sensitive and never belongs in Git, logs, or MCP results.
 - Credentials: desktop owner-only `~/.hradar/config/telegram-api.json` for API ID/hash and `~/.hradar/config/telegram-bot.json` for the Bot API token. Development `.env`/environment may provide legacy `TG_BOT_TOKEN` and `TG_BOT_ALLOWED_USER_IDS`; saved bot settings take precedence. Tokens are never returned to UI or status endpoints.
 - `RuntimePaths` owns the paths. Startup checks the fixed port and migrates old files, including saved bot configuration, before opening SQLite or TDLib. Migration retains originals and verified private backups; see [`STORAGE_MIGRATION.md`](docs/STORAGE_MIGRATION.md).

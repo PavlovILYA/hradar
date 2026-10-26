@@ -37,6 +37,7 @@ class SourceReadTest {
                 is TdApi.GetForumTopicHistory -> TdApi.Messages().apply { messages = history(fn.chatId, fn.fromMessageId, fn.forumTopicId) }
                 is TdApi.SearchChatMessages -> search(fn)
                 is TdApi.GetMessage -> detail ?: throw TelegramRequestException(400, "MESSAGE_NOT_FOUND")
+                is TdApi.GetMessageProperties -> TdApi.MessageProperties()
                 is TdApi.GetMessageLink -> throw TelegramRequestException(400, "MESSAGE_LINK_UNAVAILABLE")
                 else -> error("Unexpected RPC ${fn.javaClass.simpleName}")
             }

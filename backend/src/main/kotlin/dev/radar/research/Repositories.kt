@@ -29,7 +29,7 @@ class Repositories(path: Path) : AutoCloseable {
             s.execute("PRAGMA busy_timeout=5000")
             s.execute("PRAGMA journal_mode=WAL")
             val version = s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) }
-            check(version <= 11) { "Database schema is newer than this application" }
+            check(version <= 12) { "Database schema is newer than this application" }
             if (version == 0) transaction {
                 s.execute("CREATE TABLE monitored_channels(id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, data TEXT NOT NULL)")
                 s.execute("CREATE TABLE search_templates(id TEXT PRIMARY KEY, data TEXT NOT NULL)")
@@ -108,6 +108,14 @@ class Repositories(path: Path) : AutoCloseable {
                 s.execute("CREATE TABLE local_project_publications(project_id TEXT NOT NULL REFERENCES recruitment_projects(id) ON DELETE CASCADE,source_key TEXT NOT NULL REFERENCES telegram_sources(source_key) ON DELETE CASCADE,chat_id INTEGER NOT NULL,message_id INTEGER NOT NULL,PRIMARY KEY(project_id,source_key,chat_id,message_id),FOREIGN KEY(chat_id,message_id) REFERENCES local_publications(chat_id,message_id) ON DELETE CASCADE)")
                 s.execute("PRAGMA user_version=11")
             }
+            if (version < 12) transaction {
+                s.execute("CREATE TABLE local_subscriptions(id TEXT PRIMARY KEY,source_key TEXT NOT NULL REFERENCES telegram_sources(source_key) ON DELETE CASCADE,template_id TEXT NOT NULL REFERENCES search_templates(id) ON DELETE CASCADE,data TEXT NOT NULL,UNIQUE(source_key,template_id))")
+                s.execute("CREATE TABLE local_matches(sequence INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,template_id TEXT NOT NULL REFERENCES search_templates(id) ON DELETE CASCADE,chat_id INTEGER NOT NULL,message_id INTEGER NOT NULL,data TEXT NOT NULL,is_read INTEGER NOT NULL DEFAULT 0,UNIQUE(template_id,chat_id,message_id))")
+                s.execute("CREATE INDEX local_matches_unread ON local_matches(is_read,sequence)")
+                s.execute("CREATE TABLE local_monitoring_limits(id INTEGER PRIMARY KEY CHECK(id=1),retry_at INTEGER NOT NULL)")
+                s.execute("INSERT INTO local_monitoring_limits VALUES(1,0)")
+                s.execute("PRAGMA user_version=12")
+            }
 
 
         } } catch (ex: Throwable) { db.close(); throw ex }
@@ -136,6 +144,8 @@ class Repositories(path: Path) : AutoCloseable {
     }
     @Synchronized fun saveSource(input: TelegramSource): TelegramSource = atomic {
         input.scope.validate()
+        require(input.scope.kind != ScopeKind.MESSAGE_THREAD ||
+            (input.threadAnchorChatId != null && input.threadAnchorChatId != 0L && input.threadAnchorMessageId != null && input.threadAnchorMessageId > 0)) { "Для ветки нужен подтверждённый Telegram якорь" }
         require(input.scope.kind != ScopeKind.FORUM_TOPIC || (input.type == SourceType.SUPERGROUP && input.isForum)) { "Тема должна принадлежать форумной супергруппе" }
         require(!input.isPublic || (input.type in setOf(SourceType.CHANNEL, SourceType.SUPERGROUP) && !input.username.isNullOrBlank())) { "Некорректная публичность источника" }
         require(input.chatId != 0L && input.title.length <= 256 && (input.username?.length ?: 0) <= 32) { "Некорректный источник" }
@@ -387,7 +397,11 @@ class Repositories(path: Path) : AutoCloseable {
     // Owner-local archive only. Public Bot/MCP/Recruiter adapters never query these tables.
     private fun selectedSource(key: String): TelegramSource = sources().firstOrNull { it.key == key } ?: throw ResourceNotFound()
     private fun sourceContains(source: TelegramSource, message: ResearchMessage): Boolean = message.channelId == source.chatId &&
-        (source.scope.kind == ScopeKind.CHAT || source.scope.kind == ScopeKind.FORUM_TOPIC && source.scope.forumTopicId == message.forumTopicId)
+        when (source.scope.kind) {
+            ScopeKind.CHAT -> true
+            ScopeKind.FORUM_TOPIC -> source.scope.forumTopicId == message.forumTopicId
+            ScopeKind.MESSAGE_THREAD -> source.scope.messageThreadId == message.messageThreadId
+        }
     private fun sourceMessage(source: TelegramSource, message: ResearchMessage) = message.copy(
         sourceKey = source.key, title = source.title, username = source.username, scopeTitle = source.scopeTitle)
     private fun writeLocalPublication(message: ResearchMessage) {
@@ -396,13 +410,13 @@ class Repositories(path: Path) : AutoCloseable {
             message.channelId, message.id, message.date, MatchingService().normalize(message.text.orEmpty()), json.encodeToString(message))
         // A native move between forum topics changes scope membership while retaining
         // publication identity. Never expose its new body through an old selected topic.
-        val incompatible = "SELECT source_key FROM telegram_sources WHERE chat_id=? AND scope_kind='FORUM_TOPIC' AND (? IS NULL OR scope_id!=?)"
+        val incompatible = "SELECT source_key FROM telegram_sources WHERE chat_id=? AND ((scope_kind='FORUM_TOPIC' AND (? IS NULL OR scope_id!=?)) OR (scope_kind='MESSAGE_THREAD' AND (? IS NULL OR scope_id!=?)))"
         val affectedKeys = rows("SELECT source_key FROM local_source_membership WHERE chat_id=? AND message_id=? AND source_key IN ($incompatible)",
-            listOf(message.channelId, message.id, message.channelId, message.forumTopicId, message.forumTopicId)) { it.getString(1) }
+            listOf(message.channelId, message.id, message.channelId, message.forumTopicId, message.forumTopicId, message.messageThreadId, message.messageThreadId)) { it.getString(1) }
         update("DELETE FROM local_source_membership WHERE chat_id=? AND message_id=? AND source_key IN ($incompatible)",
-            message.channelId, message.id, message.channelId, message.forumTopicId, message.forumTopicId)
+            message.channelId, message.id, message.channelId, message.forumTopicId, message.forumTopicId, message.messageThreadId, message.messageThreadId)
         update("DELETE FROM local_project_publications WHERE chat_id=? AND message_id=? AND source_key IN ($incompatible)",
-            message.channelId, message.id, message.channelId, message.forumTopicId, message.forumTopicId)
+            message.channelId, message.id, message.channelId, message.forumTopicId, message.forumTopicId, message.messageThreadId, message.messageThreadId)
         affectedKeys.forEach { key -> sourceSync(key)?.let { state ->
             val count = rows("SELECT COUNT(*) FROM local_source_membership WHERE source_key=?", listOf(key)) { it.getInt(1) }.single()
             writeSourceState(state.copy(messageCount = count, updatedAt = System.currentTimeMillis()))
@@ -416,7 +430,6 @@ class Repositories(path: Path) : AutoCloseable {
     @Synchronized fun beginSourceSync(key: String, maxMessages: Int? = 1000): SourceSyncRecord = atomic {
         require(maxMessages == null || maxMessages in setOf(1000, 5000, 10000)) { "Лимит: 1000, 5000, 10000 или вся история" }
         val source = selectedSource(key)
-        require(source.scope.kind != ScopeKind.MESSAGE_THREAD) { "Ветки обсуждений ещё не поддерживаются" }
         val old = sourceSync(key)
         if (old?.status == SyncStatus.RUNNING || old?.status == SyncStatus.COMPLETED) return@atomic old
         val state = (old ?: SourceSyncRecord(key, source.chatId, source.title)).copy(
@@ -479,6 +492,62 @@ class Repositories(path: Path) : AutoCloseable {
             sources().firstOrNull { it.key == key && (sourceKey == null || sourceKey == key) && key in projectSourceKeys(project) && sourceContains(it, publication) }?.let { sourceMessage(it, publication) }
         }
     }
+    @Synchronized fun localMonitoringRetryAt(): Long = rows("SELECT retry_at FROM local_monitoring_limits WHERE id=1") { it.getLong(1) }.single()
+    @Synchronized fun deferLocalMonitoring(at: Long) { require(at >= 0); update("UPDATE local_monitoring_limits SET retry_at=MAX(retry_at,?) WHERE id=1", at) }
+    @Synchronized fun localSubscriptions(sourceKey: String? = null): List<LocalSubscription> =
+        rows("SELECT data FROM local_subscriptions" + if (sourceKey == null) " ORDER BY rowid" else " WHERE source_key=? ORDER BY rowid",
+            if (sourceKey == null) emptyList() else listOf(sourceKey)) { json.decodeFromString<LocalSubscription>(it.getString(1)) }
+    @Synchronized fun localSubscription(id: String): LocalSubscription? = rows("SELECT data FROM local_subscriptions WHERE id=?", listOf(id)) { json.decodeFromString<LocalSubscription>(it.getString(1)) }.firstOrNull()
+    private fun sameLocalSource(expected: TelegramSource): Boolean = sources().firstOrNull { it.key == expected.key }
+        ?.copy(monitoringEnabled = false) == expected.copy(monitoringEnabled = false)
+    @Synchronized fun configureLocalSubscription(source: TelegramSource, template: SearchTemplate, expected: LocalSubscription?,
+        enabled: Boolean, head: Long? = null, sinceDate: Int = 0): LocalSubscription = atomic {
+        require(sameLocalSource(source) && this.template(template.id) == template) { "Источник или правило изменились; повторите действие" }
+        val current = localSubscriptions(source.key).firstOrNull { it.templateId == template.id }
+        require(current == expected) { "Настройка мониторинга изменена; обновите страницу" }
+        require(!enabled || template.active) { "Правило приостановлено" }
+        val initial = expected == null || expected.sinceDate == 0
+        require(!enabled || !initial || head != null && head >= 0 && sinceDate > 0)
+        val state = (expected ?: LocalSubscription(UUID.randomUUID().toString(), source.key, template.id, false)).copy(
+            enabled = enabled, checkpoint = if (enabled && initial) head!! else expected?.checkpoint ?: 0,
+            sinceDate = if (enabled && initial) sinceDate else expected?.sinceDate ?: 0,
+            status = if (!enabled) "paused" else if (expected?.rateLimited == true) "rate_limited" else "active",
+            error = null, generation = (expected?.generation ?: 0) + 1)
+        update("INSERT INTO local_subscriptions VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data", state.id, source.key, template.id, json.encodeToString(state))
+        state
+    }
+    /** Match insertion and recovery checkpoint share a transaction; no external adapter tables are involved. */
+    @Synchronized fun commitLocalMonitoring(expected: LocalSubscription, source: TelegramSource, template: SearchTemplate,
+        next: LocalSubscription, messages: List<ResearchMessage>, matching: MatchingService): Boolean = atomic {
+        if (!expected.enabled || localSubscription(expected.id) != expected || !sameLocalSource(source) || this.template(template.id) != template || !template.active) return@atomic false
+        require(next.id == expected.id && next.sourceKey == expected.sourceKey && next.templateId == expected.templateId && next.generation == expected.generation && next.enabled == expected.enabled)
+        require(source.key == expected.sourceKey && template.id == expected.templateId && messages.size <= 100)
+        for (message in messages) {
+            require(message.sourceKey == source.key && message.id > 0 && sourceContains(source, message)) { "Сообщение не принадлежит выбранному источнику" }
+            if (message.id <= expected.checkpoint || message.date < expected.sinceDate || message.availability != "available") continue
+            val explanation = matching.check(template, message.text)
+            if (!explanation.matches) continue
+            val publication = sourceMessage(source, message.copy(explanation = explanation))
+            writeLocalPublication(publication)
+            val id = UUID.nameUUIDFromBytes("local:${template.id}:${message.channelId}:${message.id}".toByteArray()).toString()
+            val record = LocalMatch(id, template.id, template.name, publication)
+            update("INSERT INTO local_matches(id,template_id,chat_id,message_id,data) VALUES(?,?,?,?,?) ON CONFLICT(template_id,chat_id,message_id) DO UPDATE SET data=excluded.data",
+                id, template.id, message.channelId, message.id, json.encodeToString(record))
+        }
+        update("UPDATE local_subscriptions SET data=? WHERE id=?", json.encodeToString(next), next.id)
+        true
+    }
+    @Synchronized fun localMatches(limit: Int = 50, before: Long = Long.MAX_VALUE): LocalMatchPage {
+        require(limit in 1..100 && before > 0)
+        val records = rows("SELECT data,is_read,sequence FROM local_matches WHERE sequence<? ORDER BY sequence DESC LIMIT ?", listOf(before, limit + 1)) {
+            json.decodeFromString<LocalMatch>(it.getString(1)).copy(read = it.getInt(2) != 0, sequence = it.getLong(3))
+        }
+        val page = records.take(limit)
+        val unread = rows("SELECT COUNT(*) FROM local_matches WHERE is_read=0") { it.getInt(1) }.single()
+        return LocalMatchPage(page, unread, page.lastOrNull()?.sequence?.takeIf { records.size > limit })
+    }
+    @Synchronized fun markLocalRead(id: String): Boolean = update("UPDATE local_matches SET is_read=1 WHERE id=?", id) > 0
+    @Synchronized fun markAllLocalRead() { update("UPDATE local_matches SET is_read=1") }
     @Synchronized fun mcpEnabled(): Boolean = rows("SELECT enabled FROM mcp_settings WHERE id=1") { it.getInt(1) != 0 }.single()
     private fun cancelAgentPublications() {
         update("UPDATE bot_publish_request SET state='CANCELLED' WHERE state='PENDING'")
@@ -615,7 +684,7 @@ class Repositories(path: Path) : AutoCloseable {
     }
     @Synchronized fun writeProject(input: ProjectInput, id: String? = null): RecruitmentProject = atomic {
         val old = id?.let { project(it) ?: throw ResourceNotFound() }
-        require(input.sources.all { source -> channels().any { it.id == source } } && input.sourceKeys.all { key -> sources().any { it.key == key && it.scope.kind != ScopeKind.MESSAGE_THREAD } }) { "Источник не сохранён" }
+        require(input.sources.all { source -> channels().any { it.id == source } } && input.sourceKeys.all { key -> sources().any { it.key == key } }) { "Источник не сохранён" }
         require(input.templateIds.all { template(it) != null }) { "Шаблон не найден" }
         template(recruitmentSubscriptionId(id ?: ""))?.let { owned ->
             val active = input.status == ProjectStatus.ACTIVE && input.sourceKeys.isEmpty()

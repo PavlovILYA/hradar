@@ -53,7 +53,7 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
                 database = home/'.hradar/data/research.sqlite'
                 if attempt == 0:
                     with sqlite3.connect(database) as db:
-                        assert db.execute('PRAGMA user_version').fetchone() == (11,)
+                        assert db.execute('PRAGMA user_version').fetchone() == (12,)
                         source = {'id':-1001,'username':'synthetic_jobs','title':'Synthetic source'}
                         db.execute('INSERT INTO monitored_channels VALUES (?,?,?)', (-1001,'synthetic_jobs',json.dumps(source)))
                         db.execute('INSERT INTO imported_messages VALUES (?,?,?,?,?)', (-1001,1,1700000000,'Synthetic Java publication','synthetic java publication'))
@@ -71,7 +71,7 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
                     card = http(f'/api/projects/{project_id}/cards', headers=headers)['items'][0]
                     assert (card['stage'],card['notes'],card['interest']) == ('CONTACTED','Synthetic preserved note',5)
                     with sqlite3.connect(database) as db:
-                        assert db.execute('PRAGMA user_version').fetchone() == (11,)
+                        assert db.execute('PRAGMA user_version').fetchone() == (12,)
                         assert db.execute('PRAGMA integrity_check').fetchone() == ('ok',)
                         assert db.execute('PRAGMA foreign_key_check').fetchall() == []
                         assert crm_snapshot == {table:db.execute(f'SELECT * FROM {table} ORDER BY 1,2').fetchall() for table in crm_snapshot}
@@ -108,11 +108,11 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
             assert not marker.exists()
         # No downgrade of a database created by a newer local feature build.
         with sqlite3.connect(home/'.hradar/data/research.sqlite') as db:
-            db.execute('PRAGMA user_version=12')
+            db.execute('PRAGMA user_version=13')
         subprocess.run([str(launcher)],env=env,stdout=log,stderr=log,check=True,timeout=20)
         assert not marker.exists()
         with sqlite3.connect(home/'.hradar/data/research.sqlite') as db:
-            assert db.execute('PRAGMA user_version').fetchone() == (12,)
+            assert db.execute('PRAGMA user_version').fetchone() == (13,)
             assert db.execute('SELECT value FROM distribution_smoke').fetchone() == ('preserved',)
             assert crm_snapshot == {table:db.execute(f'SELECT * FROM {table} ORDER BY 1,2').fetchall() for table in crm_snapshot}
 print('Production UI, origin/cookie/CSRF denial, duplicate/legacy-port refusal, restart persistence, newer-schema refusal and graceful shutdown passed')
