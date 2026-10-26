@@ -95,7 +95,7 @@ class CrmAuditMatrixTest {
                 if (version >= 7) repo.decidePublication(123, 7, message(5), "SAVED")
             }
             DriverManager.getConnection("jdbc:sqlite:$path").use { db -> db.createStatement().use { st ->
-                listOf("local_project_publications", "local_source_membership", "local_source_sync", "local_publications", "telegram_sources", "bot_access", "bot_invitations").forEach { st.execute("DROP TABLE $it") }
+                listOf("local_monitoring_limits", "local_matches", "local_subscriptions", "local_project_publications", "local_source_membership", "local_source_sync", "local_publications", "telegram_sources", "bot_access", "bot_invitations").forEach { st.execute("DROP TABLE $it") }
                 listOf("recruitment_cards", "recruitment_templates", "recruitment_projects", "recruitment_publications").forEach { st.execute("DROP TABLE $it") }
                 if (version < 7) {
                     listOf("bot_workspace", "publication_decisions").forEach { st.execute("DROP TABLE $it") }
@@ -141,7 +141,7 @@ class CrmAuditMatrixTest {
                 }
             }
             DriverManager.getConnection("jdbc:sqlite:$path").use { db -> db.createStatement().use { st ->
-                assertEquals(11, st.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) })
+                assertEquals(12, st.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) })
                 assertEquals("ok", st.executeQuery("PRAGMA integrity_check").use { it.next(); it.getString(1) })
                 assertFalse(st.executeQuery("PRAGMA foreign_key_check").use { it.next() })
             } }
@@ -151,7 +151,7 @@ class CrmAuditMatrixTest {
         val path = Files.createTempDirectory("crm-migration-rollback").resolve("db.sqlite")
         Repositories(path).use { repo -> repo.saveChannel(source); repo.saveTemplate(SearchTemplate(name = "Legacy", required = listOf("Java"), telegramQuery = "java")) }
         DriverManager.getConnection("jdbc:sqlite:$path").use { db -> db.createStatement().use { st ->
-            listOf("local_project_publications", "local_source_membership", "local_source_sync", "local_publications", "telegram_sources", "bot_access", "bot_invitations").forEach { st.execute("DROP TABLE $it") }
+            listOf("local_monitoring_limits", "local_matches", "local_subscriptions", "local_project_publications", "local_source_membership", "local_source_sync", "local_publications", "telegram_sources", "bot_access", "bot_invitations").forEach { st.execute("DROP TABLE $it") }
             listOf("recruitment_cards", "recruitment_templates", "recruitment_projects", "recruitment_publications").forEach { st.execute("DROP TABLE $it") }
             st.execute("PRAGMA user_version=7"); st.execute("CREATE VIEW recruitment_cards AS SELECT id FROM search_templates")
         } }

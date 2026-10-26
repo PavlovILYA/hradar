@@ -16,3 +16,4 @@
 @media(max-width:650px) { .source-browser { padding:14px; } .source-browser header { align-items:start; } .catalog-search { grid-template-columns:minmax(0,1fr); gap:4px; } .catalog-search .primary-button { margin-top:10px; } .catalog-record { align-items:start; } .catalog-actions { width:100%; } }
 
 .selected-source-workspace{grid-column:1/-1;min-width:0;padding:12px 0}.selected-source-workspace fieldset{min-width:0;display:grid;gap:8px;border:1px solid var(--line)}.selected-source-workspace fieldset label{display:flex;gap:8px;align-items:center;overflow-wrap:anywhere}.online-search .selected-source-workspace input[type=checkbox]{width:auto}
+.local-monitoring{display:grid;gap:12px;padding:16px 0;min-width:0}.local-monitoring>label{display:grid;gap:6px}.local-monitoring select{width:100%;min-width:0}

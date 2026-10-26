@@ -36,6 +36,7 @@ object SourceBrowserFixture {
             is TdApi.GetForumTopicHistory -> { check(rpc.chatId == -2002L && rpc.forumTopicId == 17); TdApi.Messages().apply { messages = if (rpc.fromMessageId == 0L) arrayOf(message) else emptyArray() } }
             is TdApi.SearchChatMessages -> { check(rpc.chatId == -2002L && (rpc.topicId as TdApi.MessageTopicForum).forumTopicId == 17); TdApi.FoundChatMessages().apply { messages = arrayOf(message); nextFromMessageId = 0 } }
             is TdApi.GetMessage -> { check(rpc.chatId == -2002L && rpc.messageId == 900L); message }
+            is TdApi.GetMessageProperties -> TdApi.MessageProperties()
             is TdApi.GetMessageLink -> throw TelegramRequestException(400, "MESSAGE_LINK_UNAVAILABLE")
             else -> error("Unexpected fake RPC type")
         } }

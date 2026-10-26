@@ -40,7 +40,8 @@ class SourceWorkflowRoutesTest {
             is TdApi.GetChatHistory -> TdApi.Messages().apply { messages = if (fn.fromMessageId == 0L) arrayOf(message()) else emptyArray() }
             is TdApi.SearchChatMessages -> TdApi.FoundChatMessages().apply { messages = arrayOf(message()); nextFromMessageId = 0 }
             is TdApi.GetMessage -> message()
-            is TdApi.GetMessageLink -> throw TelegramRequestException(400, "MESSAGE_LINK_UNAVAILABLE")
+            is TdApi.GetMessageProperties -> TdApi.MessageProperties()
+                is TdApi.GetMessageLink -> throw TelegramRequestException(400, "MESSAGE_LINK_UNAVAILABLE")
             else -> error("Unexpected external operation ${fn.javaClass.simpleName}")
         } }
         val gateway = TdlibGateway(databaseDirectory = path.parent.resolve("unused-session"))

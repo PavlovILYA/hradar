@@ -1,16 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { SourceBrowser, sourceMutation, sourceRequest, type TelegramSource, type SourcePage } from './SourceCatalog';
 import { mutate, normalizeUsername } from './api';
-import type { MonitoredChannel } from './api';
+import type { MonitoredChannel, SearchTemplate } from './api';
+import { LocalMonitoring } from './LocalMonitoring';
 
-export function Sources({ sources, unread, refresh, onMessages, onArchive, onSelectedMessages, onSelectedArchive, active = true }: {
-  active?: boolean;
+export function Sources({ sources, unread, refresh, onMessages, onArchive, onSelectedMessages, onSelectedArchive, templates, active = true }: {
+  active?: boolean; templates: SearchTemplate[];
   sources: MonitoredChannel[]; unread: Record<string, number>; refresh: () => Promise<void>;
   onSelectedMessages: (source: TelegramSource) => void; onSelectedArchive: (source: TelegramSource) => void;
   onMessages: (username: string) => void; onArchive: (username: string) => void;
 }) {
   const [catalog, setCatalog] = useState<TelegramSource[]>([]);
   const [browser, setBrowser] = useState(false);
+  const [monitorOpen, setMonitorOpen] = useState(false);
   const [catalogError, setCatalogError] = useState('');
   const catalogGeneration = useRef(0);
   const catalogRequest = useRef<AbortController | null>(null);
@@ -47,12 +49,13 @@ export function Sources({ sources, unread, refresh, onMessages, onArchive, onSel
       <label htmlFor="new-source">Username нового источника</label><div><input id="new-source" value={username} onChange={e => setUsername(e.target.value)} placeholder="@telegram" required disabled={busy} /><button className="primary-button" disabled={busy || !username.trim()}>Добавить источник</button></div>
     </form>
     {error && <p className="error" role="alert">{error}</p>}
+    <details open={monitorOpen} onToggle={event => setMonitorOpen(event.currentTarget.open)}><summary>Локальный мониторинг выбранного источника</summary>{monitorOpen && <LocalMonitoring sources={catalog} templates={templates} active={active} />}</details>
     <label htmlFor="source-filter">Найти источник</label><input id="source-filter" type="search" value={filter} onChange={e => setFilter(e.target.value)} />
     <button className="text-button" disabled={busy} onClick={() => void act()}>Обновить источники</button>
     {!visible.length && <p className="helper">{sources.length ? 'Источники не найдены. Измените фильтр.' : 'Публичных источников пока нет. Выберите чат из Telegram или добавьте канал по username.'}</p>}
     {visible.map(source => <article className="source-record" key={source.id}><div><h3>{source.title}</h3><p>@{source.username}</p><small>Telegram ID: {source.id} · Публичный канал</small>{unread[source.id] > 0 && <small>Новых совпадений: {unread[source.id]}</small>}</div>
       <div className="source-actions"><button className="secondary-button" onClick={() => onMessages(source.username)}>Последние сообщения</button><button className="secondary-button" onClick={() => onArchive(source.username)}>Открыть архив</button><button className="text-button danger" disabled={busy} onClick={() => { if (window.confirm('Удалить сохранённый источник?')) void act(() => mutate(`/api/channels/${source.id}`, 'DELETE')); }}>Удалить источник</button></div>
     </article>)}
-    {catalog.filter(source => !source.legacyChannel && `${source.title} ${source.username ?? ''} ${source.scopeTitle ?? ''}`.toLowerCase().includes(filter.toLowerCase())).map(source => <article className="source-record" data-testid="saved-catalog-source" key={source.key}><div><h3>{source.title}</h3><p>{source.scopeTitle || 'Весь чат'} · {source.type === 'PRIVATE' ? 'Личная переписка' : source.type === 'CHANNEL' ? 'Канал' : 'Группа'} · {source.isPublic ? 'Публичный' : 'Приватный'}</p>{source.username && <p>@{source.username}</p>}<small>Telegram ID: {source.chatId}</small><p className="helper">{source.access === 'UNAVAILABLE' ? 'Доступ потерян' : source.access === 'UNKNOWN' ? 'Доступ к сообщениям не подтверждён' : 'Доступен по данным Telegram'}</p><p className="helper">Доступны чтение сообщений, поиск, ручной архив и проекты. Мониторинг выключен; бот и внешние помощники доступа не получают.</p></div><div className="source-actions"><button className="secondary-button" onClick={() => onSelectedMessages(source)}>Последние сообщения</button><button className="secondary-button" onClick={() => onSelectedArchive(source)}>Открыть архив</button><button className="secondary-button" disabled={busy} onClick={() => void act(() => sourceMutation(`/api/sources/${source.key}/refresh`, 'POST'))}>Проверить доступ</button><button className="text-button danger" disabled={busy} onClick={() => { if (window.confirm('Удалить источник из локального каталога?')) void act(() => sourceMutation(`/api/sources/${source.key}`, 'DELETE')); }}>Удалить из каталога</button></div></article>)}
+    {catalog.filter(source => !source.legacyChannel && `${source.title} ${source.username ?? ''} ${source.scopeTitle ?? ''}`.toLowerCase().includes(filter.toLowerCase())).map(source => <article className="source-record" data-testid="saved-catalog-source" key={source.key}><div><h3>{source.title}</h3><p>{source.scopeTitle || (source.scope.kind === 'MESSAGE_THREAD' ? 'Обсуждение публикации' : 'Весь чат')} · {source.type === 'PRIVATE' ? 'Личная переписка' : source.type === 'CHANNEL' ? 'Канал' : 'Группа'} · {source.isPublic ? 'Публичный' : 'Приватный'}</p>{source.username && <p>@{source.username}</p>}<small>Telegram ID: {source.chatId}</small><p className="helper">{source.access === 'UNAVAILABLE' ? 'Доступ потерян' : source.access === 'UNKNOWN' ? 'Доступ к сообщениям не подтверждён' : 'Доступен по данным Telegram'}</p><p className="helper">Доступны чтение сообщений, поиск, ручной архив и проекты. Локальный мониторинг включается отдельно для выбранного шаблона; бот и внешние помощники доступа не получают.</p></div><div className="source-actions"><button className="secondary-button" onClick={() => onSelectedMessages(source)}>Последние сообщения</button><button className="secondary-button" onClick={() => onSelectedArchive(source)}>Открыть архив</button><button className="secondary-button" disabled={busy} onClick={() => void act(() => sourceMutation(`/api/sources/${source.key}/refresh`, 'POST'))}>Проверить доступ</button><button className="text-button danger" disabled={busy} onClick={() => { if (window.confirm('Удалить источник из локального каталога?')) void act(() => sourceMutation(`/api/sources/${source.key}`, 'DELETE')); }}>Удалить из каталога</button></div></article>)}
   </section>;
 }
