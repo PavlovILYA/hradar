@@ -29,4 +29,4 @@ print('DMG app and ZIP match byte-for-byte:',count,'files; macOS 15.0 minimum')
 PY
 codesign --verify --deep --strict "$MOUNT/hradar.app"
 python3 -B scripts/verify-macos-image.py "$MOUNT/hradar.app" "$ARCH"
-python3 -B scripts/smoke-desktop.py "$MOUNT/hradar.app" "${3:-8080}"
+python3 -B scripts/smoke-desktop.py "$MOUNT/hradar.app" "${3:-1709}"

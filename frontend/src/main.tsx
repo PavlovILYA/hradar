@@ -257,4 +257,11 @@ function App() {
   </div>;
 }
 function Empty({ title, text, children }: { title: string; text: string; children?: ReactNode }) { return <div className="empty-state"><span className="empty-symbol" aria-hidden="true">⌕</span><h3>{title}</h3><p>{text}</p>{children}</div>; }
-void desktopLaunch().then(() => createRoot(document.getElementById('root')!).render(<App />)).catch(e => { document.getElementById('root')!.textContent = (e as Error).message; });
+void desktopLaunch().then(() => createRoot(document.getElementById('root')!).render(<App />)).catch(e => {
+  const root = document.getElementById('root')!;
+  root.textContent = (e as Error).message;
+  const retry = document.createElement('button');
+  retry.textContent = 'Повторить подключение';
+  retry.onclick = () => location.reload();
+  root.append(document.createElement('br'), retry);
+});

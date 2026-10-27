@@ -87,7 +87,7 @@ The channel endpoint resolves public usernames. It can still fail for channels w
 - Do not publish the `.env` file, TDLib directory, account credentials, logs with authentication data, or candidates' profiles.
 - The first milestone is **read-only**. No auto-contacting people, bulk scraping, or exporting personal profiles.
 - Respect Telegram's API terms and applicable data privacy laws when extending the project.
-- This prototype is local and has no API authentication. Don't expose port 8080 publicly or to your LAN.
+- Development REST is local; packaged desktop REST requires a private capability cookie. Never expose either listener publicly or to your LAN.
 - For a production-grade app, move auth into a secure desktop onboarding flow, add error/timeout handling and robust shutdown/state reconciliation, and securely store session files.
 
 ## Architecture
@@ -287,3 +287,15 @@ tools. PR artifacts are unsigned internal test builds. See
 [macOS distribution](docs/MACOS_DISTRIBUTION.md) for installation/data/onboarding,
 manual verification and optional Apple signing setup, and [verified status](docs/DEV_STATUS.md)
 for actual Actions results. No public application Release has been published by this task.
+
+### Installed macOS address
+
+The packaged app opens **http://hradar.localhost:1709/**. Bookmark this address;
+the port and origin stay fixed across restarts. Refreshing an authorized saved tab
+recovers access after the native restart handshake without copying launch URLs. A new browser or cleared
+cookies requires opening the installed app in that browser profile once. No hosts/DNS edits, proxy or admin
+rights are needed. The server listens only on IPv4 loopback; port conflicts are
+reported without selecting a different port. See [upgrade and browser diagnostics](docs/MACOS_DISTRIBUTION.md#stable-local-address-and-upgrade-from-050).
+Development commands/examples above retain backend port 8080 and Vite port 5173.
+Desktop REST requires private browser capability cookies; MCP remains separately
+disabled by default. Installed MCP endpoint: `http://127.0.0.1:1709/mcp`.

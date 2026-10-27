@@ -12,7 +12,7 @@ hradar is a **local-first Telegram recruitment research workspace**, currently t
 React / TypeScript (production assets in Ktor; development Vite on 127.0.0.1:5173)
        | HTTP / SSE, /api proxy
        v
-Ktor / Kotlin JVM 21 (127.0.0.1:8080) <---- MCP client (Codex etc.)
+Ktor / Kotlin JVM 21 (desktop 127.0.0.1:1709; dev :8080) <---- MCP client (Codex etc.)
        |                                      /mcp (Streamable HTTP)
        +-- REST routes -----------------------+-- CapabilityService
        |                                          | typed TelegramReadPort
@@ -186,3 +186,18 @@ monitoring are explicit. Local Host/Origin checks protect the project routes, wi
 changes. Project mutations and owned subscription updates are transactional. Archiving pauses
 the owned subscription; original publications/history survive project deletion. See
 [RECRUITMENT_PROJECTS.md](docs/RECRUITMENT_PROJECTS.md) for API, migration recovery and tests.
+
+## Stable desktop origin
+
+The packaged launcher opens `http://hradar.localhost:1709/`; Ktor serves production
+assets and API on one IPv4 loopback listener. Exact Host/Origin checks retain direct
+`127.0.0.1:1709` tool access; Vite/dev remain separate on 5173/8080. A private marker
+challenge verifies an existing instance before reopening. Single-use launch codes
+bootstrap host-only HttpOnly Strict cookies. A native restart/reopen handshake updates
+the process cookie shared by existing tabs of that origin/browser profile. Saved tabs
+reload at the same root URL; a recovery screen provides retry after native reauthentication.
+The exact same-origin custom-header recovery POST validates only current authority;
+old capabilities are never promoted and no durable recovery bearer is created.
+Process capability and CSRF rotate;
+no bearer persists in URLs. MCP's enable/source grants remain independent. No domain
+services, Telegram identity or user database layout change for the URL.
