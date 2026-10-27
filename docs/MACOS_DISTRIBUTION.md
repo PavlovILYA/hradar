@@ -12,7 +12,8 @@ Gatekeeper behavior remain NOT VERIFIED until manually tested. Do not infer macO
 The app contains production React resources served by Ktor, Kotlin/application
 JARs, matching official Java TDLib bindings/JNI and a jlink Java 21 runtime.
 Launching needs no Node, Gradle, Java installation, Homebrew, terminal or TDLib
-compilation. A system browser opens localhost after the server responds to health.
+compilation. A system browser opens **http://hradar.localhost:1709/** after the server responds to health.
+The one-time launch fragment is exchanged and removed; bookmark the clean root URL.
 The backend runs in the app launcher process; closing the browser tab leaves
 monitoring running. Use **Завершить hradar** in the UI to close the server/workers,
 wait for TDLib Close and release the session lock. SIGTERM also cleans up.
@@ -50,7 +51,7 @@ and its matching API credentials does not explicitly log out or delete the sessi
 Real session continuation has not been exercised automatically.
 
 New builds lock the established session directory before starting TDLib. A duplicate
-opens the existing desktop UI and exits. An occupied port 8080 (including a legacy
+opens the existing desktop UI and exits. An occupied port 1709 (including a legacy
 backend that does not know about the new lock) causes a clear refusal before TDLib
 is created. Stop the old development backend yourself before manual installation;
 this task leaves it untouched. Older binaries launched afterward do not honor the new
@@ -80,8 +81,23 @@ official Telegram app. Parameter errors allow correction of API credentials with
 creating a second client. Rate-limit errors ask the user to wait; no automatic
 credential retry loop. Tests use synthetic input and fake TDLib responses.
 
-A random private launch token is passed in the browser URL fragment, exchanged for
-an HttpOnly SameSite=Strict cookie, and removed from the URL. Desktop API reads and
+A random single-use launch code is passed in the browser URL fragment, exchanged for
+an HttpOnly SameSite=Strict process cookie, and removed from the URL. Reopening the
+app verifies the running instance using its private marker secret over direct IPv4
+loopback before obtaining another launch code; a foreign listener is never opened.
+On restart, the native launcher opens a fresh one-time handshake in the default
+browser. Its new process cookie is shared with all saved tabs at this exact origin
+in the same browser profile. Refreshing an existing tab then works at the unchanged
+URL; CSRF is fetched again, and old CSRF/capability values fail. If refresh happens
+before that handshake, a recovery screen asks the owner to open the installed app
+in that browser and click **Повторить подключение**. Reopening the running app issues
+a new one-time code after identity verification; no manual URL copying is needed.
+`POST /desktop/recover` only validates the current process cookie, an exact same-origin
+request and a required custom header. It never promotes an old cookie to new authority.
+There is deliberately no durable browser recovery bearer: cookies are not scoped to
+ports, and a foreign listener could collect an old cookie during downtime. Captured
+old capabilities cannot authenticate a later process. These HTTP cookies still cannot
+protect against arbitrary local code stealing a current capability. Desktop API reads and
 writes require that cookie; Host/Origin checks reject other authorities/origins.
 Onboarding/shutdown writes additionally require a CSRF header. No-store responses
 and no-referrer headers keep setup out of HTTP caches/referrers. No bearer is embedded
@@ -153,7 +169,7 @@ The smoke test uses an isolated temporary home, no account client, a restricted 
 and no TG environment credentials; checks production JS/CSS, cookie/Origin/CSRF
 denials, duplicate and legacy-port refusal, SQLite/session sentinel persistence,
 restart and UI shutdown. Optional second argument selects an isolated smoke port
-for a developer machine with an existing backend; production always uses 8080.
+for a developer machine with an existing backend; production always uses 1709.
 
 ## Enable signed public distribution (owner action required)
 
@@ -181,3 +197,34 @@ for a developer machine with an existing backend; production always uses 8080.
 Apple reference: https://developer.apple.com/documentation/security/customizing-the-notarization-workflow
 Oracle reference: https://docs.oracle.com/en/java/javase/21/docs/specs/man/jpackage.html
 GitHub runner reference: https://docs.github.com/en/actions/reference/runners/github-hosted-runners
+
+## Stable local address and upgrade from 0.5.0
+
+Quit 0.5.0 with **Завершить hradar** and wait for its process to stop before replacing
+`hradar.app`. Preserve `~/.hradar` and any migration backups; no URL-related data
+migration, Telegram logout or new credentials are needed. Launch the replacement
+app, let its one-time handshake finish, then bookmark **http://hradar.localhost:1709/**.
+Old `127.0.0.1:8080` tabs/bookmarks and MCP configurations do not redirect: update
+MCP clients to `http://127.0.0.1:1709/mcp` (or the hostname endpoint) after enabling
+MCP explicitly. Direct IPv4 remains useful for local tools and diagnosis; it is a
+separate browser origin and does not share the hostname's cookies/localStorage.
+A port conflict is reported without choosing another port or terminating its owner.
+Do not run an older binary alongside the new one against the same profile.
+
+The listener binds only `127.0.0.1:1709`, never wildcard/LAN or IPv6. The exact Host
+allowlist permits `hradar.localhost:1709` and `127.0.0.1:1709`, not other `.localhost`
+subdomains, trailing dots, foreign origins or `[::1]` authorities. Browser loopback
+resolution can try IPv6 then IPv4; IPv4 must remain reachable. Development remains
+on `127.0.0.1:8080` behind Vite `127.0.0.1:5173`. Isolated packaged smoke uses an
+explicit `hradar.smokePort`; production ignores that property without smoke mode.
+
+[RFC 6761 §6.3](https://www.rfc-editor.org/rfc/rfc6761.html#section-6.3) reserves
+`.localhost` for loopback, but OS/browser implementations can differ. Diagnose with
+`python3 -c 'import socket; print(socket.getaddrinfo("hradar.localhost", 1709))'`,
+then open the target URL in Chrome. System resolver failure alone does not prove
+Chrome failure. If the browser fails, use a current Chrome and check proxy/VPN
+bypass for `.localhost`; do not edit `/etc/hosts` or bind to LAN. For HTTP diagnosis,
+`curl --noproxy '*' --resolve hradar.localhost:1709:127.0.0.1 http://hradar.localhost:1709/health`
+preserves the target Host without DNS changes. Direct `http://127.0.0.1:1709/health`
+is another safe diagnostic; neither command grants desktop API access. Full support
+on other supported macOS versions/browser configurations requires actual testing.

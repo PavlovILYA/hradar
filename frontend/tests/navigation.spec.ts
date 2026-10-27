@@ -142,6 +142,10 @@ test('mobile navigation supports keyboard Escape focus restoration and themes', 
 });
 
 test('desktop shutdown stays in application settings and uses the existing csrf flow', async ({ page }) => {
+  await page.route('**/desktop/recover', route => {
+    expect(route.request().headers()['x-hradar-recovery']).toBe('1');
+    return route.fulfill({ json: { ok: true } });
+  });
   await page.addInitScript(() => sessionStorage.setItem('hradar-desktop', 'true'));
   const data = await fixture(page); await navigate(page, 'Состояние приложения');
   await page.getByRole('button', { name: 'Завершить hradar', exact: true }).click();

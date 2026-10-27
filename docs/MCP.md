@@ -79,7 +79,9 @@ are rejected. MCP cannot grant itself access: no management tool is registered.
 Templates are filtered to granted sources; source IDs outside that set are removed.
 Private chats are unsupported even in the UI for this MVP.
 
-Host must be exactly `127.0.0.1:8080` (or the local Vite proxy `127.0.0.1:5173`).
+Packaged Host must be exactly `hradar.localhost:1709` or `127.0.0.1:1709`.
+Development retains `127.0.0.1:8080` and the Vite proxy `127.0.0.1:5173`;
+packaged production does not allow the development authorities.
 Browser Origin must be exactly the corresponding local HTTP origin; MCP command-line
 clients may omit Origin. Forwarded headers and loopback DNS aliases are not trusted.
 Management mutations additionally require a local Origin and a per-process CSRF
@@ -169,3 +171,7 @@ and the existing enabled-policy/result recheck, body/response bounds and audit a
 There are now 14 tools: 13 reads and the existing constrained publication request.
 The read-only registry proposed for `/ask` explicitly excludes publication and any
 settings/import/subscription mutation; see [AGENT_BRIDGE.md](AGENT_BRIDGE.md).
+
+Installed desktop MCP endpoint: `http://127.0.0.1:1709/mcp` or `http://hradar.localhost:1709/mcp`.
+The 8080 commands above are development examples. Update existing MCP client URLs
+after quitting 0.5.0 and installing the new app; enabling/source grants stay explicit.

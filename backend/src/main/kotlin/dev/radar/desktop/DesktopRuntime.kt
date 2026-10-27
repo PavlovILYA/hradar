@@ -65,7 +65,11 @@ class SessionLease private constructor(private val channel: FileChannel, private
 object DesktopRuntime {
     val enabled = System.getProperty("hradar.desktop") == "true"
     val smoke = System.getProperty("hradar.smoke") == "true"
-    val port = if (smoke) System.getProperty("hradar.smokePort", "8080").toInt().also { require(it in 1024..65535) } else 8080
+    val port = if (smoke) System.getProperty("hradar.smokePort", "1709").toInt().also { require(it in 1024..65535) } else if (enabled) 1709 else 8080
+    val browserOrigin = "http://hradar.localhost:$port"
+    val authorities get() = setOf("hradar.localhost:$port", "127.0.0.1:$port") + if (enabled) emptySet() else setOf("127.0.0.1:5173")
+    fun validOrigin(origin: String?) = origin == null || authorities.any { origin == "http://$it" }
+    fun sameOrigin(host: String?, origin: String?) = host in authorities && origin == "http://$host"
     fun token(): String = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32).also { SecureRandom().nextBytes(it) })
     fun portOccupied(): Boolean = try { Socket().use { it.connect(java.net.InetSocketAddress("127.0.0.1", port), 300) }; true } catch (_: java.io.IOException) { false }
     fun open(url: String) {
@@ -83,11 +87,24 @@ object DesktopRuntime {
     fun reopen(paths: RuntimePaths): Boolean {
         val marker = paths.data.resolve("desktop-instance.json")
         return try {
+            if (Files.isSymbolicLink(marker) || Files.getOwner(marker) != Files.getOwner(paths.data)) return false
             val obj = Json.parseToJsonElement(Files.readString(marker)) as kotlinx.serialization.json.JsonObject
             val pid = (obj["pid"] as kotlinx.serialization.json.JsonPrimitive).content.toLong()
             if (ProcessHandle.of(pid).map { it.isAlive }.orElse(false) && portOccupied()) {
                 val token = (obj["token"] as kotlinx.serialization.json.JsonPrimitive).content
-                open("http://127.0.0.1:$port/#launch=$token"); true
+                val http = java.net.http.HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(2)).build()
+                val nonce = DesktopRuntime.token()
+                val input = ReopenInput(nonce, instanceProof(token, "request:$nonce"))
+                val request = java.net.http.HttpRequest.newBuilder(URI("http://127.0.0.1:$port/desktop/reopen"))
+                    .timeout(java.time.Duration.ofSeconds(2)).header("Content-Type", "application/json")
+                    .POST(java.net.http.HttpRequest.BodyPublishers.ofString(Json.encodeToString(ReopenInput.serializer(), input))).build()
+                val response = http.send(request, java.net.http.HttpResponse.BodyHandlers.ofString())
+                if (response.statusCode() != 200) return false
+                val body = Json.parseToJsonElement(response.body()) as kotlinx.serialization.json.JsonObject
+                val launch = (body["launch"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: return false
+                val proof = (body["proof"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: return false
+                if (!launch.matches(Regex("[A-Za-z0-9_-]{43}")) || proof != instanceProof(token, "response:$nonce:$launch")) return false
+                open("$browserOrigin/#launch=$launch"); true
             } else false
         } catch (_: Exception) { false }
     }

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Isolated packaged lifecycle smoke. No Telegram client, credentials or user directories."""
-import json, os, pathlib, subprocess, sys, tempfile, time, urllib.request, urllib.error, sqlite3, socket
+import json, os, pathlib, subprocess, sys, tempfile, time, urllib.request, urllib.error, sqlite3, socket, shutil
 app = pathlib.Path(sys.argv[1]).resolve()
 launcher = app / 'Contents/MacOS/hradar'
-port = int(sys.argv[2]) if len(sys.argv) > 2 else 8080
+port = int(sys.argv[2]) if len(sys.argv) > 2 else 1709
 root = pathlib.Path(__file__).resolve().parent.parent
 
 def http(path, body=None, headers=None, expected=200):
@@ -17,12 +17,13 @@ def http(path, body=None, headers=None, expected=200):
         assert e.code == expected, (path, e.code, expected)
 
 def wait_ready(process, marker):
-    for _ in range(100):
+    # Bounded cold start: heavily loaded developer Macs can exceed ten seconds.
+    for _ in range(300):
         if process.poll() is not None: raise RuntimeError('Packaged process exited early')
         if marker.exists():
             http('/health'); return json.loads(marker.read_text())['token']
         time.sleep(.1)
-    raise RuntimeError('Packaged server never became ready')
+    raise RuntimeError('Packaged server never became ready\n' + '\n'.join((marker.parent.parent/'runtime.log').read_text().splitlines()[-20:]))
 
 with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
     home = pathlib.Path(temporary)
@@ -41,9 +42,15 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
             process = subprocess.Popen([str(launcher)], env=env, stdout=log, stderr=log)
             try:
                 token = wait_ready(process, marker)
+                listeners = subprocess.check_output(['/usr/sbin/lsof','-nP','-a','-p',str(process.pid),'-iTCP','-sTCP:LISTEN','-Fn'],text=True)
+                assert [line for line in listeners.splitlines() if line.startswith('n')] == [f'n127.0.0.1:{port}'], listeners
                 cookie = 'hradar-desktop='+token
                 headers = {'Cookie':cookie, 'Origin':f'http://127.0.0.1:{port}', 'Content-Type':'application/json'}
                 http('/api/onboarding', expected=403)
+                for host in ['foreign.localhost:'+str(port), 'hradar.localhost:'+str(port)+'.evil', '[::1]:'+str(port), '192.168.1.2:'+str(port), '127.0.0.1:5173']:
+                    http('/health', headers={'Host':host}, expected=403)
+                http('/mcp', {}, expected=403)
+                http('/desktop/recover', {}, {'Origin':f'http://hradar.localhost:{port}','X-Hradar-Recovery':'1'}, expected=403)
                 http('/api/onboarding', headers={'Cookie':cookie,'Origin':'https://evil.example'}, expected=403)
                 state = http('/api/onboarding', headers=headers)
                 assert state['state'] == 'Credentials'
@@ -100,12 +107,36 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
             finally:
                 if process.poll() is None:
                     process.terminate(); process.wait(timeout=20)
+        # A real browser tab stays open while two packaged processes start/stop.
+        subprocess.run([shutil.which('node'),str(root/'frontend/scripts/smoke-desktop-restart.mjs'),str(launcher),str(home),str(port)],
+                       env=env,check=True,timeout=180)
         # Old backend/foreign port: abort before even opening SQLite/TDLib.
         with socket.socket() as listener:
             listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             listener.bind(('127.0.0.1',port)); listener.listen()
             subprocess.run([str(launcher)],env=env,stdout=log,stderr=log,check=True,timeout=20)
             assert not marker.exists()
+        # A forged live marker cannot identify a foreign HTTP server as hradar.
+        import http.server, threading
+        captured = []
+        class Foreign(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                captured.append(self.rfile.read(int(self.headers['Content-Length'])))
+                payload = json.dumps({'launch':'x'*43,'proof':'forged'}).encode()
+                self.send_response(200); self.send_header('Content-Length',str(len(payload))); self.end_headers(); self.wfile.write(payload)
+            def log_message(self, *args): pass
+        server = http.server.HTTPServer(('127.0.0.1',port), Foreign)
+        thread = threading.Thread(target=server.serve_forever); thread.start()
+        fake_secret = 'owner-marker-secret-not-to-be-sent'
+        marker.write_text(json.dumps({'pid':os.getpid(),'token':fake_secret}))
+        try:
+            offset = log.tell()
+            subprocess.run([str(launcher)],env=env,stdout=log,stderr=log,check=True,timeout=20)
+            assert captured and fake_secret.encode() not in captured[0]
+            log.flush()
+            assert f'Порт {port} занят'.encode() in (home/'runtime.log').read_bytes()[offset:]
+        finally:
+            server.shutdown(); server.server_close(); thread.join(); marker.unlink()
         # No downgrade of a database created by a newer local feature build.
         with sqlite3.connect(home/'.hradar/data/research.sqlite') as db:
             db.execute('PRAGMA user_version=12')
