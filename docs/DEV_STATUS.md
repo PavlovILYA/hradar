@@ -1,5 +1,61 @@
 # hradar — Development status / session handoff
 
+## Stable desktop origin checkpoint — 2026-10-27
+
+Branch `feat/local-domain-1709` in isolated `hradar-local-domain`, base
+`6760635` (Stage B merged); proposed app version **0.6.0** from master 0.5.0.
+No Stage C logic or live profile changes. Canonical packaged UI:
+**http://hradar.localhost:1709/**, listener strictly **127.0.0.1:1709**.
+Dev stays 8080/Vite5173; account-free smoke retains an explicit separate port.
+
+VERIFIED:
+- macOS15.8.1 system resolver returns127.0.0.1; installed Chrome155.0.8059.85
+  opened the hostname without hosts/DNS edits. Packaged production assets/REST
+  passed actual Chromium UI/CRM and Chrome saved-tab restart/re-authentication.
+- Final JDK21 `./gradlew :backend:build :backend:stageDesktop -PbundledWeb=true`
+  exit0: **198tests,0failures/errors/skips**. Frontend build exit0; full offline
+  Playwright **63passed**; Python **29safeguards** and version sync/check passed.
+- x86_64 matching portable JNI synchronous smoke, packaged JVM/JNI/linkage,
+  ad-hoc resource seal, DMG creation/checksum verification passed locally. Mounted
+  read-only DMG matched ZIP byte-for-byte (181 files), then passed the complete
+  production UI/Chrome restart/lifecycle smoke on1709. Full separate-port smoke
+  on17119 also passed (installed Chrome156.0.8078.48 on2026-10-27).
+- Packaged lifecycle on1709 passed exact listener inspection, Host/Origin/API cookie/
+  CSRF/MCP-disabled denials, duplicate/foreign-port refusal, forged-marker HMAC
+  denial without leaking marker secret, SQLite/session sentinel preservation,
+  future-schema refusal and graceful shutdown. No Telegram client was created.
+- Chrome kept the original tab across backend restart; a foreign listener captured
+  its old cookie during downtime, which the next process rejected. The new native
+  handshake in that browser profile restored the saved tab at the same root URL;
+  old CSRF remained forbidden. Native launcher without smoke ignored smokePort17119,
+  listened only on1709, used an empty isolated home and shut down cleanly.
+- Independent review rejected an initial durable recovery bearer; removed entirely.
+  Current process cookie/CSRF rotate, and re-authentication requires native launch.
+  Re-review found no actionable issues. Packaged smoke caught concurrent launch
+  codes invalidating each other; a red regression test reproduced it, fixed with
+  at most8 pending individually single-use owner codes, verified by full build.
+
+NOT VERIFIED / limits:
+- Default-browser visual activation could not be observed: Chrome Apple-event
+  automation timed out. The non-smoke launcher executed OS browse; actual packaged
+  Chrome UI/restart were verified independently in an isolated browser context.
+- Physical installation/Gatekeeper, live Telegram session continuation and other
+  supported macOS/browser configurations were not exercised. Existing production
+  8080/profile remained untouched. HTTP cookies are not port-scoped; these controls
+  do not sandbox arbitrary local code stealing a current capability.
+- Exact-head hosted ARM64/Intel checks are pending at this checkpoint; use the
+  draft PR's live checks for subsequent evidence.
+  Base master6760635 Fast CI had an Intel `hdiutil create: Resource busy` failure;
+  backend/frontend/ARM64 passed. This is not evidence of our branch's hosted result.
+
+NEXT ACTION: commit/push and open a draft PR; local checks are complete.
+Inspect exact-head Fast CI and both hosted macOS architectures. Stage C is open
+as PR#14 with the same proposed0.6.0: reconcile SemVer with current master before
+the second merge, and rebase/retest this branch if Stage C merges first. No merge, tag or Release. Upgrade0.5.0 instructions:
+[MACOS_DISTRIBUTION.md](MACOS_DISTRIBUTION.md#stable-local-address-and-upgrade-from-050).
+
+---
+
 ## Stage B implementation checkpoint — 2026-10-25
 
 Branch `feat/telegram-source-reading` in isolated `hradar-sources-b`, base fetched
