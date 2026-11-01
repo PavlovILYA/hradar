@@ -61,7 +61,7 @@ On first launch, previous locations are copied with a checked backup before TDLi
 starts. The installed app uses the same `RuntimePaths` as Gradle. Details and recovery:
 [storage migration](STORAGE_MIGRATION.md).
 
-This branch currently supports SQLite schemas through v9 (including bot access and invitations). A database created by a
+This branch currently supports SQLite schemas through v11 (including the saved source catalog and scoped archive). A database created by a
 newer feature build is refused with a visible message, without a downgrade or
 deletion; use a build containing that newer schema/features. Bot API settings are
 stored separately in `~/.hradar/config/telegram-bot.json` and can be managed in the
@@ -158,11 +158,12 @@ bash scripts/package-macos.sh "$(uname -m)"
 bash scripts/verify-macos-dmg.sh "$(uname -m)" ".tdlib-build/distribution-$(uname -m)"
 ```
 
-Installer metadata records `sqliteSchemaVersion: 9`, `recruitment-crm` and `telegram-bot-settings`.
+Installer metadata records `sqliteSchemaVersion: 11`, `recruitment-crm` and `telegram-bot-settings`.
 Both architecture jobs also execute the offline Playwright suite. Mounted-DMG smoke
 creates synthetic CRM/archive records through real REST, preserves notes/stages and
-compares stored rows after reopening an existing v9 database. It checks SQLite
-integrity/foreign keys and refuses v10 without changing CRM rows. Browser CRM uses
+compares stored rows after reopening an existing v11 database. It checks SQLite
+integrity/foreign keys, verifies installer schema metadata against the actual database,
+and refuses v12 without changing CRM rows. Browser CRM uses
 production resources and real REST; authorization status is mocked and its live SSE channel isolated.
 
 The smoke test uses an isolated temporary home, no account client, a restricted PATH

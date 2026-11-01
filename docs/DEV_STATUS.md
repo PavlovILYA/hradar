@@ -1,5 +1,51 @@
 # hradar — Development status / session handoff
 
+## PR #15 independent final review — 2026-11-01
+
+Existing draft [PR #15](https://github.com/PavlovILYA/hradar/pull/15), branch
+`feat/local-domain-1709`, reviewed starting at `3e74206`; fetched master remains
+`6760635` (0.5.0). Keep this PR at **0.6.0** and merge it before Stage C #14.
+No Stage C integration, user-profile access, live Telegram client, merge or Release.
+
+VERIFIED:
+- Found and reproduced **High/P1** authorization bypass inherited from master:
+  packaged `/%61pi/onboarding` returned 200 without a cookie while the canonical
+  path returned 403. Ktor decodes segments/skips empty segments, but guards used
+  raw paths. Encoded MCP management routes also bypassed Origin/CSRF classification.
+  New regressions failed before the fix (14 targeted tests, 2 failures).
+- Fixed both guards with one shared path classifier matching Ktor's segment
+  decoding/empty-segment handling; malformed encoding fails closed. Regression
+  coverage checks cookie/CSRF denial, authorized requests and unchanged MCP policy.
+  Independent read-only re-review found no remaining actionable security finding.
+- Found **Low** stale installer schema metadata (10 versus actual 11) and v9/v10
+  distribution documentation. A new packaged assertion reproduced the mismatch;
+  corrected metadata/docs and pass metadata into mounted-DMG lifecycle smoke.
+- JDK21 `./gradlew :backend:build :backend:stageDesktop -PbundledWeb=true` exit0:
+  **199 tests, 0 failures/errors/skips**. Frontend build exit0, full offline
+  Playwright **63 passed**, Python **29 passed**, version and shell syntax checks pass.
+- Fresh Intel package/JVM/JNI/linkage/resource seal and DMG checksum passed.
+  Mounted DMG matched ZIP (181 files); complete production UI/lifecycle smoke passed
+  on1709 and separate-port17119, including new path/metadata assertions, HMAC/forged
+  marker denial, old-cookie/CSRF rejection, saved-tab recovery, SQLite/session
+  preservation, newer-schema refusal and graceful shutdown (Chromium156.0.8078.4).
+- Extra synthetic checks passed real authenticated SSE, cross-port interprocess
+  session exclusion, SIGTERM cleanup and SQLite integrity. Production runtime
+  defaults ignore smokePort without smoke and exclude Vite authority. System
+  resolver returned both ::1 and127.0.0.1; smoke inspected IPv4-only listeners.
+- Rechecked original-head hosted Fast CI40565762836 and macOS40565762872: SUCCESS;
+  both architecture job logs include mounted-DMG lifecycle and restart success.
+  Those results apply to3e74206, not this review's follow-up commit.
+
+NOT VERIFIED: physical Finder installation/default-browser visual activation,
+Gatekeeper/notarization, live Telegram session continuation, other browser/OS
+combinations. All runs used synthetic temporary homes; `~/.hradar` was untouched.
+No new complexity reduction is justified: bounded launch codes/HMAC/recovery each
+retain a distinct security/lifecycle role.
+
+NEXT ACTION: push this correction to the existing draft PR, wait for exact-head
+Fast CI and both macOS architecture jobs, and record their final URLs/status in
+the PR description and review handoff. No merge, tag or Release is authorized.
+
 ## Stable desktop origin checkpoint — 2026-10-27
 
 Branch `feat/local-domain-1709` in isolated `hradar-local-domain`, base

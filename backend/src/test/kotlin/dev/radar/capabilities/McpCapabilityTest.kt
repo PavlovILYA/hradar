@@ -184,6 +184,16 @@ class McpCapabilityTest {
             assertEquals(mcp,args(rest.bodyAsText()))
             assertEquals(HttpStatusCode.Forbidden, client.put("/api/integrations/mcp") { header(HttpHeaders.Host,"127.0.0.1:8080"); contentType(ContentType.Application.Json);setBody("""{"enabled":false}""") }.status)
             assertTrue(repo.mcpEnabled())
+            for (path in listOf("/%61pi/integrations/mcp", "/api/integrations/%6dcp", "/api//integrations/mcp")) {
+                for (origin in listOf(null, "http://127.0.0.1:8080")) {
+                    assertEquals(HttpStatusCode.Forbidden, client.put(path) {
+                        header(HttpHeaders.Host, "127.0.0.1:8080")
+                        if (origin != null) header(HttpHeaders.Origin, origin)
+                        contentType(ContentType.Application.Json); setBody("""{"enabled":false}""")
+                    }.status, path)
+                    assertTrue(repo.mcpEnabled(), "Unauthorized request changed MCP policy: $path")
+                }
+            }
             val denied = rpc("tools/call","""{"name":"get_chat_history","arguments":{"chat":"12345"}}""")
             assertTrue(args(denied.bodyAsText())["result"]!!.jsonObject["isError"]!!.jsonPrimitive.boolean)
             assertTrue(args(rpc("tools/call","""{"name":"grant_access","arguments":{}}""").bodyAsText())["result"]!!.jsonObject["isError"]!!.jsonPrimitive.boolean)

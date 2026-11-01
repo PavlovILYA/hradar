@@ -2,6 +2,7 @@ package dev.radar.capabilities
 
 import dev.radar.research.*
 import dev.radar.desktop.DesktopRuntime
+import dev.radar.desktop.securityPath
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.*
@@ -33,7 +34,7 @@ fun Application.configureCapabilities(service: CapabilityService, port: Telegram
     val csrf = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32).also { SecureRandom().nextBytes(it) })
     val guard = createRouteScopedPlugin("LocalCapabilitySecurity") {
         onCall { call ->
-            val management = call.request.path().startsWith("/api/integrations/mcp") && call.request.httpMethod != HttpMethod.Get
+            val management = call.securityPath().startsWith("/api/integrations/mcp") && call.request.httpMethod != HttpMethod.Get
             val allowed = LocalMcpSecurity.valid(call.request.headers["Host"], call.request.headers["Origin"], management)
             if (!allowed || (management && call.request.headers["X-Hradar-CSRF"] != csrf)) {
                 call.respond(HttpStatusCode.Forbidden, CapabilityResult(false, error = CapabilityError("ACCESS_DENIED", "Local origin and UI confirmation are required")))

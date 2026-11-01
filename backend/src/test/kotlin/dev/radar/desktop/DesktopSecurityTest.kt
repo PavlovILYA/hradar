@@ -11,6 +11,36 @@ import io.ktor.http.*
 import kotlin.test.*
 
 class DesktopSecurityTest {
+    @Test fun `encoded and repeated slash routes retain cookie and csrf guards`() = testApplication {
+        application {
+            install(ContentNegotiation) { json() }
+            configureDesktopSecurity(DesktopAccess("current-process"), "current-csrf")
+            routing {
+                get("/api/test") { call.respond(mapOf("ok" to true)) }
+                for (path in listOf("/api/onboarding/login", "/api/integrations/bot/check", "/api/sources")) {
+                    post(path) { call.respond(mapOf("ok" to true)) }
+                }
+            }
+        }
+        for (path in listOf("/%61pi/test", "//api/test", "/%61pi//test")) {
+            assertEquals(HttpStatusCode.Forbidden, client.get { url.encodedPath = path; header(HttpHeaders.Host, "127.0.0.1:8080") }.status, path)
+            assertEquals(HttpStatusCode.OK, client.get {
+                url.encodedPath = path
+                header(HttpHeaders.Host, "127.0.0.1:8080"); header(HttpHeaders.Cookie, "hradar-desktop=current-process")
+            }.status, path)
+        }
+        for (path in listOf("/%61pi/onboarding/login", "/api/%6fnboarding/login", "/api//onboarding/login", "/api/integrations/%62ot/check", "/api/%73ources")) {
+            for (authorized in listOf(false, true)) {
+                val response = client.post(path) {
+                    header(HttpHeaders.Host, "127.0.0.1:8080"); header(HttpHeaders.Origin, "http://127.0.0.1:8080")
+                    header(HttpHeaders.Cookie, "hradar-desktop=current-process")
+                    if (authorized) header("X-Hradar-CSRF", "current-csrf")
+                }
+                assertEquals(if (authorized) HttpStatusCode.OK else HttpStatusCode.Forbidden, response.status, path)
+            }
+        }
+    }
+
     @Test fun `desktop capability cookie and exact authority origin csrf checks`() = testApplication {
         val access = DesktopAccess("fake-launch-token")
         val launchCode = access.issueLaunch()
