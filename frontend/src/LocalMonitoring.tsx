@@ -79,7 +79,7 @@ export function LocalNotifications({ active, onOpen }: { active: boolean; onOpen
     try {
       await sourceMutation(`/api/local-notifications/${item ? encodeURIComponent(item.id) + '/read' : 'read-all'}`, 'POST', undefined, c.signal);
       if (!c.signal.aborted) setPage(old => ({ ...old, unread: item ? Math.max(0, old.unread - 1) : 0, items: old.items.map(row => !item || row.id === item.id ? { ...row, read: true } : row) }));
-    } catch(e) { if (!c.signal.aborted) setError((e as Error).message); }
+    } catch(e) { if (!c.signal.aborted) setError((e as Error).message); return false; }
     finally { if (controller.current === c) { setBusy(false); controller.current = null; } }
     return !c.signal.aborted;
   }

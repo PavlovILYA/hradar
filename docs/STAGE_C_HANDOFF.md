@@ -1,5 +1,11 @@
 # Telegram Sources Stage C handoff — 2026-10-26
 
+Later review/checkpoint: [STAGE_C_REVIEW.md](STAGE_C_REVIEW.md) and the first section
+of DEV_STATUS (2026-11-01). The new owner task explicitly authorizes fixing/pushing
+PR #14, updating its Draft description and inspecting/waiting for CI after push;
+the original session's no-poll restriction below is historical. Real profile startup
+remains excluded. Continue the same branch/PR and keep #15 separate until merged.
+
 ## Branch and boundaries
 
 Worktree `/Users/pavlov/Projects/hradar-sources-c`, branch

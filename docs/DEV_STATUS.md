@@ -271,6 +271,49 @@ the second merge, and rebase/retest this branch if Stage C merges first. No merg
 [MACOS_DISTRIBUTION.md](MACOS_DISTRIBUTION.md#stable-local-address-and-upgrade-from-050).
 
 ---
+## Stage C PR #14 repair and critical review — 2026-11-01
+
+Continued clean existing `hradar-sources-c`/`feat/telegram-sources-stage-c`, starting
+at actual PR head `a1241be9e9d94cd719adf2c6530e5c4c3f742cc5`. Fetched master remains
+`6760635`; #15 is OPEN at `3e74206`, not merged. No real profile/session/messages,
+other worktree or native client used. Review: [STAGE_C_REVIEW.md](STAGE_C_REVIEW.md).
+
+VERIFIED:
+- Historical Fast CI40394120563 failure reproduced locally: overview fixture omitted
+  DTO description, and list-before-detail rendering crashed Projects on `.slice`.
+  Fixture corrected; test explicitly gates that response order and retains original
+  assertions. No timeout increase/removal. GitHub API returned zero run artifacts.
+- Fixed local-read failure incorrectly returning success/navigating away from error.
+  Browser regression RED before fix, GREEN after; unread/error/retry covered.
+- Primary and independent backend inspection found no proven backend production
+  correctness defect. Added atomic match/publication/checkpoint rollback; stalled
+  recovery/access deadlines through two reopens; future13 refusal; local route
+  cookie/Origin/CSRF/no-store regressions. Migration fixture preserves consistent
+  legacy subscription/catalog/cursor/read notification/MCP grant plus B archive,
+  project/card/note/rating/import/outbox via unchanged old-table snapshots.
+- Final JDK21 `./gradlew :backend:build --no-daemon --console=plain` exit0:
+  222tests,0failures/errors/skips (after final migration-fixture review correction).
+  `npm run build --prefix frontend` exit0;
+  `HRADAR_TEST_PORT=5184 npm run test:ci --prefix frontend` exit0,66passed.
+  `python3 -B -m unittest discover -s tests -v` exit0,29passed. Canonical version
+  and diff checks pass; staged secret check is required immediately before commit.
+- App stays0.6.0/schema12: one version bump per existing PR, no advance to0.7.0.
+  No architecture, port/hostname, external grants/sends, master/#15 integration,
+  tag/Release or user data changes.
+
+NOT VERIFIED at this pre-push checkpoint: hosted checks on the forthcoming commit.
+Historical macOS40394120682 success belongs to a1241be only. Exact pushed-head
+Fast/macOS results will be recorded in the existing Draft PR#14 description after
+the authorized push. Live Telegram/owned-chat/native discussion, OS/phone/manual
+installation and recovery against Telegram remain unverified by fake tests.
+
+NEXT ACTION: commit/push only this branch, update Draft PR#14 and inspect exact-head
+CI through completion, investigate relevant failures. Keep Draft pending #15 merge.
+Then a separate authorized task must integrate master/version and repeat tests;
+especially reconcile SourceRoutes old-Origin predicate, DesktopRoutes local-read
+CSRF, Application lifecycle/DesktopAccess, frontend launch/local views and schema12
+smoke expectations. Full risk list and owner QA are in STAGE_C_REVIEW/HANDOFF.
+
 ## Stage C implementation checkpoint — 2026-10-26
 
 Isolated worktree `hradar-sources-c`, branch `feat/telegram-sources-stage-c`, base

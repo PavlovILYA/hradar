@@ -9,8 +9,10 @@
 [macOS Installers](https://github.com/PavlovILYA/hradar/actions/runs/40187356218)
 both passed on that SHA, including ARM64/Intel production UI/lifecycle smoke.
 Stage A is implemented and automated-test verified; live-account/manual acceptance
-is still pending. This is the merged A baseline. Stage B implementation is described below; C remains pending. New work starts from freshly fetched
-master in a new feature worktree; do not reuse the merged feature branch.
+is still pending. This is the merged A baseline. B and C implementation is described
+below; current verification and remaining integration gates are in DEV_STATUS.
+Continue C in its existing feature worktree/PR; new work starts from freshly fetched
+master rather than a merged feature branch.
 
 ## Stage C — explicit owner-local monitoring and discussions
 
@@ -103,7 +105,8 @@ public username/global search paths remain available.
 `SourceReadService` resolves key -> saved chatId + validated SourceScope. Whole-chat
 reads use `GetChatHistory`; forum reads use `GetForumTopicHistory` with native Int
 forumTopicId. Search uses `SearchChatMessages.topicId = MessageTopicForum(id)`.
-MESSAGE_THREAD is rejected; there is no fallback to whole chat or ID conversion.
+Stage C adds verified MESSAGE_THREAD scopes using their native Long ID and saved
+original message anchor; there is no fallback to whole chat or ID conversion.
 Signatures were checked with javap against the pinned generated Java JAR.
 
 Pagination was also checked against the pinned native implementation: at offset 0,

@@ -43,6 +43,15 @@ class LocalMonitoringRoutesTest {
             val path = "/api/sources/${source.key}/monitoring"
             val initial = client.get(path) { owner() }
             assertEquals(HttpStatusCode.OK, initial.status); assertEquals("[]", initial.bodyAsText())
+            assertEquals("no-store", initial.headers[HttpHeaders.CacheControl])
+            for (localPath in listOf(path, "/api/local-notifications")) {
+                assertEquals(HttpStatusCode.Forbidden, client.get(localPath) { owner(); headers.remove(HttpHeaders.Cookie) }.status)
+                assertEquals(HttpStatusCode.Forbidden, client.get(localPath) { owner(); headers.remove(HttpHeaders.Origin); header(HttpHeaders.Origin, "https://evil.example") }.status)
+            }
+            for (localPath in listOf(path, "/api/local-notifications/read-all", "/api/sources/${source.key}/messages/5/discussion")) {
+                assertEquals(HttpStatusCode.Forbidden, client.post(localPath) { owner(); headers.remove("X-Hradar-CSRF"); setBody("{}") }.status)
+                assertEquals(HttpStatusCode.Forbidden, client.post(localPath) { owner(); headers.remove(HttpHeaders.Cookie); setBody("{}") }.status)
+            }
             assertTrue(repo.localMatches().items.isEmpty())
             val enabled = client.post(path) { owner(); setBody(json.encodeToString(ConfigureLocalMonitoring(template.id,true))) }
             assertEquals(HttpStatusCode.OK, enabled.status)
