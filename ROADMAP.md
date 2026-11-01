@@ -34,8 +34,10 @@ Build a local-first recruiting workspace centered on **explicitly permitted Tele
 - [x] B: scoped chatId reading, search, archive and CRM for normal accessible chats
   and native forum topics (0.5.0, schema11; automated evidence in DEV_STATUS;
   owned-account manual acceptance remains separate).
-- [ ] C: explicit private-source monitoring, topics/discussions, restart/dedup/access
-  loss and separate local-versus-external delivery permissions.
+- [x] C implementation: explicit owner-local scoped monitoring and native discussions,
+  checkpoint/recovery/dedup/access-loss handling (0.6.0, schema12). Local automated
+  acceptance passes; hosted CI and owned-account manual QA remain separate gates.
+  External sharing grants/delivery are not enabled by local monitoring.
 
 Full all-chat recruiting support is incomplete until B/C. No automatic joins,
 secret chats, second Telegram session or private-source sharing are authorized.

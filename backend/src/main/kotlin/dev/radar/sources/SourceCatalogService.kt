@@ -46,7 +46,7 @@ class SourceCatalogService(private val port: SourceCatalogPort, private val repo
         val source = when (input.scope.kind) {
             ScopeKind.CHAT -> port.describe(input.chatId) ?: throw IllegalArgumentException("Этот тип чата не поддерживается")
             ScopeKind.FORUM_TOPIC -> port.topic(input.chatId, input.scope.forumTopicId!!)
-            ScopeKind.MESSAGE_THREAD -> throw IllegalArgumentException("Ветки обсуждений будут подключены на следующем этапе")
+            ScopeKind.MESSAGE_THREAD -> throw IllegalArgumentException("Выберите обсуждение из доступного сообщения источника")
         }
         require(source.access != SourceAccess.UNAVAILABLE) { "Telegram сообщил об отсутствии доступа" }
         require(source.chatId == input.chatId && source.scope == input.scope) { "Telegram вернул другую область" }
@@ -59,7 +59,9 @@ class SourceCatalogService(private val port: SourceCatalogPort, private val repo
             when (saved.scope.kind) {
                 ScopeKind.CHAT -> port.describe(saved.chatId)
                 ScopeKind.FORUM_TOPIC -> port.topic(saved.chatId, saved.scope.forumTopicId!!)
-                ScopeKind.MESSAGE_THREAD -> throw IllegalArgumentException("Ветки обсуждений ещё не подключены")
+                ScopeKind.MESSAGE_THREAD -> port.thread(
+                    saved.threadAnchorChatId ?: throw IllegalArgumentException("Не сохранено исходное сообщение обсуждения"),
+                    saved.threadAnchorMessageId ?: throw IllegalArgumentException("Не сохранено исходное сообщение обсуждения"))
             }
         } catch (_: SourceUnavailable) { null }
         catch (ex: TelegramRequestException) { if (!unavailable(ex)) throw ex; null }

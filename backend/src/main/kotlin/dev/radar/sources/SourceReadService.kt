@@ -39,12 +39,13 @@ class SourceReadService(
     }
     private suspend fun accessible(source: TelegramSource) {
         source.scope.validate()
-        require(source.scope.kind != ScopeKind.MESSAGE_THREAD) { "Ветки обсуждений ещё не поддерживаются" }
         val current = when (source.scope.kind) {
             ScopeKind.CHAT -> catalog.describe(source.chatId)
             ScopeKind.FORUM_TOPIC -> try { catalog.topic(source.chatId, source.scope.forumTopicId!!) }
                 catch (_: SourceUnavailable) { null }
-            else -> null
+            ScopeKind.MESSAGE_THREAD -> catalog.thread(
+                source.threadAnchorChatId ?: throw IllegalArgumentException("Не сохранено исходное сообщение обсуждения"),
+                source.threadAnchorMessageId ?: throw IllegalArgumentException("Не сохранено исходное сообщение обсуждения"))
         }
         // Deleted cloud users may retain readable history. The message RPC is the
         // authority for access; deleting an account does not erase its past conversation.
@@ -55,8 +56,11 @@ class SourceReadService(
     }
     private fun accepts(source: TelegramSource, message: TdApi.Message): Boolean =
         message.chatId == source.chatId && message.id > 0 &&
-            (source.scope.kind == ScopeKind.CHAT ||
-                (message.topicId as? TdApi.MessageTopicForum)?.forumTopicId == source.scope.forumTopicId)
+            when (source.scope.kind) {
+                ScopeKind.CHAT -> true
+                ScopeKind.FORUM_TOPIC -> (message.topicId as? TdApi.MessageTopicForum)?.forumTopicId == source.scope.forumTopicId
+                ScopeKind.MESSAGE_THREAD -> (message.topicId as? TdApi.MessageTopicThread)?.messageThreadId == source.scope.messageThreadId
+            }
 
     private suspend fun convert(source: TelegramSource, message: TdApi.Message, withLink: Boolean = false,
         onRate: (() -> Unit)? = null): ResearchMessage {
@@ -73,6 +77,7 @@ class SourceReadService(
         return ResearchMessage(message.id, source.chatId, message.date, messageText(message.content), source.title,
             source.username, link, sourceKey = source.key,
             forumTopicId = (message.topicId as? TdApi.MessageTopicForum)?.forumTopicId, scopeTitle = source.scopeTitle,
+            messageThreadId = (message.topicId as? TdApi.MessageTopicThread)?.messageThreadId,
             availability = when (message.content) {
                 is TdApi.MessageUnsupported -> "unsupported"
                 is TdApi.MessageExpiredPhoto, is TdApi.MessageExpiredVideo,
@@ -98,7 +103,8 @@ class SourceReadService(
             val fn = when (source.scope.kind) {
                 ScopeKind.CHAT -> TdApi.GetChatHistory(source.chatId, cursor, 0, count, false)
                 ScopeKind.FORUM_TOPIC -> TdApi.GetForumTopicHistory(source.chatId, source.scope.forumTopicId!!, cursor, 0, count)
-                else -> error("Unsupported scope")
+                ScopeKind.MESSAGE_THREAD -> TdApi.GetMessageThreadHistory(source.threadAnchorChatId!!,
+                    source.threadAnchorMessageId!!, cursor, 0, count)
             }
             val raw = (execute(fn) as TdApi.Messages).messages
             require(raw.size <= 100 && raw.all { accepts(source, it) }) { "Telegram вернул сообщения другой области" }
@@ -122,10 +128,42 @@ class SourceReadService(
             if (ex.code !in setOf(400, 404) || rateLimited(ex)) throw ex
             selectedStillExists(source)
             return@withTimeout ResearchMessage(messageId, source.chatId, 0, null, source.title, source.username,
-                sourceKey = source.key, forumTopicId = source.scope.forumTopicId, scopeTitle = source.scopeTitle, availability = "unavailable")
+                sourceKey = source.key, forumTopicId = source.scope.forumTopicId, scopeTitle = source.scopeTitle,
+                messageThreadId = source.scope.messageThreadId, canGetMessageThread = false, availability = "unavailable")
         }
         require(message.id == messageId && accepts(source, message)) { "Сообщение не принадлежит выбранной области" }
-        val result = convert(source, message, withLink = true)
+        var limited = false
+        val result = convert(source, message, withLink = true, onRate = { limited = true })
+        val canGetThread = if (limited || source.isForum) false else try {
+            withTimeoutOrNull(1500) {
+                (execute(TdApi.GetMessageProperties(source.chatId, messageId)) as TdApi.MessageProperties).canGetMessageThread
+            } ?: false
+        } catch (_: TelegramRequestException) { false }
+        selectedStillExists(source)
+        result.copy(canGetMessageThread = canGetThread)
+    }
+
+    /** The user explicitly chooses a discussion from an accessible selected-source message. */
+    suspend fun discussion(key: String, messageId: Long): TelegramSource = withTimeout(25_000) {
+        require(messageId > 0) { "Некорректное сообщение" }
+        val source = saved(key); accessible(source)
+        val message = execute(TdApi.GetMessage(source.chatId, messageId)) as TdApi.Message
+        require(message.id == messageId && accepts(source, message)) { "Сообщение не принадлежит выбранной области" }
+        val target = catalog.thread(source.chatId, messageId)
+        withContext(Dispatchers.IO) {
+            synchronized(repo) {
+                selectedStillExists(source)
+                repo.saveSource(target.copy(checkedAt = System.currentTimeMillis()))
+            }
+        }
+    }
+
+    /** Callback workers use this typed owner-local port; callbacks themselves never perform IO. */
+    suspend fun observe(key: String, message: TdApi.Message): ResearchMessage? = withTimeout(25_000) {
+        val source = saved(key)
+        if (!accepts(source, message)) return@withTimeout null
+        accessible(source)
+        val result = convert(source, message)
         selectedStillExists(source)
         result
     }
@@ -160,7 +198,11 @@ class SourceReadService(
                 val count = minOf((input.limit / active.size).coerceAtLeast(1), 10_000 - seen.size)
                 val page = execute(TdApi.SearchChatMessages().apply {
                     chatId = source.chatId
-                    topicId = source.scope.forumTopicId?.let { TdApi.MessageTopicForum(it) }
+                    topicId = when (source.scope.kind) {
+                        ScopeKind.CHAT -> null
+                        ScopeKind.FORUM_TOPIC -> TdApi.MessageTopicForum(source.scope.forumTopicId!!)
+                        ScopeKind.MESSAGE_THREAD -> TdApi.MessageTopicThread(source.scope.messageThreadId!!)
+                    }
                     this.query = query; fromMessageId = positions[source.key] ?: 0; limit = count
                 }) as TdApi.FoundChatMessages
                 require(page.messages.size <= count && page.messages.all { accepts(source, it) }) { "Telegram вернул сообщения другой области" }

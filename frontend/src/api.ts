@@ -44,7 +44,7 @@ export function mutate<T>(path: string, method: string, body?: unknown, timeoutM
   return request<T>(path, undefined, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }, timeoutMs);
 }
 
-export interface ResearchMessage extends TelegramMessage { sourceKey?: string | null; forumTopicId?: number | null; scopeTitle?: string | null; availability?: string; title?: string; username?: string | null; link?: string | null; explanation?: MatchExplanation | null }
+export interface ResearchMessage extends TelegramMessage { sourceKey?: string | null; forumTopicId?: number | null; scopeTitle?: string | null; availability?: string; canGetMessageThread?: boolean; title?: string; username?: string | null; link?: string | null; explanation?: MatchExplanation | null }
 export interface SearchInput { mode: 'channel' | 'tracked' | 'global' | 'sources'; sourceKeys?: string[]; query: string; usernames: string[]; templateId?: string; limit: number; cursor?: string }
 export interface SearchPage { messages: ResearchMessage[]; cursor: string; state: string; notice?: string | null }
 export interface NotificationRecord { id: string; templateId: string; templateName: string; message: ResearchMessage; read: boolean; sequence: number }

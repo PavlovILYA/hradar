@@ -38,7 +38,7 @@ class SavedResultsTest {
             repo.handleBotUpdate(123, 7) {}
         }
         DriverManager.getConnection("jdbc:sqlite:$path").use { db -> db.createStatement().use { s ->
-            listOf("local_project_publications", "local_source_membership", "local_source_sync", "local_publications").forEach { s.execute("DROP TABLE $it") }; s.execute("DROP TABLE telegram_sources"); s.execute("DROP TABLE bot_access"); s.execute("DROP TABLE bot_invitations"); s.execute("DROP TABLE bot_workspace"); s.execute("DROP TABLE publication_decisions"); s.execute("DROP INDEX matches_date"); s.execute("ALTER TABLE matched_messages DROP COLUMN message_date"); s.execute("PRAGMA user_version=6")
+            listOf("local_monitoring_limits", "local_matches", "local_subscriptions", "local_project_publications", "local_source_membership", "local_source_sync", "local_publications").forEach { s.execute("DROP TABLE $it") }; s.execute("DROP TABLE telegram_sources"); s.execute("DROP TABLE bot_access"); s.execute("DROP TABLE bot_invitations"); s.execute("DROP TABLE bot_workspace"); s.execute("DROP TABLE publication_decisions"); s.execute("DROP INDEX matches_date"); s.execute("ALTER TABLE matched_messages DROP COLUMN message_date"); s.execute("PRAGMA user_version=6")
         } }
         Repositories(path).use { repo ->
             assertEquals(1, repo.notifications().size); assertTrue(repo.botRegistered(123, 7)); assertEquals(8L, repo.botOffset(123))

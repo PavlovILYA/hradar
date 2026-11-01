@@ -41,7 +41,7 @@ class SourceArchiveMigrationTest {
         } }
         assertEquals(before, snapshot(path))
         DriverManager.getConnection("jdbc:sqlite:$path").use { db -> db.createStatement().use { s ->
-            assertEquals(11, s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) })
+            assertEquals(12, s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) })
         } }
     }
     @Test fun migrationDdlFailureRollsBackAllNewTablesVersionAndAllowsRetry() {
