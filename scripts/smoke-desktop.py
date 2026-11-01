@@ -4,6 +4,7 @@ import json, os, pathlib, subprocess, sys, tempfile, time, urllib.request, urlli
 app = pathlib.Path(sys.argv[1]).resolve()
 launcher = app / 'Contents/MacOS/hradar'
 port = int(sys.argv[2]) if len(sys.argv) > 2 else 1709
+metadata = json.loads(pathlib.Path(sys.argv[3]).read_text()) if len(sys.argv) > 3 else None
 root = pathlib.Path(__file__).resolve().parent.parent
 
 def http(path, body=None, headers=None, expected=200):
@@ -47,6 +48,8 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
                 cookie = 'hradar-desktop='+token
                 headers = {'Cookie':cookie, 'Origin':f'http://127.0.0.1:{port}', 'Content-Type':'application/json'}
                 http('/api/onboarding', expected=403)
+                for path in ['/%61pi/onboarding', '//api/onboarding', '/%61pi/events']:
+                    http(path, expected=403)
                 for host in ['foreign.localhost:'+str(port), 'hradar.localhost:'+str(port)+'.evil', '[::1]:'+str(port), '192.168.1.2:'+str(port), '127.0.0.1:5173']:
                     http('/health', headers={'Host':host}, expected=403)
                 http('/mcp', {}, expected=403)
@@ -55,12 +58,15 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
                 state = http('/api/onboarding', headers=headers)
                 assert state['state'] == 'Credentials'
                 http('/api/onboarding/credentials', {'apiId':1,'apiHash':'0'*32}, headers, expected=403)
+                http('/api/%6fnboarding/credentials', {'apiId':1,'apiHash':'0'*32}, headers, expected=403)
                 http('/api/projects', expected=403)
                 http('/api/projects', headers={'Cookie':cookie,'Origin':'https://evil.example'}, expected=403)
                 database = home/'.hradar/data/research.sqlite'
                 if attempt == 0:
                     with sqlite3.connect(database) as db:
                         assert db.execute('PRAGMA user_version').fetchone() == (11,)
+                        if metadata is not None:
+                            assert metadata['sqliteSchemaVersion'] == db.execute('PRAGMA user_version').fetchone()[0], 'Installer metadata must match the actual SQLite schema'
                         source = {'id':-1001,'username':'synthetic_jobs','title':'Synthetic source'}
                         db.execute('INSERT INTO monitored_channels VALUES (?,?,?)', (-1001,'synthetic_jobs',json.dumps(source)))
                         db.execute('INSERT INTO imported_messages VALUES (?,?,?,?,?)', (-1001,1,1700000000,'Synthetic Java publication','synthetic java publication'))

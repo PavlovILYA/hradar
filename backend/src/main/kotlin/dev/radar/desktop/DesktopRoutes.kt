@@ -10,10 +10,20 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 @Serializable private data class LaunchInput(val token: String)
+
+// Ktor routing skips empty raw segments and decodes each remaining segment once.
+// Classify the same path so alternate spellings cannot skip authorization gates.
+internal fun ApplicationCall.securityPath(): String = try {
+    request.path().split('/').filter { it.isNotEmpty() }
+        .joinToString("/", prefix = "/") { it.decodeURLPart() }
+} catch (_: Exception) {
+    throw io.ktor.server.plugins.BadRequestException("Некорректный путь запроса")
+}
+
 fun Application.configureDesktopSecurity(access: DesktopAccess?, csrf: String) {
     val guard = createApplicationPlugin("DesktopSecurity") {
         onCall { call ->
-            val path = call.request.path()
+            val path = call.securityPath()
             val host = call.request.headers["Host"]
             val origin = call.request.headers["Origin"]
             val validHost = host in DesktopRuntime.authorities
