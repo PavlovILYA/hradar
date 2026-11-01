@@ -73,6 +73,21 @@ test('local monitoring requires explicit source and template and retains pause r
   expect(data.writes.every(w => w.path.startsWith(`/api/sources/${source.key}/monitoring`))).toBe(true);
 });
 
+test('failed local read keeps the unread match visible and allows retry before opening', async ({ page }) => {
+  await fixture(page);
+  await page.route('**/api/local-notifications/synthetic-local-match/read', route =>
+    route.fulfill({ status: 503, json: { error: 'Synthetic read failure' } }), { times: 1 });
+  await openSection(page, 'Уведомления');
+  const local = page.getByRole('region', { name: 'Локальные совпадения' });
+  await local.getByRole('button', { name: 'Показать локальные совпадения' }).click();
+  await local.getByRole('button', { name: 'Открыть локальную публикацию' }).click();
+  await expect(local.getByRole('alert')).toBeVisible();
+  await expect(local.getByText('Непрочитано локально: 1', { exact: true })).toBeVisible();
+  await local.getByRole('button', { name: 'Открыть локальную публикацию' }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Поиск');
+  await expect(page.getByRole('complementary', { name: 'Детали публикации' })).toContainText(message.text);
+});
+
 test('local matches stay separate and verified discussion opens as a saved thread without typed ids', async ({ page }) => {
   const { writes } = await fixture(page);
   await openSection(page, 'Уведомления');

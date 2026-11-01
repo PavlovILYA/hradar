@@ -5,6 +5,7 @@ import dev.radar.telegram.TelegramRequestException
 import kotlinx.coroutines.*
 import org.drinkless.tdlib.TdApi
 import java.nio.file.Files
+import java.sql.DriverManager
 import kotlin.test.*
 
 class LocalMonitoringTest {
@@ -243,6 +244,76 @@ class LocalMonitoringTest {
                 reading.await(); request.cancel(); release.complete(Unit); request.join()
                 assertEquals(before, service.list().single())
                 assertTrue(repo.localMatches().items.isEmpty())
+            }
+        }
+    }
+
+    @Test fun invalidPublicationRollsBackEarlierMatchAndCheckpointTogether(): Unit = runBlocking {
+        val path = Files.createTempDirectory("local-monitor-atomic-").resolve("db")
+        Repositories(path).use { repo ->
+            val source = save(repo); val template = rule(repo)
+            monitor(repo, { _, _, _ -> SourceMessagePage(listOf(message(source, 1)), null) }).use { service ->
+                val state = service.configure(source.key, template.id, true)
+                assertFailsWith<IllegalArgumentException> {
+                    repo.commitLocalMonitoring(state, source, template, state.copy(checkpoint = 3),
+                        listOf(message(source, 2), message(source, 3).copy(channelId = 456)), MatchingService())
+                }
+                assertEquals(state, repo.localSubscription(state.id))
+                assertTrue(repo.localMatches().items.isEmpty())
+                DriverManager.getConnection("jdbc:sqlite:$path").use { db -> db.createStatement().use { s ->
+                    assertEquals(0, s.executeQuery("SELECT COUNT(*) FROM local_publications").use { it.next(); it.getInt(1) })
+                } }
+                assertTrue(repo.commitLocalMonitoring(state, source, template, state.copy(checkpoint = 2),
+                    listOf(message(source, 2)), MatchingService()))
+                assertEquals(2L, repo.localSubscription(state.id)!!.checkpoint)
+                assertEquals(listOf(2L), repo.localMatches().items.map { it.message.id })
+            }
+        }
+    }
+
+    @Test fun stalledRecoveryAndAccessRetrySurviveReopenWithoutSkippingBacklog(): Unit = runBlocking {
+        val path = Files.createTempDirectory("local-monitor-stalled-restart-").resolve("db")
+        var key = ""; var templateId = ""
+        val start = 2000000000000L
+        var instant = start
+        fun service(repo: Repositories, recent: suspend (String, Long, Int) -> SourceMessagePage) =
+            LocalMonitoringService(repo, SourceReadService(repo) { error("Unexpected native RPC") }, { true },
+                requestIntervalMs = 0, readRecent = recent, now = { instant })
+        Repositories(path).use { repo ->
+            val source = save(repo); key = source.key; templateId = rule(repo).id
+            var calls = 0
+            service(repo) { _, cursor, _ -> when (calls++) {
+                0 -> SourceMessagePage(listOf(message(source, 1)), 1)
+                1 -> SourceMessagePage(listOf(message(source, 5), message(source, 4)), 4)
+                else -> { assertEquals(4L, cursor); SourceMessagePage(listOf(message(source, 4)), 4, "cursor_stalled") }
+            } }.use { monitor ->
+                monitor.configure(key, templateId, true); monitor.pollOnce()
+                val state = monitor.list().single()
+                assertEquals(1L, state.checkpoint); assertEquals(4L, state.recoveryCursor); assertEquals(5L, state.recoveryHead)
+                assertEquals("retrying", state.status); assertEquals(start + 60_000, state.retryAt)
+                assertEquals(setOf(4L, 5L), repo.localMatches().items.map { it.message.id }.toSet())
+            }
+        }
+        Repositories(path).use { repo ->
+            var calls = 0
+            service(repo) { _, cursor, _ -> calls++; assertEquals(4L, cursor); throw TelegramRequestException(403, "SYNTHETIC") }.use { monitor ->
+                monitor.pollOnce(); assertEquals(0, calls)
+                instant += 60_000; monitor.pollOnce(); assertEquals(1, calls)
+                assertEquals("unavailable", monitor.list().single().status)
+                assertEquals(start + 120_000, monitor.list().single().retryAt)
+                assertEquals(4L, monitor.list().single().recoveryCursor)
+            }
+        }
+        Repositories(path).use { repo ->
+            val source = repo.sources().single(); var calls = 0
+            service(repo) { _, cursor, _ -> calls++; assertEquals(4L, cursor)
+                SourceMessagePage(listOf(message(source, 3), message(source, 2), message(source, 1)), null)
+            }.use { monitor ->
+                monitor.pollOnce(); assertEquals(0, calls)
+                instant += 60_000; monitor.pollOnce(); assertEquals(1, calls)
+                assertEquals(5L, monitor.list().single().checkpoint); assertEquals(0L, monitor.list().single().recoveryCursor)
+                assertEquals("active", monitor.list().single().status); assertEquals(0L, monitor.list().single().retryAt)
+                assertEquals(setOf(2L, 3L, 4L, 5L), repo.localMatches().items.map { it.message.id }.toSet())
             }
         }
     }
