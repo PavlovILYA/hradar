@@ -5,7 +5,11 @@ import io.ktor.server.application.*
 import io.ktor.server.routing.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
+import io.ktor.server.netty.NettyApplicationCall
+import io.ktor.server.netty.suspendAwait
 import io.ktor.http.*
+import io.ktor.http.cio.ConnectionOptions
+import io.netty.buffer.Unpooled
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -105,6 +109,22 @@ fun Application.configureOnboarding(telegram: TdlibGateway, paths: RuntimePaths,
             post("/resend") { telegram.onboarding.resend(bounded<LoginInput>(call)); call.respond(mapOf("ok" to true)) }
             post("/phone") { telegram.onboarding.changePhone(bounded<LoginInput>(call)); call.respond(mapOf("ok" to true)) }
         }
-        if (DesktopRuntime.enabled) post("/api/desktop/shutdown") { call.respond(mapOf("ok" to true)); shutdown() }
+        if (DesktopRuntime.enabled) post("/api/desktop/shutdown") { call.respondDesktopShutdown(shutdown) }
     }
+}
+
+internal suspend fun RoutingCall.respondDesktopShutdown(shutdown: () -> Unit) {
+    val engineCall = pipelineCall.engineCall as NettyApplicationCall
+    respond(mapOf("ok" to true))
+    // respond() queues a 200 response; teardown must wait for its actual socket flush.
+    engineCall.responseWriteJob.join()
+    val connection = ConnectionOptions.parse(request.headers[HttpHeaders.Connection])
+    val closes = connection?.close == true || (request.local.version == "HTTP/1.0" && connection?.keepAlive != true)
+    if (closes) {
+        // Netty closes a non-persistent connection after the response write completes.
+        engineCall.context.channel().closeFuture().suspendAwait()
+    } else {
+        engineCall.context.writeAndFlush(Unpooled.EMPTY_BUFFER).suspendAwait()
+    }
+    shutdown()
 }

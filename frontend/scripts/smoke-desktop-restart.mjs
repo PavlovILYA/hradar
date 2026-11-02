@@ -32,7 +32,11 @@ async function start(previous) {
 }
 async function stop(csrf) {
   const stopped = new Promise(resolve => child.once('exit', resolve));
-  expect(await page.evaluate(async csrf => (await fetch('/api/desktop/shutdown', {method:'POST',headers:{'X-Hradar-CSRF':csrf}})).status, csrf)).toBe(200);
+  const response = await page.evaluate(async csrf => {
+    const result = await fetch('/api/desktop/shutdown', {method:'POST',headers:{'X-Hradar-CSRF':csrf}});
+    return { status: result.status, body: await result.json() };
+  }, csrf);
+  expect(response).toEqual({ status: 200, body: { ok: true } });
   await Promise.race([stopped, delay(20000).then(() => { throw new Error('Packaged shutdown timed out'); })]);
   expect(child.exitCode).toBe(0);
 }

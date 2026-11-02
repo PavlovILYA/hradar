@@ -1,5 +1,39 @@
 # hradar — Development status / session handoff
 
+## PR #15 shutdown response ordering — 2026-11-02
+
+Existing branch/worktree `feat/local-domain-1709` / `hradar-local-domain`, starting
+at `78f596c`. App version stays **0.6.0**: correction within the same feature PR.
+
+VERIFIED:
+- Read exact ARM64 job124894514315 in installer run41321321620: first restart-smoke
+  `stop()` failed with `page.evaluate: TypeError: Failed to fetch`. Fast CI and Intel
+  installer passed at78f596c. Three ordinary isolated Intel restart runs also passed;
+  these do not reproduce the intermittent ARM64 failure itself.
+- Ktor3.6.0 `respond(200)` queues the response before the socket flush. Existing
+  shutdown immediately started JVM exit afterward. A real-Netty regression holding
+  the outbound flush failed on that ordering before the fix.
+- Shutdown now awaits the response writer and a socket flush barrier for persistent
+  connections. For `Connection: close` (or non-persistent HTTP/1.0), it awaits Netty's
+  close-after-response instead. The intermediate unconditional barrier correctly
+  failed a new close-connection regression and lifecycle smoke; both final cases pass.
+  No sleeps, retries or blanket error suppression were added.
+- Browser restart smoke now requires the complete200 JSON `{ok:true}`, retaining
+  exit0, port reuse by a foreign listener, new process/capability, saved-tab recovery
+  and stale-cookie/CSRF denial assertions.
+- Final JDK21 backend build: **201 tests,0failures/errors/skips**. Bundled desktop
+  staging,29Python safeguards, Node syntax, version and diff checks passed.
+- Fresh Intel package/JVM/JNI/linkage/resource seal and DMG checksum passed. Mounted
+  DMG/ZIP matched181files; full production UI/lifecycle smoke on isolated17119 passed,
+  including graceful shutdown, restart/recovery and SQLite/session preservation.
+
+NOT VERIFIED: new hosted ARM64/Intel result, physical installation or live Telegram.
+All runtime checks used temporary synthetic profiles; `~/.hradar`, other worktrees,
+master and PR#14 were untouched.
+
+NEXT ACTION: push this fix to existing PR#15. Owner checks the new CI separately;
+do not wait, watch or poll GitHub Actions after push. No merge, tag or Release.
+
 ## PR #15 independent final review — 2026-11-01
 
 Existing draft [PR #15](https://github.com/PavlovILYA/hradar/pull/15), branch
