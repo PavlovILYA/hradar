@@ -162,7 +162,13 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
 }
 export async function desktopLaunch() {
   const token = new URLSearchParams(location.hash.slice(1)).get('launch');
-  if (!token) return;
+  if (!token) {
+    if (location.hostname !== 'hradar.localhost' && !isDesktop()) return;
+    const recovered = await fetch('/desktop/recover', { method: 'POST', headers: { 'X-Hradar-Recovery': '1' }, cache: 'no-store' });
+    if (!recovered.ok) throw new Error('Откройте установленное приложение hradar в этом браузере, затем повторите подключение.');
+    sessionStorage.setItem('hradar-desktop', 'true');
+    return;
+  }
   history.replaceState(null, '', location.pathname);
   const response = await fetch('/desktop/launch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
   if (!response.ok) throw new Error('Запуск отклонён. Откройте приложение hradar повторно.');

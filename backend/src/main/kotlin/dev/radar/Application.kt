@@ -42,7 +42,7 @@ fun main() {
     // Older builds may have no session lock. Check their fixed port before any migration.
     if (DesktopRuntime.portOccupied()) {
         if (DesktopRuntime.reopen(paths)) return
-        DesktopRuntime.conflict("Порт 8080 занят. Закройте работающий hradar перед запуском новой версии.")
+        DesktopRuntime.conflict("Порт ${DesktopRuntime.port} занят. Закройте работающий hradar перед запуском новой версии.")
         return
     }
     try { paths.prepare() } catch (_: Exception) {
@@ -58,9 +58,10 @@ fun main() {
     // Older development installs don't take our lock: reject occupied port before TDLib starts.
     if (DesktopRuntime.portOccupied()) {
         lease.close()
-        DesktopRuntime.conflict("Порт 8080 занят. Закройте старый backend hradar или другое приложение и повторите запуск.")
+        DesktopRuntime.conflict("Порт ${DesktopRuntime.port} занят. Закройте старый backend hradar или другое приложение и повторите запуск.")
         return
     }
+    val desktopAccess = if (DesktopRuntime.enabled) DesktopAccess(DesktopRuntime.token()) else null
     val credentials = if (DesktopRuntime.smoke) null else paths.loadCredentials()
     val telegram = TdlibGateway(credentials?.apiId, credentials?.apiHash, paths.session)
     val repositories = try { Repositories(paths.database) } catch (ex: Exception) {
@@ -71,7 +72,6 @@ fun main() {
         return
     }
     val csrf = DesktopRuntime.token()
-    val launchToken = if (DesktopRuntime.enabled) DesktopRuntime.token() else null
     val matching = MatchingService()
     val search = SearchService(telegram, repositories, matching)
     val notifications = NotificationService(repositories, matching)
@@ -94,7 +94,7 @@ fun main() {
     val capabilities = CapabilityService(readPort, repositories)
     (org.slf4j.LoggerFactory.getLogger("io.modelcontextprotocol") as ch.qos.logback.classic.Logger).level = ch.qos.logback.classic.Level.OFF
     val server = embeddedServer(Netty, host = "127.0.0.1", port = DesktopRuntime.port) {
-        configureDesktopSecurity(launchToken, csrf)
+        configureDesktopSecurity(desktopAccess, csrf)
         configureOnboarding(telegram, paths, csrf) { Thread { kotlin.system.exitProcess(0) }.start() }
         routing { staticResources("/", "web", index = "index.html") }
         // Root route installation permits the MCP child route to use its SDK serializer.
@@ -161,7 +161,7 @@ fun main() {
         try {
             server.stop(500, 3000)
             sourceArchive.close(); historySync.close(); monitoring.close(); bot.close(); telegram.close(); repositories.close()
-            if (launchToken != null) Files.deleteIfExists(marker)
+            if (desktopAccess != null) Files.deleteIfExists(marker)
         } finally { lease.close(); stopped.countDown() }
     }
     Runtime.getRuntime().addShutdownHook(Thread { cleanup() })
@@ -169,10 +169,10 @@ fun main() {
         // Bind first. A competing unrelated listener must never cause a second account client.
         server.start(wait = false)
         if (!DesktopRuntime.smoke) { telegram.start(); bot.start(); monitoring.start(); historySync.resumePending(); sourceArchive.resumePending() }
-        if (launchToken != null) {
+        if (desktopAccess != null) {
             val temporaryMarker = Files.createTempFile(paths.data, "desktop-", ".tmp", java.nio.file.attribute.PosixFilePermissions.asFileAttribute(java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")))
             try {
-                Files.writeString(temporaryMarker, "{\"pid\":${ProcessHandle.current().pid()},\"token\":\"$launchToken\"}")
+                Files.writeString(temporaryMarker, "{\"pid\":${ProcessHandle.current().pid()},\"token\":\"${desktopAccess.capability}\"}")
                 Files.move(temporaryMarker, marker, java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
             } finally { Files.deleteIfExists(temporaryMarker) }
             // Netty start returns after bind; verify the HTTP route before launching the browser.
@@ -180,7 +180,7 @@ fun main() {
             repeat(50) {
                 try {
                     if (http.send(java.net.http.HttpRequest.newBuilder(java.net.URI("http://127.0.0.1:${DesktopRuntime.port}/health")).build(), java.net.http.HttpResponse.BodyHandlers.discarding()).statusCode() == 200) {
-                        DesktopRuntime.open("http://127.0.0.1:${DesktopRuntime.port}/#launch=$launchToken")
+                        DesktopRuntime.open("${DesktopRuntime.browserOrigin}/#launch=${desktopAccess.issueLaunch()}")
                         stopped.await(); return
                     }
                 } catch (_: java.io.IOException) { }

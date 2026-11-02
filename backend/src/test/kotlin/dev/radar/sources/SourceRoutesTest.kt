@@ -28,7 +28,7 @@ class SourceRoutesTest {
         application {
             install(ContentNegotiation) { json() }
             install(StatusPages) { exception<BadRequestException> { call, _ -> call.respondText("Invalid source", status = HttpStatusCode.BadRequest) } }
-            configureDesktopSecurity("synthetic-launch", "synthetic-csrf")
+            configureDesktopSecurity(dev.radar.desktop.DesktopAccess("synthetic-launch"), "synthetic-csrf")
             configureSourceRoutes(SourceCatalogService(port, repo), repo)
         }
         for (path in listOf("/api/sources", "/api/source-catalog")) {

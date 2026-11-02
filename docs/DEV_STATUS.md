@@ -1,5 +1,141 @@
 # hradar — Development status / session handoff
 
+## PR #15 shutdown response ordering — 2026-11-02
+
+Existing branch/worktree `feat/local-domain-1709` / `hradar-local-domain`, starting
+at `78f596c`. App version stays **0.6.0**: correction within the same feature PR.
+
+VERIFIED:
+- Read exact ARM64 job124894514315 in installer run41321321620: first restart-smoke
+  `stop()` failed with `page.evaluate: TypeError: Failed to fetch`. Fast CI and Intel
+  installer passed at78f596c. Three ordinary isolated Intel restart runs also passed;
+  these do not reproduce the intermittent ARM64 failure itself.
+- Ktor3.6.0 `respond(200)` queues the response before the socket flush. Existing
+  shutdown immediately started JVM exit afterward. A real-Netty regression holding
+  the outbound flush failed on that ordering before the fix.
+- Shutdown now awaits the response writer and a socket flush barrier for persistent
+  connections. For `Connection: close` (or non-persistent HTTP/1.0), it awaits Netty's
+  close-after-response instead. The intermediate unconditional barrier correctly
+  failed a new close-connection regression and lifecycle smoke; both final cases pass.
+  No sleeps, retries or blanket error suppression were added.
+- Browser restart smoke now requires the complete200 JSON `{ok:true}`, retaining
+  exit0, port reuse by a foreign listener, new process/capability, saved-tab recovery
+  and stale-cookie/CSRF denial assertions.
+- Final JDK21 backend build: **201 tests,0failures/errors/skips**. Bundled desktop
+  staging,29Python safeguards, Node syntax, version and diff checks passed.
+- Fresh Intel package/JVM/JNI/linkage/resource seal and DMG checksum passed. Mounted
+  DMG/ZIP matched181files; full production UI/lifecycle smoke on isolated17119 passed,
+  including graceful shutdown, restart/recovery and SQLite/session preservation.
+
+NOT VERIFIED: new hosted ARM64/Intel result, physical installation or live Telegram.
+All runtime checks used temporary synthetic profiles; `~/.hradar`, other worktrees,
+master and PR#14 were untouched.
+
+NEXT ACTION: push this fix to existing PR#15. Owner checks the new CI separately;
+do not wait, watch or poll GitHub Actions after push. No merge, tag or Release.
+
+## PR #15 independent final review — 2026-11-01
+
+Existing draft [PR #15](https://github.com/PavlovILYA/hradar/pull/15), branch
+`feat/local-domain-1709`, reviewed starting at `3e74206`; fetched master remains
+`6760635` (0.5.0). Keep this PR at **0.6.0** and merge it before Stage C #14.
+No Stage C integration, user-profile access, live Telegram client, merge or Release.
+
+VERIFIED:
+- Found and reproduced **High/P1** authorization bypass inherited from master:
+  packaged `/%61pi/onboarding` returned 200 without a cookie while the canonical
+  path returned 403. Ktor decodes segments/skips empty segments, but guards used
+  raw paths. Encoded MCP management routes also bypassed Origin/CSRF classification.
+  New regressions failed before the fix (14 targeted tests, 2 failures).
+- Fixed both guards with one shared path classifier matching Ktor's segment
+  decoding/empty-segment handling; malformed encoding fails closed. Regression
+  coverage checks cookie/CSRF denial, authorized requests and unchanged MCP policy.
+  Independent read-only re-review found no remaining actionable security finding.
+- Found **Low** stale installer schema metadata (10 versus actual 11) and v9/v10
+  distribution documentation. A new packaged assertion reproduced the mismatch;
+  corrected metadata/docs and pass metadata into mounted-DMG lifecycle smoke.
+- JDK21 `./gradlew :backend:build :backend:stageDesktop -PbundledWeb=true` exit0:
+  **199 tests, 0 failures/errors/skips**. Frontend build exit0, full offline
+  Playwright **63 passed**, Python **29 passed**, version and shell syntax checks pass.
+- Fresh Intel package/JVM/JNI/linkage/resource seal and DMG checksum passed.
+  Mounted DMG matched ZIP (181 files); complete production UI/lifecycle smoke passed
+  on1709 and separate-port17119, including new path/metadata assertions, HMAC/forged
+  marker denial, old-cookie/CSRF rejection, saved-tab recovery, SQLite/session
+  preservation, newer-schema refusal and graceful shutdown (Chromium156.0.8078.4).
+- Extra synthetic checks passed real authenticated SSE, cross-port interprocess
+  session exclusion, SIGTERM cleanup and SQLite integrity. Production runtime
+  defaults ignore smokePort without smoke and exclude Vite authority. System
+  resolver returned both ::1 and127.0.0.1; smoke inspected IPv4-only listeners.
+- Rechecked original-head hosted Fast CI40565762836 and macOS40565762872: SUCCESS;
+  both architecture job logs include mounted-DMG lifecycle and restart success.
+  Those results apply to3e74206, not this review's follow-up commit.
+
+NOT VERIFIED: physical Finder installation/default-browser visual activation,
+Gatekeeper/notarization, live Telegram session continuation, other browser/OS
+combinations. All runs used synthetic temporary homes; `~/.hradar` was untouched.
+No new complexity reduction is justified: bounded launch codes/HMAC/recovery each
+retain a distinct security/lifecycle role.
+
+NEXT ACTION: push this correction to the existing draft PR, wait for exact-head
+Fast CI and both macOS architecture jobs, and record their final URLs/status in
+the PR description and review handoff. No merge, tag or Release is authorized.
+
+## Stable desktop origin checkpoint — 2026-10-27
+
+Branch `feat/local-domain-1709` in isolated `hradar-local-domain`, base
+`6760635` (Stage B merged); proposed app version **0.6.0** from master 0.5.0.
+No Stage C logic or live profile changes. Canonical packaged UI:
+**http://hradar.localhost:1709/**, listener strictly **127.0.0.1:1709**.
+Dev stays 8080/Vite5173; account-free smoke retains an explicit separate port.
+
+VERIFIED:
+- macOS15.8.1 system resolver returns127.0.0.1; installed Chrome155.0.8059.85
+  opened the hostname without hosts/DNS edits. Packaged production assets/REST
+  passed actual Chromium UI/CRM and Chrome saved-tab restart/re-authentication.
+- Final JDK21 `./gradlew :backend:build :backend:stageDesktop -PbundledWeb=true`
+  exit0: **198tests,0failures/errors/skips**. Frontend build exit0; full offline
+  Playwright **63passed**; Python **29safeguards** and version sync/check passed.
+- x86_64 matching portable JNI synchronous smoke, packaged JVM/JNI/linkage,
+  ad-hoc resource seal, DMG creation/checksum verification passed locally. Mounted
+  read-only DMG matched ZIP byte-for-byte (181 files), then passed the complete
+  production UI/Chrome restart/lifecycle smoke on1709. Full separate-port smoke
+  on17119 also passed (installed Chrome156.0.8078.48 on2026-10-27).
+- Packaged lifecycle on1709 passed exact listener inspection, Host/Origin/API cookie/
+  CSRF/MCP-disabled denials, duplicate/foreign-port refusal, forged-marker HMAC
+  denial without leaking marker secret, SQLite/session sentinel preservation,
+  future-schema refusal and graceful shutdown. No Telegram client was created.
+- Chrome kept the original tab across backend restart; a foreign listener captured
+  its old cookie during downtime, which the next process rejected. The new native
+  handshake in that browser profile restored the saved tab at the same root URL;
+  old CSRF remained forbidden. Native launcher without smoke ignored smokePort17119,
+  listened only on1709, used an empty isolated home and shut down cleanly.
+- Independent review rejected an initial durable recovery bearer; removed entirely.
+  Current process cookie/CSRF rotate, and re-authentication requires native launch.
+  Re-review found no actionable issues. Packaged smoke caught concurrent launch
+  codes invalidating each other; a red regression test reproduced it, fixed with
+  at most8 pending individually single-use owner codes, verified by full build.
+
+NOT VERIFIED / limits:
+- Default-browser visual activation could not be observed: Chrome Apple-event
+  automation timed out. The non-smoke launcher executed OS browse; actual packaged
+  Chrome UI/restart were verified independently in an isolated browser context.
+- Physical installation/Gatekeeper, live Telegram session continuation and other
+  supported macOS/browser configurations were not exercised. Existing production
+  8080/profile remained untouched. HTTP cookies are not port-scoped; these controls
+  do not sandbox arbitrary local code stealing a current capability.
+- Exact-head hosted ARM64/Intel checks are pending at this checkpoint; use the
+  draft PR's live checks for subsequent evidence.
+  Base master6760635 Fast CI had an Intel `hdiutil create: Resource busy` failure;
+  backend/frontend/ARM64 passed. This is not evidence of our branch's hosted result.
+
+NEXT ACTION: commit/push and open a draft PR; local checks are complete.
+Inspect exact-head Fast CI and both hosted macOS architectures. Stage C is open
+as PR#14 with the same proposed0.6.0: reconcile SemVer with current master before
+the second merge, and rebase/retest this branch if Stage C merges first. No merge, tag or Release. Upgrade0.5.0 instructions:
+[MACOS_DISTRIBUTION.md](MACOS_DISTRIBUTION.md#stable-local-address-and-upgrade-from-050).
+
+---
+
 ## Stage B implementation checkpoint — 2026-10-25
 
 Branch `feat/telegram-source-reading` in isolated `hradar-sources-b`, base fetched
