@@ -1,5 +1,27 @@
 # hradar — Development status / session handoff
 
+## PR #16 versioned Actions artifact names — 2026-11-05
+
+VERIFIED: Installer workflow exposes the full canonical appVersion from version.py
+as a shared job output. Unsigned upload/download and signed upload now use
+`hradar-<version>-macos-<arch>-unsigned|signed`. Release promotion downloads the
+signed artifact using the tag version already checked against its commit's
+canonical gradle.properties; no publication/tagging was performed.
+
+VERIFIED: 31 Python tests passed, including workflow reference/name regressions
+and fake release downloads/checksums for both architectures with stable and
+`1.2.3-rc.1+build.2` versions (new checks failed before the fix). Version sync/check,
+workflow YAML parsing, actual version-output shell step with a temporary build
+counter, script syntax and diff checks passed. Existing Intel ZIP/DMG/JAR/plist/
+distribution.json versions match and ZIP still contains hradar.app. Packaging,
+application version **0.6.0**, file names and bundle name were not changed.
+
+NOT VERIFIED: new hosted artifact upload/download or real signing/promotion.
+No native/backend/GUI rebuild needed or run for this naming-only follow-up.
+NEXT ACTION: commit/push only feat/macos-menu-bar, then stop; owner checks CI.
+Master and PR #14/#15 remain untouched. Download/update instructions are in
+MACOS_DISTRIBUTION.md; SemVer prerelease/build suffixes remain intact.
+
 ## PR #16 frontend fixture correction — 2026-11-05
 
 VERIFIED: PR #16 is the existing Draft on `feat/macos-menu-bar`, starting at

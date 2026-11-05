@@ -29,6 +29,25 @@ public release**.
 Gatekeeper may refuse downloaded unsigned apps. Do not globally disable Gatekeeper;
 use the OS's per-app approval process only for an artifact you independently trust.
 
+## Downloads and updates
+
+GitHub Actions installer artifacts are named
+`hradar-<appVersion>-macos-<architecture>-unsigned` or
+`hradar-<appVersion>-macos-<architecture>-signed`, for `arm64` (Apple Silicon) and
+`x86_64` (Intel). The full canonical version includes any SemVer prerelease/build
+suffix. The unsigned upload, signing download and signed upload share the version
+job output; release promotion downloads the signed artifact for the version
+validated against its tag's `gradle.properties` and `distribution.json`.
+
+Unpack the downloaded Actions artifact ZIP to find
+`hradar-<appVersion>-<architecture>.dmg`,
+`hradar-<appVersion>-<architecture>.app.zip`, `SHA256SUMS` and `distribution.json`.
+The `.app.zip` is an alternative archive of the same application. Open the DMG and
+copy **hradar.app** to **Applications**. To update, quit hradar through its menu,
+then replace the previous **hradar.app** in Applications with the new copy and
+relaunch it. The internal bundle name stays constant so updates replace the app;
+user data remains outside the bundle. Check architecture/version before copying.
+
 ## Local data and existing installations
 
 Data remains outside `.app`/DMG in `~/.hradar`:

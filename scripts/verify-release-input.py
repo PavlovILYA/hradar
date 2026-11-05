@@ -16,7 +16,7 @@ output=pathlib.Path('.tdlib-build/release-promotion'); output.mkdir(parents=True
 build_number=None
 for arch in ['arm64','x86_64']:
     folder=output/arch
-    gh('run','download',run,'--repo',repo,'--name',f'hradar-macos-{arch}-signed','--dir',str(folder))
+    gh('run','download',run,'--repo',repo,'--name',f'hradar-{tag[1:]}-macos-{arch}-signed','--dir',str(folder))
     m=json.loads((folder/'distribution.json').read_text())
     assert m['signedAndNotarized'] and m['commit']==commit and m['architecture']==arch
     check_distribution(m, tag[1:], build_number, arch)

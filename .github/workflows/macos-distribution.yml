@@ -20,6 +20,7 @@ jobs:
   version:
     runs-on: ubuntu-24.04
     outputs:
+      app_version: ${{ steps.version.outputs.app_version }}
       build_number: ${{ steps.version.outputs.build_number }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -29,6 +30,8 @@ jobs:
         id: version
         run: |
           python3 -B scripts/version.py check
+          HRADAR_APP_VERSION=$(python3 -B scripts/version.py get)
+          echo "app_version=$HRADAR_APP_VERSION" >> "$GITHUB_OUTPUT"
           HRADAR_ALLOCATED_BUILD=$(python3 -B scripts/version.py build-number)
           echo "build_number=$HRADAR_ALLOCATED_BUILD" >> "$GITHUB_OUTPUT"
   native:
@@ -95,7 +98,7 @@ jobs:
             .tdlib-build/distribution-${{ matrix.arch }}/*.app.zip
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: hradar-macos-${{ matrix.arch }}-unsigned
+          name: hradar-${{ needs.version.outputs.app_version }}-macos-${{ matrix.arch }}-unsigned
           path: |
             .tdlib-build/distribution-${{ matrix.arch }}/*.dmg
             .tdlib-build/distribution-${{ matrix.arch }}/*.app.zip
@@ -130,7 +133,7 @@ jobs:
           java-version: '21.0.12+8.0.LTS'
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
-          name: hradar-macos-${{ matrix.arch }}-unsigned
+          name: hradar-${{ needs.version.outputs.app_version }}-macos-${{ matrix.arch }}-unsigned
           path: .tdlib-build/signing
       - name: Provision ephemeral Developer ID and notarytool credentials
         env:
@@ -163,7 +166,7 @@ jobs:
             .tdlib-build/signing/signed/*.app.zip
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
-          name: hradar-macos-${{ matrix.arch }}-signed
+          name: hradar-${{ needs.version.outputs.app_version }}-macos-${{ matrix.arch }}-signed
           path: .tdlib-build/signing/signed/
           if-no-files-found: error
           retention-days: 90
