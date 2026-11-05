@@ -1,5 +1,26 @@
 # hradar — Development status / session handoff
 
+## PR #16 frontend fixture correction — 2026-11-05
+
+VERIFIED: PR #16 is the existing Draft on `feat/macos-menu-bar`, starting at
+`4ba97e8`. Fast CI42064710792 backend passed; frontend63/64 failed on the missing
+project-settings heading. Original local test passed, but holding project details
+until list rendering reproduced `criteria.description.slice` on undefined.
+Copied only the `overview.spec.ts` fixture correction from PR #14 (`dc359c2`):
+mandatory empty description plus explicit list-before-detail ordering, retaining
+all existing assertions/timeouts. No Stage C or production/Menu Bar code changed.
+
+VERIFIED: `CI=true HRADAR_TEST_PORT=5186 npm run test:ci --prefix frontend` exited0:
+**64 passed**. `npm run build --prefix frontend` exited0; version/diff checks passed.
+Synthetic browser fixtures only; no backend or real profile/session used. Version
+stays **0.6.0**: tests/docs-only follow-up, no additional bump for this PR.
+
+NOT VERIFIED: new hosted pipelines; Kotlin/native/GUI checks were not rerun for
+this tests-only correction. Prior Menu Bar manual QA limits below still apply.
+NEXT ACTION: commit/push only this existing PR branch, then stop immediately.
+The owner/ChatGPT checks pipeline results separately; no post-push CI requests,
+waiting or polling. Master, PR #14/#15 and their worktrees remain unchanged.
+
 ## macOS Menu Bar checkpoint — 2026-11-05
 
 Branch `feat/macos-menu-bar`, isolated `hradar-menu-bar`, based on fetched master

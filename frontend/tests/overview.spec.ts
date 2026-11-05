@@ -1,11 +1,13 @@
 import { test, expect, type Page } from '@playwright/test';
 import { openSection } from './navigation-helpers';
 const channel = { id: -1001, username: 'synthetic_jobs', title: 'Synthetic Jobs' };
-const project = { id: 'p1', criteria: { name: 'Synthetic Kotlin', status: 'ACTIVE', sources: [-1001], required: ['Kotlin'], desired: [], excluded: [], templateIds: [] }, createdAt: 1700000000000, updatedAt: 1700000000000 };
+const project = { id: 'p1', criteria: { name: 'Synthetic Kotlin', description: '', status: 'ACTIVE', sources: [-1001], required: ['Kotlin'], desired: [], excluded: [], templateIds: [] }, createdAt: 1700000000000, updatedAt: 1700000000000 };
 const template = { id: 't1', name: 'Synthetic rule', required: ['Kotlin'], any: [], excluded: [], telegramQuery: 'Kotlin', sourceMode: 'selected', sources: [-1001], active: true, subscribed: true };
 const message = { id: 42, channelId: -1001, date: 1700000000, title: channel.title, username: channel.username, text: 'Synthetic Kotlin publication', link: 'https://t.me/synthetic_jobs/42' };
 const notification = { id: 'n1', templateId: 't1', templateName: template.name, read: false, sequence: 1, message };
-async function fixture(page: Page, options: { empty?: boolean; criteria?: boolean; subscribed?: boolean; connection?: string; fail?: string; slow?: boolean; multiple?: boolean } = {}) {
+async function fixture(page: Page, options: { empty?: boolean; criteria?: boolean; subscribed?: boolean; connection?: string; fail?: string; slow?: boolean; multiple?: boolean; holdProjectDetail?: boolean } = {}) {
+  let releaseProjectDetail!: () => void;
+  const projectDetailReady = new Promise<void>(resolve => { releaseProjectDetail = resolve; });
   let channels = options.empty ? [] : options.multiple ? [channel, { ...channel, id: -1002, title: 'Second synthetic source', username: 'synthetic_other' }] : [channel];
   let projects = options.empty ? [] : [{ ...project, criteria: { ...project.criteria, required: options.criteria === false ? [] : ['Kotlin'] } }];
   if (options.multiple) projects = [projects[0], { ...project, id: 'p2', criteria: { ...project.criteria, name: 'Synthetic React' } }, { ...project, id: 'p3', criteria: { ...project.criteria, name: 'Synthetic QA' } }];
@@ -25,7 +27,10 @@ async function fixture(page: Page, options: { empty?: boolean; criteria?: boolea
     if (path === '/api/channels') return reply(channels);
     if (path === '/api/templates') return reply(templates);
     if (path === '/api/projects') return reply({ items: projects, total: projects.length ? 12 : 0 });
-    if (path === '/api/projects/p1') return reply(projects[0]);
+    if (path === '/api/projects/p1') {
+      if (options.holdProjectDetail) await projectDetailReady;
+      return reply(projects[0]);
+    }
     if (path === '/api/projects/p1/statistics') return reply({ total: 0, stages: {} });
     if (path === '/api/projects/p1/cards') return reply({ items: [], total: 0 });
     if (path === '/api/projects/p1/matches' || path === '/api/projects/p1/saved') return reply({ items: [], messages: [], nextCursor: null });
@@ -34,7 +39,7 @@ async function fixture(page: Page, options: { empty?: boolean; criteria?: boolea
     throw new Error(`Unexpected dashboard API: ${method} ${path}`);
   });
   await page.goto('/');
-  return { writes, paths, recover: () => { fail = undefined; }, failAll: () => { fail = 'all'; }, emptySources: () => { channels = []; }, setConfigured: () => { channels = [channel]; projects = [project]; templates = [template]; } };
+  return { writes, paths, releaseProjectDetail, recover: () => { fail = undefined; }, failAll: () => { fail = 'all'; }, emptySources: () => { channels = []; }, setConfigured: () => { channels = [channel]; projects = [project]; templates = [template]; } };
 }
 const card = (page: Page, name: string) => page.getByRole('region', { name, exact: true });
 
@@ -70,10 +75,13 @@ test('populated overview uses exact totals, bounded records and existing notific
 });
 
 test('partial setup guides criteria and monitoring using saved facts, not visits', async ({ page }) => {
-  await fixture(page, { criteria: false, subscribed: false });
+  const data = await fixture(page, { criteria: false, subscribed: false, holdProjectDetail: true });
   await expect(page.getByText('Следующий шаг: критерии последнего проекта')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Шаг 4. Настроить мониторинг' })).toBeDisabled();
   await page.getByRole('button', { name: 'Шаг 3. Указать критерии поиска' }).click();
+  // The list may render before the requested project's detail. Exercise that order explicitly.
+  await expect(page.getByRole('button', { name: /Synthetic Kotlin.*Без обязательных технологий/ })).toBeVisible();
+  data.releaseProjectDetail();
   await expect(page.getByRole('heading', { name: 'Настройка проекта' })).toBeVisible();
   await expect(page.getByLabel('Обязательные технологии')).toHaveValue('');
   await openSection(page, 'Обзор');
