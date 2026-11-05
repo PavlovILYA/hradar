@@ -68,16 +68,31 @@ object DesktopRuntime {
     val port = if (smoke) System.getProperty("hradar.smokePort", "8080").toInt().also { require(it in 1024..65535) } else 8080
     fun token(): String = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32).also { SecureRandom().nextBytes(it) })
     fun portOccupied(): Boolean = try { Socket().use { it.connect(java.net.InetSocketAddress("127.0.0.1", port), 300) }; true } catch (_: java.io.IOException) { false }
+    internal fun probeReady(): Boolean = java.net.http.HttpClient.newBuilder()
+        .connectTimeout(java.time.Duration.ofSeconds(1)).build().use { http ->
+            http.send(
+                java.net.http.HttpRequest.newBuilder(URI("http://127.0.0.1:$port/health"))
+                    .timeout(java.time.Duration.ofSeconds(2)).build(),
+                java.net.http.HttpResponse.BodyHandlers.discarding(),
+            ).statusCode() == 200
+        }
     fun open(url: String) {
         // Use LaunchServices via java.desktop: don't expose the private launch token in child argv.
         if (enabled && !smoke) java.awt.Desktop.getDesktop().browse(URI(url))
     }
-    fun conflict(message: String) {
+    // Internal native entry point; only this runtime knows the launcher contract.
+    internal fun launchUri(token: String, destination: DesktopDestination = DesktopDestination.HOME): URI =
+        URI("http", null, "127.0.0.1", port, "/",
+            if (destination == DesktopDestination.SETTINGS) "screen=application" else null, "launch=$token")
+    internal fun openInterface(token: String, destination: DesktopDestination = DesktopDestination.HOME) {
+        open(launchUri(token, destination).toString())
+    }
+    fun conflict(message: String, exitCode: Int = 0) {
         System.err.println(message)
         if (enabled && !smoke) {
             javax.swing.JOptionPane.showMessageDialog(null, message, "hradar", javax.swing.JOptionPane.WARNING_MESSAGE)
             // No client has been created on conflict paths; don't retain an AWT-only process.
-            kotlin.system.exitProcess(0)
+            kotlin.system.exitProcess(exitCode)
         }
     }
     fun reopen(paths: RuntimePaths): Boolean {
@@ -87,7 +102,7 @@ object DesktopRuntime {
             val pid = (obj["pid"] as kotlinx.serialization.json.JsonPrimitive).content.toLong()
             if (ProcessHandle.of(pid).map { it.isAlive }.orElse(false) && portOccupied()) {
                 val token = (obj["token"] as kotlinx.serialization.json.JsonPrimitive).content
-                open("http://127.0.0.1:$port/#launch=$token"); true
+                openInterface(token); true
             } else false
         } catch (_: Exception) { false }
     }

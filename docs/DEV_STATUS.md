@@ -1,5 +1,46 @@
 # hradar — Development status / session handoff
 
+## macOS Menu Bar checkpoint — 2026-11-05
+
+Branch `feat/macos-menu-bar`, isolated `hradar-menu-bar`, based on fetched master
+`6760635`. Independent of PR #14/#15; no merges or changes to their branches.
+App **0.6.0**: one compatible MINOR feature bump from master 0.5.0; schema unchanged.
+
+VERIFIED (local macOS 15.8.1 Intel, Microsoft OpenJDK 21.0.12.1):
+- Java AWT tray/native menu, lifecycle-bound status, guarded actions and one shared
+  menu/web shutdown request; existing hook owns cleanup. DesktopRuntime alone owns
+  home/settings launch URLs. Dev launch does not install a tray.
+- `./gradlew :backend:build :backend:stageDesktop :backend:desktopMenuSmoke
+  -PbundledWeb=true`: exit 0; **199 tests, 0 failures/errors/skips**. Real SystemTray
+  registration/actions/disposal passed. Two child JVMs quit through menu handlers
+  while health/browser adapters were stalled; exit 0, released port/session lease,
+  removed marker. The health case failed before the reviewed startup-lock fix.
+- Frontend production build exit 0; **64 offline Playwright tests passed**, including
+  settings query retention across launch handshake/reload. **29 Python safeguards
+  passed**; version synchronization, Node/Python/shell syntax and diff checks passed.
+- Fresh Intel app/DMG built with LSUIElement and template-image JVM option before
+  final ad-hoc signing. Glyph/resource, Mach-O architecture/linkage, bundled JVM/JNI,
+  codesign and DMG checksum passed. Mounted DMG/ZIP **181 files** matched byte-for-byte.
+- Mounted-DMG lifecycle smoke on isolated port **17129** exit 0: production home and
+  settings through real launch endpoint, auth/security denials, duplicate refusal,
+  restart/data preservation, newer-schema refusal, headless-startup cleanup and web
+  shutdown. Port rebind uses SO_REUSEADDR, matching restart semantics with TIME_WAIT.
+- No real profile/session/credentials or Telegram client used; existing installed
+  app untouched. Native artifact reused read-only and checked against pinned TDLib.
+
+NOT VERIFIED: ARM64 execution or hosted CI; local JDK is not the CI-pinned Temurin.
+Physical Finder launch/no Dock, pointer clicks, light/dark/Retina appearance, physical
+Mac installation and Developer ID/Gatekeeper/notarization need manual evidence.
+Fake-TDLib cleanup does not establish a real Telegram Close exchange.
+
+NEXT ACTION: commit/push only this feature branch and create Draft PR into master;
+inspect CI once without waiting. Owner checks final hosted ARM64/Intel results and
+[manual QA](MACOS_DISTRIBUTION.md#manual-qa--repeat-separately-on-intel-and-arm64-macos-15).
+Integration with #15 must adapt only DesktopRuntime access issuance, preserve the
+settings query and its response-flush shutdown fix, and reconcile the shared next
+version. No merge/tag/Release or real-profile launch authorized by this task.
+
+
 ## Stage B implementation checkpoint — 2026-10-25
 
 Branch `feat/telegram-source-reading` in isolated `hradar-sources-b`, base fetched

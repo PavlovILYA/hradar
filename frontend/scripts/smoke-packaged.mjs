@@ -36,5 +36,11 @@ try {
   await page.getByText('Synthetic Java publication', { exact: true }).waitFor();
   await expect(page.getByLabel('Заметки')).toHaveValue('Synthetic preserved note');
   await expect(page.getByLabel('Стадия', { exact: true })).toHaveValue('CONTACTED');
+  await page.goto(`http://127.0.0.1:${process.env.HRADAR_SMOKE_PORT ?? '8080'}/?screen=application#launch=${process.env.HRADAR_SMOKE_TOKEN}`);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Состояние приложения');
+  await expect(page.getByRole('button', { name: 'Завершить hradar', exact: true })).toBeVisible();
+  if (new URL(page.url()).hash || new URL(page.url()).search !== '?screen=application') throw new Error('Settings destination lost during launch');
+  await page.reload();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Состояние приложения');
   if (failures.length) throw new Error(failures.join('\n'));
 } finally { await browser.close(); }

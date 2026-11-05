@@ -181,3 +181,70 @@ for a developer machine with an existing backend; production always uses 8080.
 Apple reference: https://developer.apple.com/documentation/security/customizing-the-notarization-workflow
 Oracle reference: https://docs.oracle.com/en/java/javase/21/docs/specs/man/jpackage.html
 GitHub runner reference: https://docs.github.com/en/actions/reference/runners/github-hosted-runners
+
+## Menu Bar mode (0.6.0)
+
+Packaged macOS launches are agent apps (`LSUIElement=true`, set before final
+codesign). Java 21 AWT `SystemTray`/`TrayIcon`/`PopupMenu` supplies the native menu;
+no extra service or native bridge. The main Finder app icon and web branding are
+unchanged. `desktop/menu-h.txt` is one small monochrome glyph source rendered as
+18/36 pixel `BaseMultiResolutionImage` variants. The packaged JVM enables
+`apple.awt.enableTemplateImages`, so macOS renders the template for its appearance.
+Implementation references: [Apple LSUIElement](https://developer.apple.com/documentation/bundleresources/information-property-list/lsuielement),
+[OpenJDK 21 template image support](https://github.com/openjdk/jdk21u/blob/master/src/java.desktop/macosx/classes/sun/lwawt/macosx/CTrayIcon.java),
+[OpenJDK native left-click menu](https://github.com/openjdk/jdk21u/blob/master/src/java.desktop/macosx/native/libawt_lwawt/awt/CTrayIcon.m).
+
+Menu states come from startup, successful HTTP health readiness and shutdown.
+Browser actions stay disabled until ready and during shutdown; quit is idempotent.
+Closing browser tabs keeps the backend and menu running. Home/settings use the
+same private launcher handshake; settings selects the existing **Состояние
+приложения** screen with the fixed `?screen=application` deep link, retained while
+the launch fragment is consumed. No new capability endpoint or HTTP permission.
+
+The tray is installed only after profile/port exclusion and before starting HTTP
+or account workers. Failure closes resources and reports a generic startup message
+without secrets; a packaged headless process fails rather than running invisibly.
+A duplicate does not construct a tray. Menu and web quit share one request guard
+and the existing JVM shutdown hook; it stops HTTP, closes workers/TDLib/SQLite,
+removes the marker/tray, and releases the session lease. A startup lock protects service initialization only; health probes have a
+two-second request timeout and browser opening runs outside that lock. Normal Gradle/IDE backend launch installs
+no tray and requires no GUI. No real user profile is needed for any smoke below.
+
+`./gradlew :backend:desktopMenuSmoke` is an explicit macOS GUI check and also runs
+in both installer jobs. It registers a real tray, dispatches real AWT menu action
+listeners, checks lifecycle/action states, removes the icon, and returns without
+System.exit (detecting a retained AWT thread by command timeout). Two child JVMs also quit via the real menu handlers while readiness/browser
+opening are deliberately stalled, verifying process exit, released port/lease and
+removed marker. It does not prove
+physical pointer clicks or visual appearance. Packaged lifecycle smoke also
+exercises real tray initialization and headless refusal with temporary profiles.
+
+### Manual QA — repeat separately on Intel and ARM64, macOS 15+
+
+Use a disposable macOS account with an empty profile, or an owner-controlled
+isolated test profile; never point automated tests at the real `~/.hradar`.
+
+- [ ] Copy the matching DMG app into Applications; launch via Finder. Confirm one
+  Menu Bar icon, no Dock icon, and initial browser opening. App/Finder icon unchanged.
+- [ ] Left-click the icon: native menu title/status and all three actions appear.
+  Check the small `h` on light/dark Menu Bar, selected-menu highlight, Retina and
+  an external display; check menu placement after display/appearance changes.
+- [ ] Close all browser tabs. Confirm menu and backend remain. Open hradar again,
+  then Settings: existing application settings screen opens, authentication works,
+  launch fragment is removed and no token is shown in the menu/logs.
+- [ ] Launch the app again while running: one icon/process/session; interface reopens.
+- [ ] Quit from the menu (also try during startup and repeated clicks). Wait for
+  process/icon disappearance; verify port and session lease released and instance
+  marker removed. Relaunch; check stored synthetic records remain. Repeat web quit.
+- [ ] Check a denied GUI launch fails visibly or exits safely; check ordinary IDE/
+  Gradle backend still has no tray. Verify signing/Gatekeeper on a separately
+  authorized Developer ID build. No real Telegram login is required here.
+
+Physical pointer clicks, appearance/Retina, Finder activation and Developer ID /
+notarization require manual evidence. Automated fake-TDLib smoke does not prove a
+real Telegram Close exchange. Merge with PR #15 must keep `DesktopRuntime` as the
+only owner of destination URL/access issuance: adapt `openInterface` to its
+single-use launch-code flow, preserve the fixed settings destination through that
+handshake, and retain #15's response-flush shutdown fix. Do not copy the current
+master address/token implementation into the AWT class. Both PRs may propose 0.6.0;
+reconcile the next version at integration time, without changing SQLite schema.

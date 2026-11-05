@@ -77,7 +77,7 @@ jobs:
         run: |
           npm ci --prefix frontend
           npm run build --prefix frontend
-          ./gradlew :backend:build :backend:stageDesktop -PbundledWeb=true --no-daemon --console=plain
+          ./gradlew :backend:build :backend:stageDesktop :backend:desktopMenuSmoke -PbundledWeb=true --no-daemon --console=plain
           python3 -B -m unittest discover -s tests -v
       - name: App image, bundled JVM/JNI checks and DMG
         run: bash scripts/package-macos.sh '${{ matrix.arch }}'

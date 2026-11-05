@@ -163,7 +163,7 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
 export async function desktopLaunch() {
   const token = new URLSearchParams(location.hash.slice(1)).get('launch');
   if (!token) return;
-  history.replaceState(null, '', location.pathname);
+  history.replaceState(null, '', location.pathname + location.search);
   const response = await fetch('/desktop/launch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
   if (!response.ok) throw new Error('Запуск отклонён. Откройте приложение hradar повторно.');
   sessionStorage.setItem('hradar-desktop', 'true');

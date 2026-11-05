@@ -101,3 +101,13 @@ tasks.register<Sync>("stageDesktop") {
     from(tasks.jar)
     from(configurations.runtimeClasspath)
 }
+
+// Opt-in real macOS GUI check; ordinary build/test never initializes AWT.
+tasks.register<JavaExec>("desktopMenuSmoke") {
+    group = "verification"
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("dev.radar.desktop.DesktopMenuGuiSmoke")
+    systemProperty("hradar.desktop", "true")
+    systemProperty("apple.awt.enableTemplateImages", "true")
+}
