@@ -1,5 +1,89 @@
 # hradar — Development status / session handoff
 
+## PR #16 versioned Actions artifact names — 2026-11-05
+
+VERIFIED: Installer workflow exposes the full canonical appVersion from version.py
+as a shared job output. Unsigned upload/download and signed upload now use
+`hradar-<version>-macos-<arch>-unsigned|signed`. Release promotion downloads the
+signed artifact using the tag version already checked against its commit's
+canonical gradle.properties; no publication/tagging was performed.
+
+VERIFIED: 31 Python tests passed, including workflow reference/name regressions
+and fake release downloads/checksums for both architectures with stable and
+`1.2.3-rc.1+build.2` versions (new checks failed before the fix). Version sync/check,
+workflow YAML parsing, actual version-output shell step with a temporary build
+counter, script syntax and diff checks passed. Existing Intel ZIP/DMG/JAR/plist/
+distribution.json versions match and ZIP still contains hradar.app. Packaging,
+application version **0.6.0**, file names and bundle name were not changed.
+
+NOT VERIFIED: new hosted artifact upload/download or real signing/promotion.
+No native/backend/GUI rebuild needed or run for this naming-only follow-up.
+NEXT ACTION: commit/push only feat/macos-menu-bar, then stop; owner checks CI.
+Master and PR #14/#15 remain untouched. Download/update instructions are in
+MACOS_DISTRIBUTION.md; SemVer prerelease/build suffixes remain intact.
+
+## PR #16 frontend fixture correction — 2026-11-05
+
+VERIFIED: PR #16 is the existing Draft on `feat/macos-menu-bar`, starting at
+`4ba97e8`. Fast CI42064710792 backend passed; frontend63/64 failed on the missing
+project-settings heading. Original local test passed, but holding project details
+until list rendering reproduced `criteria.description.slice` on undefined.
+Copied only the `overview.spec.ts` fixture correction from PR #14 (`dc359c2`):
+mandatory empty description plus explicit list-before-detail ordering, retaining
+all existing assertions/timeouts. No Stage C or production/Menu Bar code changed.
+
+VERIFIED: `CI=true HRADAR_TEST_PORT=5186 npm run test:ci --prefix frontend` exited0:
+**64 passed**. `npm run build --prefix frontend` exited0; version/diff checks passed.
+Synthetic browser fixtures only; no backend or real profile/session used. Version
+stays **0.6.0**: tests/docs-only follow-up, no additional bump for this PR.
+
+NOT VERIFIED: new hosted pipelines; Kotlin/native/GUI checks were not rerun for
+this tests-only correction. Prior Menu Bar manual QA limits below still apply.
+NEXT ACTION: commit/push only this existing PR branch, then stop immediately.
+The owner/ChatGPT checks pipeline results separately; no post-push CI requests,
+waiting or polling. Master, PR #14/#15 and their worktrees remain unchanged.
+
+## macOS Menu Bar checkpoint — 2026-11-05
+
+Branch `feat/macos-menu-bar`, isolated `hradar-menu-bar`, based on fetched master
+`6760635`. Independent of PR #14/#15; no merges or changes to their branches.
+App **0.6.0**: one compatible MINOR feature bump from master 0.5.0; schema unchanged.
+
+VERIFIED (local macOS 15.8.1 Intel, Microsoft OpenJDK 21.0.12.1):
+- Java AWT tray/native menu, lifecycle-bound status, guarded actions and one shared
+  menu/web shutdown request; existing hook owns cleanup. DesktopRuntime alone owns
+  home/settings launch URLs. Dev launch does not install a tray.
+- `./gradlew :backend:build :backend:stageDesktop :backend:desktopMenuSmoke
+  -PbundledWeb=true`: exit 0; **199 tests, 0 failures/errors/skips**. Real SystemTray
+  registration/actions/disposal passed. Two child JVMs quit through menu handlers
+  while health/browser adapters were stalled; exit 0, released port/session lease,
+  removed marker. The health case failed before the reviewed startup-lock fix.
+- Frontend production build exit 0; **64 offline Playwright tests passed**, including
+  settings query retention across launch handshake/reload. **29 Python safeguards
+  passed**; version synchronization, Node/Python/shell syntax and diff checks passed.
+- Fresh Intel app/DMG built with LSUIElement and template-image JVM option before
+  final ad-hoc signing. Glyph/resource, Mach-O architecture/linkage, bundled JVM/JNI,
+  codesign and DMG checksum passed. Mounted DMG/ZIP **181 files** matched byte-for-byte.
+- Mounted-DMG lifecycle smoke on isolated port **17129** exit 0: production home and
+  settings through real launch endpoint, auth/security denials, duplicate refusal,
+  restart/data preservation, newer-schema refusal, headless-startup cleanup and web
+  shutdown. Port rebind uses SO_REUSEADDR, matching restart semantics with TIME_WAIT.
+- No real profile/session/credentials or Telegram client used; existing installed
+  app untouched. Native artifact reused read-only and checked against pinned TDLib.
+
+NOT VERIFIED: ARM64 execution or hosted CI; local JDK is not the CI-pinned Temurin.
+Physical Finder launch/no Dock, pointer clicks, light/dark/Retina appearance, physical
+Mac installation and Developer ID/Gatekeeper/notarization need manual evidence.
+Fake-TDLib cleanup does not establish a real Telegram Close exchange.
+
+NEXT ACTION: commit/push only this feature branch and create Draft PR into master;
+inspect CI once without waiting. Owner checks final hosted ARM64/Intel results and
+[manual QA](MACOS_DISTRIBUTION.md#manual-qa--repeat-separately-on-intel-and-arm64-macos-15).
+Integration with #15 must adapt only DesktopRuntime access issuance, preserve the
+settings query and its response-flush shutdown fix, and reconcile the shared next
+version. No merge/tag/Release or real-profile launch authorized by this task.
+
+
 ## Stage B implementation checkpoint — 2026-10-25
 
 Branch `feat/telegram-source-reading` in isolated `hradar-sources-b`, base fetched

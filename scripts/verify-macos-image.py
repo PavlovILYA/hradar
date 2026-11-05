@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
 """Mach-O closure and bundled JVM/JNI startup; never creates an account client."""
-import pathlib, subprocess, sys, os, plistlib
+import pathlib, subprocess, sys, os, plistlib, zipfile
 from version import app_version, parse_version, validate_build_number, check_jar
 app = pathlib.Path(sys.argv[1]).resolve()
 arch = sys.argv[2]
 assert arch in ('arm64', 'x86_64')
 version = app_version()
+configuration = (app / 'Contents/app/hradar.cfg').read_text()
+assert 'java-options=-Dhradar.desktop=true' in configuration
+assert 'java-options=-Dapple.awt.enableTemplateImages=true' in configuration
+with zipfile.ZipFile(app / 'Contents/app' / f'backend-{version}.jar') as jar:
+    glyph = jar.read('desktop/menu-h.txt').decode().splitlines()
+    assert len(glyph) == 18 and all(len(row) == 18 for row in glyph)
+    assert any('#' in row for row in glyph)
+
 info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
+assert info.get('LSUIElement') is True, 'Packaged app must be a Menu Bar agent'
 assert info['CFBundleShortVersionString'] == parse_version(version), 'Packaged short version mismatch'
 validate_build_number(info['CFBundleVersion'])
 if os.environ.get('HRADAR_BUILD_NUMBER'):

@@ -95,11 +95,22 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
                 process.wait(timeout=20)
                 assert process.returncode == 0
                 assert not marker.exists()
+                with socket.socket() as released:
+                    released.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    released.bind(('127.0.0.1', port))
                 assert (session/'preserved-sentinel').read_text() == 'preserved'
                 assert (home/'.hradar/tdlib/preserved-sentinel').read_text() == 'preserved'
             finally:
                 if process.poll() is None:
                     process.terminate(); process.wait(timeout=20)
+        # Packaged agent without a GUI must fail and clean up, never become invisible.
+        headless_env = dict(env, JAVA_TOOL_OPTIONS=env['JAVA_TOOL_OPTIONS']+' -Djava.awt.headless=true')
+        failed = subprocess.run([str(launcher)], env=headless_env, stdout=log, stderr=log, timeout=20)
+        assert failed.returncode != 0
+        assert not marker.exists()
+        with socket.socket() as released:
+            released.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            released.bind(('127.0.0.1', port))
         # Old backend/foreign port: abort before even opening SQLite/TDLib.
         with socket.socket() as listener:
             listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

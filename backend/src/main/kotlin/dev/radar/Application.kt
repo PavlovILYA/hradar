@@ -36,12 +36,20 @@ internal suspend fun ApplicationCall.respondApiError(status: HttpStatusCode, err
     respondText(Json.encodeToString(ApiError.serializer(), error), ContentType.Application.Json, status)
 }
 
-fun main() {
+fun main() = runApplication()
+
+internal fun runApplication(
+    openBrowser: (String) -> Unit = { DesktopRuntime.openInterface(it) },
+    probeReady: () -> Boolean = DesktopRuntime::probeReady,
+) {
     if (System.getProperty("hradar.jniSmoke") == "true") { jniSmoke(); return }
     val paths = RuntimePaths()
     // Older builds may have no session lock. Check their fixed port before any migration.
     if (DesktopRuntime.portOccupied()) {
-        if (DesktopRuntime.reopen(paths)) return
+        if (DesktopRuntime.reopen(paths)) {
+            if (DesktopRuntime.enabled && !DesktopRuntime.smoke) kotlin.system.exitProcess(0)
+            return
+        }
         DesktopRuntime.conflict("Порт 8080 занят. Закройте работающий hradar перед запуском новой версии.")
         return
     }
@@ -93,9 +101,17 @@ fun main() {
     val readPort = TdlibReadPort(telegram, search)
     val capabilities = CapabilityService(readPort, repositories)
     (org.slf4j.LoggerFactory.getLogger("io.modelcontextprotocol") as ch.qos.logback.classic.Logger).level = ch.qos.logback.classic.Level.OFF
+    var menu: DesktopMenu? = null
+    val shutdownRequested = java.util.concurrent.atomic.AtomicBoolean(false)
+    fun requestShutdown() {
+        if (!shutdownRequested.compareAndSet(false, true)) return
+        menu?.stopping()
+        // Existing shutdown hook owns all cleanup, including TDLib Close.
+        Thread({ kotlin.system.exitProcess(0) }, "hradar-shutdown").start()
+    }
     val server = embeddedServer(Netty, host = "127.0.0.1", port = DesktopRuntime.port) {
         configureDesktopSecurity(launchToken, csrf)
-        configureOnboarding(telegram, paths, csrf) { Thread { kotlin.system.exitProcess(0) }.start() }
+        configureOnboarding(telegram, paths, csrf, ::requestShutdown)
         routing { staticResources("/", "web", index = "index.html") }
         // Root route installation permits the MCP child route to use its SDK serializer.
         routing { install(ContentNegotiation) {
@@ -156,38 +172,67 @@ fun main() {
     val marker = paths.data.resolve("desktop-instance.json")
     val stopped = java.util.concurrent.CountDownLatch(1)
     val cleaned = java.util.concurrent.atomic.AtomicBoolean(false)
-    fun cleanup() {
-        if (!cleaned.compareAndSet(false, true)) return
+    val lifecycleLock = Any()
+    fun cleanup() = synchronized(lifecycleLock) {
+        if (!cleaned.compareAndSet(false, true)) return@synchronized
+        shutdownRequested.set(true)
+        menu?.stopping()
         try {
-            server.stop(500, 3000)
-            sourceArchive.close(); historySync.close(); monitoring.close(); bot.close(); telegram.close(); repositories.close()
-            if (launchToken != null) Files.deleteIfExists(marker)
-        } finally { lease.close(); stopped.countDown() }
+            // Each owner must close even if another service fails. Never log profile data.
+            val steps: List<() -> Unit> = listOf(
+                { server.stop(500, 3000) },
+                { sourceArchive.close() }, { historySync.close() }, { monitoring.close() },
+                { bot.close() }, { telegram.close() }, { repositories.close() },
+                { if (launchToken != null) Files.deleteIfExists(marker); Unit },
+                { menu?.close(); Unit }, { lease.close() },
+            )
+            steps.forEach { close ->
+                try { close() } catch (_: Exception) { System.err.println("hradar: ошибка завершения ресурса") }
+            }
+        } finally { stopped.countDown() }
     }
     Runtime.getRuntime().addShutdownHook(Thread { cleanup() })
     try {
-        // Bind first. A competing unrelated listener must never cause a second account client.
-        server.start(wait = false)
-        if (!DesktopRuntime.smoke) { telegram.start(); bot.start(); monitoring.start(); historySync.resumePending(); sourceArchive.resumePending() }
-        if (launchToken != null) {
-            val temporaryMarker = Files.createTempFile(paths.data, "desktop-", ".tmp", java.nio.file.attribute.PosixFilePermissions.asFileAttribute(java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")))
-            try {
-                Files.writeString(temporaryMarker, "{\"pid\":${ProcessHandle.current().pid()},\"token\":\"$launchToken\"}")
-                Files.move(temporaryMarker, marker, java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-            } finally { Files.deleteIfExists(temporaryMarker) }
-            // Netty start returns after bind; verify the HTTP route before launching the browser.
-            val http = java.net.http.HttpClient.newHttpClient()
-            repeat(50) {
+        synchronized(lifecycleLock) {
+            menu = DesktopMenu.install({ destination ->
+                checkNotNull(launchToken)
+                DesktopRuntime.openInterface(launchToken, destination)
+            }, ::requestShutdown)
+            // Bind first. A competing unrelated listener must never cause a second account client.
+            server.start(wait = false)
+            if (!DesktopRuntime.smoke) { telegram.start(); bot.start(); monitoring.start(); historySync.resumePending(); sourceArchive.resumePending() }
+            if (launchToken != null) {
+                val temporaryMarker = Files.createTempFile(paths.data, "desktop-", ".tmp", java.nio.file.attribute.PosixFilePermissions.asFileAttribute(java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")))
                 try {
-                    if (http.send(java.net.http.HttpRequest.newBuilder(java.net.URI("http://127.0.0.1:${DesktopRuntime.port}/health")).build(), java.net.http.HttpResponse.BodyHandlers.discarding()).statusCode() == 200) {
-                        DesktopRuntime.open("http://127.0.0.1:${DesktopRuntime.port}/#launch=$launchToken")
-                        stopped.await(); return
+                    Files.writeString(temporaryMarker, "{\"pid\":${ProcessHandle.current().pid()},\"token\":\"$launchToken\"}")
+                    Files.move(temporaryMarker, marker, java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                } finally { Files.deleteIfExists(temporaryMarker) }
+            }
+        }
+        // Blocking adapters must never hold the initialization/cleanup lock.
+        if (launchToken != null) {
+            var ready = false
+            for (attempt in 0 until 50) {
+                if (shutdownRequested.get()) break
+                try {
+                    if (probeReady()) {
+                        ready = true
+                        menu?.ready()
+                        if (!shutdownRequested.get()) openBrowser(launchToken)
+                        break
                     }
                 } catch (_: java.io.IOException) { }
                 Thread.sleep(100)
             }
-            error("Локальный сервер не готов")
+            check(ready || shutdownRequested.get()) { "Локальный сервер не готов" }
         }
         stopped.await()
+    } catch (_: Exception) {
+        cleanup()
+        if (DesktopRuntime.enabled && !DesktopRuntime.smoke) {
+            try { DesktopRuntime.conflict("Не удалось запустить hradar или Menu Bar. Приложение остановлено; повторите запуск в графическом сеансе macOS.", exitCode = 1) }
+            finally { kotlin.system.exitProcess(1) }
+        }
+        throw IllegalStateException("Не удалось запустить hradar; ресурсы освобождены")
     } finally { cleanup() }
 }

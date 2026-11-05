@@ -35,10 +35,11 @@ python3 -B scripts/check-tdlib-bindings.py "$INPUT/tdlib-java.jar"
 "$JAVA_HOME/bin/jpackage" --type app-image --name hradar --app-version "$MAC_VERSION" \
   --input "$INPUT" --main-jar "$JAR_NAME" --main-class dev.radar.ApplicationKt \
   --dest "$OUT" --vendor hradar --mac-package-identifier dev.hradar.desktop \
-  --java-options '-Dhradar.desktop=true' --java-options '-Djava.library.path=$APPDIR/native' \
+  --java-options '-Dhradar.desktop=true' --java-options '-Dapple.awt.enableTemplateImages=true' --java-options '-Djava.library.path=$APPDIR/native' \
   --java-options '-Dorg.sqlite.lib.path=$APPDIR/native' --java-options '-Dorg.sqlite.lib.name=libsqlitejdbc.dylib' --java-options '-Dfile.encoding=UTF-8' --add-modules java.se,jdk.unsupported,jdk.crypto.ec,jdk.management,jdk.naming.dns --jlink-options '--strip-debug --no-header-files --no-man-pages'
 /usr/libexec/PlistBuddy -c 'Set :LSMinimumSystemVersion 15.0' "$OUT/hradar.app/Contents/Info.plist" || /usr/libexec/PlistBuddy -c 'Add :LSMinimumSystemVersion string 15.0' "$OUT/hradar.app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $SHORT_VERSION" "$OUT/hradar.app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c 'Add :LSUIElement bool true' "$OUT/hradar.app/Contents/Info.plist"
 # Refresh jpackage's ad-hoc resource seal after our metadata changes. This is not Developer ID signing.
 codesign --force --sign - "$OUT/hradar.app"
 # Explicit optional signing. PRs never receive Apple secrets.
