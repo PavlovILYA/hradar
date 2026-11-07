@@ -261,7 +261,8 @@ Use a disposable macOS account with an empty profile, or an owner-controlled
 isolated test profile; never point automated tests at the real `~/.hradar`.
 
 - [ ] Copy the matching DMG app into Applications; launch via Finder. Confirm one
-  Menu Bar icon, no Dock icon, and initial browser opening. App/Finder icon unchanged.
+  Menu Bar icon, no Dock icon, and initial browser opening. Confirm the circular blue/turquoise radar with white lowercase `h` in Finder,
+  Applications and Get Info; transparent corners and glow should render cleanly.
 - [ ] Left-click the icon: native menu title/status and all three actions appear.
   Check the small `h` on light/dark Menu Bar, selected-menu highlight, Retina and
   an external display; check menu placement after display/appearance changes.
@@ -321,3 +322,25 @@ bypass for `.localhost`; do not edit `/etc/hosts` or bind to LAN. For HTTP diagn
 preserves the target Host without DNS changes. Direct `http://127.0.0.1:1709/health`
 is another safe diagnostic; neither command grants desktop API access. Full support
 on other supported macOS versions/browser configurations requires actual testing.
+
+## Branded application icon
+
+The approved PNG master is `branding/hradar-source.png`; see
+[branding notes](../branding/README.md) for provenance, conservative outer-alpha
+cleanup and the native generation command. Packaging generates
+`.tdlib-build/branding/hradar.icns` with `sips`/`iconutil` and passes `--icon` to
+`jpackage` before final codesign. Package and mounted-DMG verification check the
+plist and exact icon bytes, in addition to the existing signature and Menu Bar checks.
+The app stays `hradar.app`; downloadable DMG/ZIP and Actions artifacts retain
+version and architecture. Menu Bar, React logo and favicon are unchanged.
+
+Version 0.8.1 is a PATCH branding correction from master 0.8.0, after merged
+Stage C PR #14 and desktop PRs #15/#16. Stage C, SQLite schema12, Menu Bar and
+the shared secure desktop launch/shutdown/restart flow remain unchanged.
+
+For visual acceptance, quit the existing app, copy the matching architecture's
+`hradar.app` from DMG into Applications, replace the prior bundle, then inspect
+Finder, Applications and Get Info before launching. Confirm the monochrome Menu
+Bar glyph still appears after launch. Finder cache/physical installation and
+Retina appearance need manual verification; signature/resource checks alone do
+not establish those results. Preserve `~/.hradar` throughout.
