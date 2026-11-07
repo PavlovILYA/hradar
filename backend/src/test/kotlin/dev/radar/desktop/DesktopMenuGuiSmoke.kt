@@ -10,9 +10,10 @@ import java.util.concurrent.TimeUnit
 object DesktopMenuGuiSmoke {
     @JvmStatic fun main(args: Array<String>) {
         val before = SystemTray.getSystemTray().trayIcons.size
-        val opened = java.util.concurrent.LinkedBlockingQueue<DesktopDestination>()
+        val opened = java.util.concurrent.LinkedBlockingQueue<String>()
+        val access = DesktopAccess("synthetic-gui-process")
         val quit = CountDownLatch(1)
-        val menu = checkNotNull(DesktopMenu.install({ opened.add(it) }, { quit.countDown() }))
+        val menu = checkNotNull(DesktopMenu.install({ DesktopRuntime.openInterface(access, it) { url -> opened.add(url) } }, { quit.countDown() }))
         try {
             check(SystemTray.getSystemTray().trayIcons.size == before + 1)
             EventQueue.invokeAndWait {
@@ -28,8 +29,15 @@ object DesktopMenuGuiSmoke {
                     item.actionListeners.forEach { it.actionPerformed(ActionEvent(item, ActionEvent.ACTION_PERFORMED, item.label)) }
                 }
             }
-            val destinations = listOf(opened.poll(5, TimeUnit.SECONDS), opened.poll(5, TimeUnit.SECONDS)).toSet()
-            check(destinations == DesktopDestination.entries.toSet())
+            val uris = List(2) { java.net.URI(checkNotNull(opened.poll(5, TimeUnit.SECONDS))) }
+            check(uris.map { it.query }.toSet() == setOf(null, "screen=application"))
+            check(uris.all { it.host == "hradar.localhost" && it.port == 1709 })
+            check(uris.map { it.fragment }.toSet().size == 2)
+            for (uri in uris) {
+                val code = uri.fragment.removePrefix("launch=")
+                check(code != access.capability)
+                check(access.consumeLaunch(code) && !access.consumeLaunch(code))
+            }
             EventQueue.invokeAndWait {
                 val item = menu.popup.getItem(5)
                 repeat(2) { item.actionListeners.forEach { it.actionPerformed(ActionEvent(item, ActionEvent.ACTION_PERFORMED, item.label)) } }

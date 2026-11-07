@@ -142,6 +142,10 @@ test('mobile navigation supports keyboard Escape focus restoration and themes', 
 });
 
 test('desktop shutdown stays in application settings and uses the existing csrf flow', async ({ page }) => {
+  await page.route('**/desktop/recover', route => {
+    expect(route.request().headers()['x-hradar-recovery']).toBe('1');
+    return route.fulfill({ json: { ok: true } });
+  });
   await page.addInitScript(() => sessionStorage.setItem('hradar-desktop', 'true'));
   const data = await fixture(page); await navigate(page, 'Состояние приложения');
   await page.getByRole('button', { name: 'Завершить hradar', exact: true }).click();
@@ -181,6 +185,12 @@ test('an untouched archive limit initializes from the server for bounded and unl
 test('native settings destination survives desktop launch handshake', async ({ page }) => {
   await fixture(page);
   let launches = 0;
+  let recoveries = 0;
+  await page.route('**/desktop/recover', route => {
+    expect(route.request().headers()['x-hradar-recovery']).toBe('1');
+    recoveries++;
+    return route.fulfill({ json: { ok: true } });
+  });
   await page.route('**/desktop/launch', route => {
     expect(route.request().postDataJSON()).toEqual({ token: 'synthetic-native-token' });
     launches++;
@@ -195,6 +205,7 @@ test('native settings destination survives desktop launch handshake', async ({ p
   await page.reload();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Состояние приложения');
   expect(launches).toBe(1);
+  expect(recoveries).toBe(1);
   await page.goto('/?screen=untrusted');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Обзор');
 });

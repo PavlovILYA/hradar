@@ -11,10 +11,42 @@ import io.ktor.http.*
 import kotlin.test.*
 
 class DesktopSecurityTest {
-    @Test fun `desktop capability cookie and exact authority origin csrf checks`() = testApplication {
+    @Test fun `encoded and repeated slash routes retain cookie and csrf guards`() = testApplication {
         application {
             install(ContentNegotiation) { json() }
-            configureDesktopSecurity("fake-launch-token", "fake-csrf")
+            configureDesktopSecurity(DesktopAccess("current-process"), "current-csrf")
+            routing {
+                get("/api/test") { call.respond(mapOf("ok" to true)) }
+                for (path in listOf("/api/onboarding/login", "/api/integrations/bot/check", "/api/sources")) {
+                    post(path) { call.respond(mapOf("ok" to true)) }
+                }
+            }
+        }
+        for (path in listOf("/%61pi/test", "//api/test", "/%61pi//test")) {
+            assertEquals(HttpStatusCode.Forbidden, client.get { url.encodedPath = path; header(HttpHeaders.Host, "127.0.0.1:8080") }.status, path)
+            assertEquals(HttpStatusCode.OK, client.get {
+                url.encodedPath = path
+                header(HttpHeaders.Host, "127.0.0.1:8080"); header(HttpHeaders.Cookie, "hradar-desktop=current-process")
+            }.status, path)
+        }
+        for (path in listOf("/%61pi/onboarding/login", "/api/%6fnboarding/login", "/api//onboarding/login", "/api/integrations/%62ot/check", "/api/%73ources")) {
+            for (authorized in listOf(false, true)) {
+                val response = client.post(path) {
+                    header(HttpHeaders.Host, "127.0.0.1:8080"); header(HttpHeaders.Origin, "http://127.0.0.1:8080")
+                    header(HttpHeaders.Cookie, "hradar-desktop=current-process")
+                    if (authorized) header("X-Hradar-CSRF", "current-csrf")
+                }
+                assertEquals(if (authorized) HttpStatusCode.OK else HttpStatusCode.Forbidden, response.status, path)
+            }
+        }
+    }
+
+    @Test fun `desktop capability cookie and exact authority origin csrf checks`() = testApplication {
+        val access = DesktopAccess("fake-launch-token")
+        val launchCode = access.issueLaunch()
+        application {
+            install(ContentNegotiation) { json() }
+            configureDesktopSecurity(access, "fake-csrf")
             routing {
                 get("/api/test") { call.respond(mapOf("ok" to true)) }
                 post("/api/onboarding/login") { call.respond(mapOf("ok" to true)) }
@@ -41,7 +73,7 @@ class DesktopSecurityTest {
         assertEquals(HttpStatusCode.Forbidden, client.post("/api/integrations/bot/check") { header(HttpHeaders.Host,"127.0.0.1:8080"); header(HttpHeaders.Origin,"http://127.0.0.1:8080"); header(HttpHeaders.Cookie,"hradar-desktop=fake-launch-token") }.status)
         assertEquals(HttpStatusCode.OK, client.post("/api/integrations/bot/check") { header(HttpHeaders.Host,"127.0.0.1:8080"); header(HttpHeaders.Origin,"http://127.0.0.1:8080"); header(HttpHeaders.Cookie,"hradar-desktop=fake-launch-token"); header("X-Hradar-CSRF","fake-csrf") }.status)
         val launch = client.post("/desktop/launch") {
-            header(HttpHeaders.Host,"127.0.0.1:8080"); header(HttpHeaders.Origin,"http://127.0.0.1:8080"); contentType(ContentType.Application.Json); setBody("{\"token\":\"fake-launch-token\"}")
+            header(HttpHeaders.Host,"127.0.0.1:8080"); header(HttpHeaders.Origin,"http://127.0.0.1:8080"); contentType(ContentType.Application.Json); setBody("{\"token\":\"$launchCode\"}")
         }
         assertEquals(HttpStatusCode.OK,launch.status)
         assertTrue(launch.headers[HttpHeaders.SetCookie]!!.contains("HttpOnly",ignoreCase=true))

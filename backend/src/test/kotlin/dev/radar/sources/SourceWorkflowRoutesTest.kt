@@ -53,7 +53,7 @@ class SourceWorkflowRoutesTest {
             localSearch = LocalProjectSearchService(repo, RecruiterSearchPort(search::search)))
         application {
             install(ContentNegotiation) { json() }
-            configureDesktopSecurity("synthetic-launch", "synthetic-csrf")
+            configureDesktopSecurity(dev.radar.desktop.DesktopAccess("synthetic-launch"), "synthetic-csrf")
             configureSourceRoutes(SourceCatalogService(TdlibSourceCatalog(native), repo), repo, reader, archive)
             configureResearchRoutes(gateway, repo, matching, search, NotificationService(repo, matching))
             configureRecruitmentRoutes(projects)

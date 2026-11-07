@@ -1,6 +1,8 @@
 package dev.radar.capabilities
 
 import dev.radar.research.*
+import dev.radar.desktop.DesktopRuntime
+import dev.radar.desktop.securityPath
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.*
@@ -23,8 +25,8 @@ import java.util.Base64
 /** Exact authorities/origins: don't trust forwarded headers or arbitrary loopback DNS names. */
 object LocalMcpSecurity {
     fun valid(host: String?, origin: String?, management: Boolean): Boolean {
-        if (host !in setOf("127.0.0.1:8080", "127.0.0.1:5173")) return false
-        val validOrigin = origin in setOf("http://127.0.0.1:8080", "http://127.0.0.1:5173")
+        if (host !in DesktopRuntime.authorities) return false
+        val validOrigin = origin != null && DesktopRuntime.validOrigin(origin)
         return if (management) validOrigin else origin == null || validOrigin
     }
 }
@@ -32,7 +34,7 @@ fun Application.configureCapabilities(service: CapabilityService, port: Telegram
     val csrf = Base64.getUrlEncoder().withoutPadding().encodeToString(ByteArray(32).also { SecureRandom().nextBytes(it) })
     val guard = createRouteScopedPlugin("LocalCapabilitySecurity") {
         onCall { call ->
-            val management = call.request.path().startsWith("/api/integrations/mcp") && call.request.httpMethod != HttpMethod.Get
+            val management = call.securityPath().startsWith("/api/integrations/mcp") && call.request.httpMethod != HttpMethod.Get
             val allowed = LocalMcpSecurity.valid(call.request.headers["Host"], call.request.headers["Origin"], management)
             if (!allowed || (management && call.request.headers["X-Hradar-CSRF"] != csrf)) {
                 call.respond(HttpStatusCode.Forbidden, CapabilityResult(false, error = CapabilityError("ACCESS_DENIED", "Local origin and UI confirmation are required")))
@@ -69,7 +71,7 @@ fun Application.configureCapabilities(service: CapabilityService, port: Telegram
                 call.response.headers.append("Cache-Control", "no-store")
                 call.respond(withContext(Dispatchers.IO) {
                     val available = (repo.channels() + repo.historySyncs().map { MonitoredChannel(it.channelId, it.username, it.title) }).distinctBy { it.id }.take(50)
-                    IntegrationConfig(repo.mcpEnabled(), "http://127.0.0.1:8080/mcp", McpTools.definitions, repo.mcpSources(), available, csrf)
+                    IntegrationConfig(repo.mcpEnabled(), "http://127.0.0.1:${DesktopRuntime.port}/mcp", McpTools.definitions, repo.mcpSources(), available, csrf)
                 })
             }
             put {

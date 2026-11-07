@@ -39,7 +39,7 @@ internal suspend fun ApplicationCall.respondApiError(status: HttpStatusCode, err
 fun main() = runApplication()
 
 internal fun runApplication(
-    openBrowser: (String) -> Unit = { DesktopRuntime.openInterface(it) },
+    openBrowser: (DesktopAccess) -> Unit = { DesktopRuntime.openInterface(it) },
     probeReady: () -> Boolean = DesktopRuntime::probeReady,
 ) {
     if (System.getProperty("hradar.jniSmoke") == "true") { jniSmoke(); return }
@@ -50,7 +50,7 @@ internal fun runApplication(
             if (DesktopRuntime.enabled && !DesktopRuntime.smoke) kotlin.system.exitProcess(0)
             return
         }
-        DesktopRuntime.conflict("Порт 8080 занят. Закройте работающий hradar перед запуском новой версии.")
+        DesktopRuntime.conflict("Порт ${DesktopRuntime.port} занят. Закройте работающий hradar перед запуском новой версии.")
         return
     }
     try { paths.prepare() } catch (_: Exception) {
@@ -66,9 +66,10 @@ internal fun runApplication(
     // Older development installs don't take our lock: reject occupied port before TDLib starts.
     if (DesktopRuntime.portOccupied()) {
         lease.close()
-        DesktopRuntime.conflict("Порт 8080 занят. Закройте старый backend hradar или другое приложение и повторите запуск.")
+        DesktopRuntime.conflict("Порт ${DesktopRuntime.port} занят. Закройте старый backend hradar или другое приложение и повторите запуск.")
         return
     }
+    val desktopAccess = if (DesktopRuntime.enabled) DesktopAccess(DesktopRuntime.token()) else null
     val credentials = if (DesktopRuntime.smoke) null else paths.loadCredentials()
     val telegram = TdlibGateway(credentials?.apiId, credentials?.apiHash, paths.session)
     val repositories = try { Repositories(paths.database) } catch (ex: Exception) {
@@ -79,7 +80,6 @@ internal fun runApplication(
         return
     }
     val csrf = DesktopRuntime.token()
-    val launchToken = if (DesktopRuntime.enabled) DesktopRuntime.token() else null
     val matching = MatchingService()
     val search = SearchService(telegram, repositories, matching)
     val notifications = NotificationService(repositories, matching)
@@ -110,7 +110,7 @@ internal fun runApplication(
         Thread({ kotlin.system.exitProcess(0) }, "hradar-shutdown").start()
     }
     val server = embeddedServer(Netty, host = "127.0.0.1", port = DesktopRuntime.port) {
-        configureDesktopSecurity(launchToken, csrf)
+        configureDesktopSecurity(desktopAccess, csrf)
         configureOnboarding(telegram, paths, csrf, ::requestShutdown)
         routing { staticResources("/", "web", index = "index.html") }
         // Root route installation permits the MCP child route to use its SDK serializer.
@@ -183,7 +183,7 @@ internal fun runApplication(
                 { server.stop(500, 3000) },
                 { sourceArchive.close() }, { historySync.close() }, { monitoring.close() },
                 { bot.close() }, { telegram.close() }, { repositories.close() },
-                { if (launchToken != null) Files.deleteIfExists(marker); Unit },
+                { if (desktopAccess != null) Files.deleteIfExists(marker); Unit },
                 { menu?.close(); Unit }, { lease.close() },
             )
             steps.forEach { close ->
@@ -195,22 +195,21 @@ internal fun runApplication(
     try {
         synchronized(lifecycleLock) {
             menu = DesktopMenu.install({ destination ->
-                checkNotNull(launchToken)
-                DesktopRuntime.openInterface(launchToken, destination)
+                DesktopRuntime.openInterface(checkNotNull(desktopAccess), destination)
             }, ::requestShutdown)
             // Bind first. A competing unrelated listener must never cause a second account client.
             server.start(wait = false)
             if (!DesktopRuntime.smoke) { telegram.start(); bot.start(); monitoring.start(); historySync.resumePending(); sourceArchive.resumePending() }
-            if (launchToken != null) {
+            if (desktopAccess != null) {
                 val temporaryMarker = Files.createTempFile(paths.data, "desktop-", ".tmp", java.nio.file.attribute.PosixFilePermissions.asFileAttribute(java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")))
                 try {
-                    Files.writeString(temporaryMarker, "{\"pid\":${ProcessHandle.current().pid()},\"token\":\"$launchToken\"}")
+                    Files.writeString(temporaryMarker, "{\"pid\":${ProcessHandle.current().pid()},\"token\":\"${desktopAccess.capability}\"}")
                     Files.move(temporaryMarker, marker, java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
                 } finally { Files.deleteIfExists(temporaryMarker) }
             }
         }
         // Blocking adapters must never hold the initialization/cleanup lock.
-        if (launchToken != null) {
+        if (desktopAccess != null) {
             var ready = false
             for (attempt in 0 until 50) {
                 if (shutdownRequested.get()) break
@@ -218,7 +217,7 @@ internal fun runApplication(
                     if (probeReady()) {
                         ready = true
                         menu?.ready()
-                        if (!shutdownRequested.get()) openBrowser(launchToken)
+                        if (!shutdownRequested.get()) openBrowser(desktopAccess)
                         break
                     }
                 } catch (_: java.io.IOException) { }
