@@ -1,5 +1,94 @@
 # hradar — Development status / session handoff
 
+## PR #17 rebased after merged Stage C — 2026-11-08
+
+Existing `feat/macos-app-icon` / PR#17 rebased onto fetched master
+**2418c04b4afaa6ebd88fcb32c9d4acb852849cad**. GitHub and Git ancestry confirm
+#14/#15/#16 merged. App **0.8.1**, PATCH from master0.8.0, version.py sync/check.
+Conflicts: gradle.properties, frontend/package.json, frontend/package-lock.json
+(version fields), docs/DEV_STATUS.md (both historical checkpoints retained).
+Earlier version/Draft/new-PR/merge-order instructions below are historical.
+
+VERIFIED:
+- Approved PNG SHA256 `990232c647ed1c7b52004b45c100d2b8a1b4ddb6db50169c11b6e6ce1f317ea7`,
+  generator and icon regression unchanged from original9c1196b. PNG1254×1254 RGBA;
+  native test verifies ten ICNS sizes/alpha, byte-identical regeneration and
+  replaced/missing bundle resource rejection. No new artwork or dependency.
+- Diff against master has no backend/frontend runtime, workflow, config or existing
+  smoke changes. Stage C/schema12, migrations, desktop Host/Origin/cookie/CSRF,
+  hostname1709, Menu Bar, shared launcher and shutdown/restart remain intact.
+  Packaging auto-merge retains schema12 and all existing Java/Menu Bar flags;
+  only icon generation/--icon is added before final codesign. Independent review
+  found no actionable integration issue.
+- Local Intel / MicrosoftJDK21.0.12.1 backend build/stageDesktop/desktopMenuSmoke
+  exit0: **236 tests,0 failures/errors/skips**, real AWT actions/disposal and both
+  stalled-startup quit checks passed. Frontend build exit0 and bundled web files
+  match fresh dist bytes. **67 offline Playwright** at5189 and **32 Python tests**
+  passed. Native TDLib reused with matching pinned identity/SHA256, not rebuilt.
+- Fresh Intel package and `verify-macos-dmg.sh x86_64
+  .tdlib-build/distribution-x86_64 17159` exit0. ICNS/plist exact reference,
+  only branded icon in Resources, stable hradar.app/dev.hradar.desktop/LSUIElement,
+  codesign deep/strict, Mach-O/JVM/JNI, schema12 metadata, DMG/ZIP SHA256 and
+  **181-file identity** passed. Full mounted-DMG production UI, Stage C access/read
+  and cursor persistence, restart/recovery/CSRF, newer-schema refusal and graceful
+  shutdown passed. Versioned0.8.1 DMG/ZIP and unchanged version-derived Actions names.
+- Tests ran sequentially before DMG work; all profiles/data were synthetic and
+  temporary. Real ~/.hradar, other branches/worktrees and Desktop original untouched.
+  Prior0.7.1 generated package retained in .tdlib-build/icon-0.7.1-before-rebase-x86_64.
+
+NOT VERIFIED: new hosted CI/ARM64, CI-pinned Temurin, physical Finder/Applications
+installation/cache/Retina, Developer ID/notarization, live Telegram or real-profile
+upgrade. Local ad-hoc signature/resource checks do not prove those scenarios.
+
+NEXT ACTION: lease-protected push to existing PR#17 after remote-tip check, update
+its description and mark Ready for review. Inspect Actions once immediately and
+stop; owner checks final exact-head CI/Intel/ARM64 before merge and follows icon
+manual QA in MACOS_DISTRIBUTION.md. No new PR, merge, tag or Release.
+
+
+## Branded macOS application icon — 2026-11-08
+
+Isolated `feat/macos-app-icon`, based on fetched master `ec9f629`. PATCH **0.7.1**
+from 0.7.0 for the application-icon correction; coordinate version at merge with
+PR #14's planned 0.8.0. No changes to master, #14 or other task branches.
+
+VERIFIED:
+- Copied the approved Desktop PNG to `branding/hradar-source.png`; original untouched.
+  1254×1254 RGBA, transparent corners. Cleaned only 20,126 outer alpha values beyond
+  radius485 about (621,614); decoded RGB everywhere and all RGBA inside that radius
+  remain identical to original. Radar, h and adjacent glow retained; no redrawn art.
+- `generate-macos-icon.sh` uses only sips/iconutil and one PNG master; generated
+  `.tdlib-build/branding/hradar.icns` has ten standard 1×/2× representations,
+  16–1024px, all alpha-enabled, with byte-identical repeated generation.
+- `jpackage --icon` embeds the icon before final codesign. Bundle verification
+  regenerates its reference in temporary storage (also works in fresh signing jobs),
+  checks CFBundleIconFile and exact resource bytes. Regression rejects replacement
+  by a default icon and missing resource. Independent review's cache issue fixed;
+  focused re-review found no further issues.
+- JDK21 local Intel `./gradlew :backend:build :backend:stageDesktop
+  :backend:desktopMenuSmoke -PbundledWeb=true
+  -Pkotlin.compiler.execution.strategy=in-process --console=plain` exit0;
+  **207 tests, zero failures/errors/skips**, Menu Bar GUI/lifecycle smoke passed.
+  Frontend build exit0; **32 Python tests passed**; shell syntax/version/diff checks pass.
+- Local Intel package: branded resource/plist, unchanged `hradar.app`,
+  `dev.hradar.desktop`, LSUIElement/template glyph, codesign --verify --deep --strict,
+  Mach-O closure/JVM/JNI and DMG checksum passed. Only hradar.icns in Resources;
+  no default Java icon. Mounted-DMG/ZIP identity: **181 files**.
+  `verify-macos-dmg.sh x86_64 .tdlib-build/distribution-x86_64 17149` exit0:
+  production UI/settings, access denials, restart/recovery/CSRF isolation, temporary
+  SQLite/session preservation and graceful shutdown passed.
+
+NOT VERIFIED: physical Finder/Applications installation, icon cache/Retina appearance,
+ARM64 execution, hosted CI, Developer ID/notarization or live Telegram. Menu Bar code,
+React logo/favicon, user data, launcher/lifecycle and workflow artifact names unchanged.
+All runtime tests use synthetic temporary profiles/isolated17149; no real-profile launch.
+
+NEXT ACTION: commit/push and open a separate Draft PR against master, then stop without waiting for Actions. Owner reviews
+exact-head CI and performs the icon installation steps in MACOS_DISTRIBUTION.md.
+No merge, tag or Release.
+
+
+
 ## PR #14 integrated with master #15/#16 — 2026-11-08
 
 Existing `hradar-sources-c` / `feat/telegram-sources-stage-c`, starting dc359c2,

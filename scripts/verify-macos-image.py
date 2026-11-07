@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Mach-O closure and bundled JVM/JNI startup; never creates an account client."""
-import pathlib, subprocess, sys, os, plistlib, zipfile
+import pathlib, subprocess, sys, os, plistlib, zipfile, tempfile
 from version import app_version, parse_version, validate_build_number, check_jar
 app = pathlib.Path(sys.argv[1]).resolve()
 arch = sys.argv[2]
@@ -15,6 +15,15 @@ with zipfile.ZipFile(app / 'Contents/app' / f'backend-{version}.jar') as jar:
     assert any('#' in row for row in glyph)
 
 info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
+# Signed artifacts are verified in a fresh checkout without packaging's build cache.
+with tempfile.TemporaryDirectory(prefix='hradar-icon-check-') as temporary:
+    scripts = pathlib.Path(__file__).resolve().parent
+    expected_icon = pathlib.Path(temporary) / 'hradar.icns'
+    subprocess.run(['bash', str(scripts / 'generate-macos-icon.sh'), str(expected_icon)], check=True)
+    subprocess.run([sys.executable, '-B', str(scripts / 'verify-macos-icon.py'),
+                    str(app), str(expected_icon)], check=True)
+assert info['CFBundleIdentifier'] == 'dev.hradar.desktop'
+assert app.name == 'hradar.app'
 assert info.get('LSUIElement') is True, 'Packaged app must be a Menu Bar agent'
 assert info['CFBundleShortVersionString'] == parse_version(version), 'Packaged short version mismatch'
 validate_build_number(info['CFBundleVersion'])

@@ -32,7 +32,8 @@ with zipfile.ZipFile(jars[0]) as z:
 PYSQLITE
 cp .tdlib-build/release/*LICENSE* "$INPUT/"
 python3 -B scripts/check-tdlib-bindings.py "$INPUT/tdlib-java.jar"
-"$JAVA_HOME/bin/jpackage" --type app-image --name hradar --app-version "$MAC_VERSION" \
+bash scripts/generate-macos-icon.sh
+"$JAVA_HOME/bin/jpackage" --icon "$ROOT/.tdlib-build/branding/hradar.icns" --type app-image --name hradar --app-version "$MAC_VERSION" \
   --input "$INPUT" --main-jar "$JAR_NAME" --main-class dev.radar.ApplicationKt \
   --dest "$OUT" --vendor hradar --mac-package-identifier dev.hradar.desktop \
   --java-options '-Dhradar.desktop=true' --java-options '-Dapple.awt.enableTemplateImages=true' --java-options '-Djava.library.path=$APPDIR/native' \
