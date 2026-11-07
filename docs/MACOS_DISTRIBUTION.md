@@ -15,7 +15,7 @@ Launching needs no Node, Gradle, Java installation, Homebrew, terminal or TDLib
 compilation. A system browser opens **http://hradar.localhost:1709/** after the server responds to health.
 The one-time launch fragment is exchanged and removed; bookmark the clean root URL.
 The backend runs in the app launcher process; closing the browser tab leaves
-monitoring running. Use **Завершить hradar** in the UI to close the server/workers,
+monitoring running. Use **Завершить hradar** in the Menu Bar or web UI to close the server/workers,
 wait for TDLib Close and release the session lock. SIGTERM also cleans up.
 
 Application versions come from root `gradle.properties` `appVersion`; installers
@@ -218,7 +218,7 @@ Apple reference: https://developer.apple.com/documentation/security/customizing-
 Oracle reference: https://docs.oracle.com/en/java/javase/21/docs/specs/man/jpackage.html
 GitHub runner reference: https://docs.github.com/en/actions/reference/runners/github-hosted-runners
 
-## Menu Bar mode (0.6.0)
+## Menu Bar mode (since 0.6.0; integrated access flow in 0.7.0)
 
 Packaged macOS launches are agent apps (`LSUIElement=true`, set before final
 codesign). Java 21 AWT `SystemTray`/`TrayIcon`/`PopupMenu` supplies the native menu;
@@ -278,15 +278,17 @@ isolated test profile; never point automated tests at the real `~/.hradar`.
 
 Physical pointer clicks, appearance/Retina, Finder activation and Developer ID /
 notarization require manual evidence. Automated fake-TDLib smoke does not prove a
-real Telegram Close exchange. Merge with PR #15 must keep `DesktopRuntime` as the
-only owner of destination URL/access issuance: adapt `openInterface` to its
-single-use launch-code flow, preserve the fixed settings destination through that
-handshake, and retain #15's response-flush shutdown fix. Do not copy the current
-master address/token implementation into the AWT class. Both PRs may propose 0.6.0;
-reconcile the next version at integration time, without changing SQLite schema.
+real Telegram Close exchange. `DesktopRuntime.openInterface` owns destination URLs
+and obtains a fresh single-use code from `DesktopAccess` for every initial/menu
+open. Menu Bar never receives or puts the process capability in a URL. Duplicate
+launches verify the private marker with HMAC before opening another one-time code.
+Home and settings use the same hostname and handshake; closing tabs leaves the
+backend running. Version 0.7.0 integrates this access flow with Menu Bar lifecycle;
+SQLite schema remains 11.
+
 ## Stable local address and upgrade from 0.5.0
 
-Quit 0.5.0 with **Завершить hradar** and wait for its process to stop before replacing
+Quit 0.5.0/0.6.0 with **Завершить hradar** and wait for its process to stop before replacing
 `hradar.app`. Preserve `~/.hradar` and any migration backups; no URL-related data
 migration, Telegram logout or new credentials are needed. Launch the replacement
 app, let its one-time handshake finish, then bookmark **http://hradar.localhost:1709/**.

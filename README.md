@@ -71,7 +71,7 @@ username, mocked error/empty responses, safe rendering, and mobile layout.
 
 ## API
 
-The HTTP server binds **only to `127.0.0.1:8080`**.
+The development HTTP server binds **only to `127.0.0.1:8080`**; packaged production uses `127.0.0.1:1709` and opens **http://hradar.localhost:1709/**.
 
 ```bash
 curl http://127.0.0.1:8080/health

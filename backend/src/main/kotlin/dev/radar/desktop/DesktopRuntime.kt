@@ -88,8 +88,11 @@ object DesktopRuntime {
     internal fun launchUri(token: String, destination: DesktopDestination = DesktopDestination.HOME): URI =
         URI("http", null, "hradar.localhost", port, "/",
             if (destination == DesktopDestination.SETTINGS) "screen=application" else null, "launch=$token")
-    internal fun openInterface(access: DesktopAccess, destination: DesktopDestination = DesktopDestination.HOME) {
-        open(launchUri(access.issueLaunch(), destination).toString())
+    internal fun openInterface(
+        access: DesktopAccess, destination: DesktopDestination = DesktopDestination.HOME,
+        browse: (String) -> Unit = ::open,
+    ) {
+        browse(launchUri(access.issueLaunch(), destination).toString())
     }
     fun conflict(message: String, exitCode: Int = 0) {
         System.err.println(message)

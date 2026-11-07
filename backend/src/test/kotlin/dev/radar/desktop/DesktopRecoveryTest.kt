@@ -12,6 +12,37 @@ import io.ktor.http.*
 import kotlin.test.*
 
 class DesktopRecoveryTest {
+    @Test fun `menu reopen and settings use fresh single use access through shared runtime`() = testApplication {
+        val access = DesktopAccess("synthetic-process-capability")
+        application {
+            install(ContentNegotiation) { json() }
+            configureDesktopSecurity(access, "synthetic-csrf")
+        }
+        val opened = mutableListOf<String>()
+        val menu = DesktopMenuActions({ DesktopRuntime.openInterface(access, it, opened::add) }, {})
+        menu.ready()
+        menu.open(DesktopDestination.HOME)
+        menu.open(DesktopDestination.HOME) // Reopen after the first browser tab closes.
+        menu.open(DesktopDestination.SETTINGS)
+        val uris = opened.map(java.net.URI::create)
+        assertEquals(3, uris.map { it.fragment }.toSet().size)
+        assertTrue(uris.all { it.host == "hradar.localhost" && it.port == DesktopRuntime.port })
+        assertEquals("screen=application", uris.last().query)
+        assertFalse(opened.any { it.contains(access.capability) })
+        for (uri in uris) {
+            val launch = uri.fragment.removePrefix("launch=")
+            repeat(2) { attempt ->
+                val result = client.post("/desktop/launch") {
+                    header(HttpHeaders.Host, uri.authority)
+                    header(HttpHeaders.Origin, DesktopRuntime.browserOrigin)
+                    contentType(ContentType.Application.Json)
+                    setBody("{\"token\":\"$launch\"}")
+                }
+                assertEquals(if (attempt == 0) HttpStatusCode.OK else HttpStatusCode.Forbidden, result.status)
+            }
+        }
+    }
+
     @Test fun `recovery needs owner cookie exact same origin and custom header`() = testApplication {
         val access = DesktopAccess("new-process")
         application {

@@ -187,7 +187,7 @@ changes. Project mutations and owned subscription updates are transactional. Arc
 the owned subscription; original publications/history survive project deletion. See
 [RECRUITMENT_PROJECTS.md](docs/RECRUITMENT_PROJECTS.md) for API, migration recovery and tests.
 
-## Stable desktop origin
+## Stable desktop origin and Menu Bar
 
 The packaged launcher opens `http://hradar.localhost:1709/`; Ktor serves production
 assets and API on one IPv4 loopback listener. Exact Host/Origin checks retain direct
@@ -201,3 +201,11 @@ old capabilities are never promoted and no durable recovery bearer is created.
 Process capability and CSRF rotate;
 no bearer persists in URLs. MCP's enable/source grants remain independent. No domain
 services, Telegram identity or user database layout change for the URL.
+
+Packaged macOS runs as an `LSUIElement` AWT Menu Bar agent without a Dock icon.
+`DesktopRuntime.openInterface` issues fresh single-use codes through `DesktopAccess`
+for startup and both menu destinations; the menu contains no access algorithm.
+Duplicate native launches use the marker HMAC challenge and exit without creating
+another tray or TDLib client. Menu/web quit share the idempotent shutdown request;
+the web path awaits response flush before exit. The shutdown hook closes services,
+tray and session lease, including when health/browser startup adapters stall.

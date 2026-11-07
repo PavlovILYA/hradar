@@ -1,5 +1,59 @@
 # hradar — Development status / session handoff
 
+## PR #15 integrated with merged Menu Bar #16 — 2026-11-08
+
+Existing `feat/local-domain-1709` in `hradar-local-domain` rebased onto fetched
+`origin/master` **74cb8d6d1d76e91d480bcdac25c0b2905d54c74b**. GitHub confirmed
+#16 merged on 2026-11-07. Version **0.7.0**, compatible MINOR after master 0.6.0;
+canonical version.py sync/check used, SQLite schema remains 11.
+
+VERIFIED:
+- Resolved Application/DesktopRuntime, frontend handshake, smoke script and docs
+  conflicts by preserving #16's AWT lifecycle/cleanup and #15's DesktopAccess,
+  HMAC reopen, encoded-path guards and response-flush shutdown. Startup and both
+  menu destinations use shared `openInterface` with fresh single-use launch codes;
+  process capability never enters their URLs. Settings query survives consumption.
+- Fixed an automatically merged packaged settings smoke that retained the obsolete
+  process-token/IPv4 URL. Updated offline reload fixture for the recovery POST.
+- JDK21 Microsoft 21.0.12.1 / local macOS Intel: `./gradlew :backend:clean
+  :backend:build :backend:stageDesktop :backend:desktopMenuSmoke -PbundledWeb=true
+  -Pkotlin.compiler.execution.strategy=in-process` exit0; **207 tests, 0 failures,
+  errors or skips**. Real AWT listeners issue fresh home/settings codes at production
+  hostname/port and dispose the tray. Menu quit in two child JVMs with stalled
+  health/browser adapters exits0 and releases marker, port and session lease.
+- Initial concurrent Gradle attempts collided in incremental output; stopped only
+  owned builds, then the complete sequential clean build above passed.
+- `npm run build --prefix frontend` exit0; **64 offline Playwright passed** at
+  isolated test port5187. Initial settings reload failed without the recovery
+  fixture; final full suite passed after correction. **31 Python safeguards**,
+  version consistency, Node/shell syntax and diff checks passed.
+- Fresh Intel `package-macos.sh` and mounted-DMG `verify-macos-dmg.sh ... 17139`
+  exit0: JVM/JNI, Mach-O/linkage, LSUIElement/template glyph, ad-hoc codesign,
+  checksums and **181-file** DMG/ZIP identity. Versioned 0.7.0 DMG/ZIP contain
+  `hradar.app`. Production JS in JAR matches frontend build byte-for-byte.
+- Mounted-DMG production home/settings, cookie/Host/Origin/CSRF and encoded-path
+  denials, duplicate/foreign/forged-listener refusal, saved-tab restart/recovery,
+  synthetic SQLite/session preservation, newer-schema refusal, headless cleanup
+  and graceful web shutdown passed at `http://hradar.localhost:17139/`.
+  Existing Intel/ARM64 CI and version-derived Actions artifact names retained.
+- Independent read-only integration review found no actionable issues. All runtime
+  checks used temporary synthetic homes, no Telegram account or real `~/.hradar`.
+  Previous generated Intel output preserved in `.tdlib-build/pr15-before-integration-x86_64`.
+
+NOT VERIFIED: new hosted CI/ARM64 execution, CI-pinned Temurin, physical Finder
+launch/Dock absence/pointer clicks, appearance/Retina, live Telegram continuation
+or Close, Developer ID/Gatekeeper/notarization. Automated listener smoke used
+17139 to avoid the existing installed app; production remains fixed at1709.
+
+NEXT ACTION: commit and push only this existing PR branch with an explicit
+`--force-with-lease` against checked remote tip aed45949ad21e18e02a7bbb7f6c5ed78e1267a13.
+Inspect Actions once immediately, without waiting/polling. Owner checks final
+exact-head Fast CI and Intel/ARM64 installer results before merge, then performs
+[manual QA](MACOS_DISTRIBUTION.md#manual-qa--repeat-separately-on-intel-and-arm64-macos-15).
+No merge/tag/Release or real-profile launch; master/#14/#16 worktrees untouched.
+Earlier checkpoints below are historical; their version/order instructions are superseded.
+
+
 ## PR #16 versioned Actions artifact names — 2026-11-05
 
 VERIFIED: Installer workflow exposes the full canonical appVersion from version.py
