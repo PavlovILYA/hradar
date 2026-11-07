@@ -40,8 +40,8 @@ function App() {
   const [error, setError] = useState('');
   const [result, setResult] = useState<{ username: string; messages: ResearchMessage[] } | null>(null);
   const [filter, setFilter] = useState('');
-  const [screen, setScreen] = useState<Screen>('overview');
-  const [visited, setVisited] = useState<Set<Screen>>(() => new Set(['overview']));
+  const [screen, setScreen] = useState<Screen>(() => new URLSearchParams(location.search).get('screen') === 'application' ? 'application' : 'overview');
+  const [visited, setVisited] = useState<Set<Screen>>(() => new Set([screen]));
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [archiveUsername, setArchiveUsername] = useState('telegram');
   const [selectedSourceKey, setSelectedSourceKey] = useState('');

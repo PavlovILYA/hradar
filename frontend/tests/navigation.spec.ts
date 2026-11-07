@@ -176,3 +176,25 @@ test('an untouched archive limit initializes from the server for bounded and unl
   limit = null; await page.reload(); await navigate(page, 'Архив');
   await expect(page.getByLabel('Лимит сохранённых сообщений')).toHaveValue('all');
 });
+
+
+test('native settings destination survives desktop launch handshake', async ({ page }) => {
+  await fixture(page);
+  let launches = 0;
+  await page.route('**/desktop/launch', route => {
+    expect(route.request().postDataJSON()).toEqual({ token: 'synthetic-native-token' });
+    launches++;
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.goto('/?screen=application#launch=synthetic-native-token');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Состояние приложения');
+  await expect(page.getByRole('button', { name: 'Завершить hradar', exact: true })).toBeVisible();
+  expect(new URL(page.url()).hash).toBe('');
+  expect(new URL(page.url()).search).toBe('?screen=application');
+  expect(launches).toBe(1);
+  await page.reload();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Состояние приложения');
+  expect(launches).toBe(1);
+  await page.goto('/?screen=untrusted');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Обзор');
+});
