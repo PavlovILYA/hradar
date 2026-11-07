@@ -88,7 +88,7 @@ rows are read in place for legacy keys, never copied/reclassified automatically.
 Local bodies do not enter Bot/MCP archive adapters, notifications or subscriptions.
 `SourceArchiveService` persists checkpoints/pages atomically; only explicit imports
 run. Projects accept additive sourceKeys while old sources/cards/criteria remain valid.
-Local source monitoring and discussion threads remain C. See
+Owner-local monitoring and native discussions are described below. See
 [TELEGRAM_SOURCES.md](docs/TELEGRAM_SOURCES.md).
 
 ### Online search versus saved history
@@ -236,3 +236,6 @@ Duplicate native launches use the marker HMAC challenge and exit without creatin
 another tray or TDLib client. Menu/web quit share the idempotent shutdown request;
 the web path awaits response flush before exit. The shutdown hook closes services,
 tray and session lease, including when health/browser startup adapters stall.
+Stage C detaches `localMessageListener` and closes `LocalMonitoringService` in
+that same cleanup sequence before TDLib and SQLite. Its source/discussion/local
+notification routes reuse the shared authority policy and decoded-path CSRF checks.

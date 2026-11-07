@@ -35,7 +35,7 @@ Build a local-first recruiting workspace centered on **explicitly permitted Tele
   and native forum topics (0.5.0, schema11; automated evidence in DEV_STATUS;
   owned-account manual acceptance remains separate).
 - [x] C implementation: explicit owner-local scoped monitoring and native discussions,
-  checkpoint/recovery/dedup/access-loss handling (0.6.0, schema12). Local automated
+  checkpoint/recovery/dedup/access-loss handling (0.8.0, schema12). Local automated
   acceptance passes; hosted CI and owned-account manual QA remain separate gates.
   External sharing grants/delivery are not enabled by local monitoring.
 

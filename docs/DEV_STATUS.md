@@ -1,5 +1,73 @@
 # hradar — Development status / session handoff
 
+## PR #14 integrated with master #15/#16 — 2026-11-08
+
+Existing `hradar-sources-c` / `feat/telegram-sources-stage-c`, starting dc359c2,
+rebased onto **ec9f629fc568779b8f11693265f23c52576eea57**. GitHub confirmed
+#15 merged as ec9f629 and #16 as 74cb8d6. App **0.8.0**, compatible MINOR after
+master0.7.0; version.py sync/check used. SQLite **11->12** remains additive.
+Earlier checkpoints below are historical; their Draft/version/order/CI instructions
+are superseded by this integration and the user's latest task.
+
+VERIFIED:
+- Conflicts in Application lifecycle, gradle/npm versions, schema smoke and handoff
+  resolved semantically. One gateway, Menu Bar, single-use DesktopAccess launch,
+  hostname/loopback policy, encoded-path guards and response-flush shutdown retained.
+  Local callback starts with the existing client and is detached before local worker,
+  TDLib and SQLite cleanup; no second client or old token flow introduced.
+- SourceRoutes now uses the shared authority policy instead of a stale IPv4-only
+  special case. Local-notification mutations remain in the decoded-path CSRF guard.
+  Expanded local route test covers hostname launch handshake and encoded cookie/CSRF
+  denials for monitoring, discussions and local reads. New started-worker cancellation
+  test verifies close joins pending recovery, rejects late hints and preserves state.
+- JDK21 Microsoft21.0.12.1 on local macOS Intel: final `./gradlew :backend:build
+  :backend:stageDesktop :backend:desktopMenuSmoke -PbundledWeb=true
+  -Pkotlin.compiler.execution.strategy=in-process` exit0: **236 tests,0 failures,
+  errors or skips**. Includes authentic v11 migration/rollback/reopen/data snapshots,
+  future13 refusal, native-fake group/channel/topic/thread matrix, events, multiple
+  source/rule overlap, durable recovery/rate/access deadlines, dedup and cancellation.
+  Real AWT actions/disposal and two menu-quit child JVMs passed; marker, lease and
+  port released even while health/browser adapters stalled.
+- Initial full backend run had 234/235 passing, with one storage-migration lsof
+  guard refusal on a synthetic temporary directory during concurrent DMG work.
+  After packaging/unmount, the full final run above passed including the new test.
+  An ignored wrapper captured 43 actual /usr/sbin/lsof calls without stderr warnings;
+  it forwarded output/exit codes unchanged. Guard not weakened or test suppressed.
+  The original refusal's exact cause was not captured and remains unproven.
+- Frontend production build exit0; **67 offline Playwright passed** on isolated5188.
+  **31 Python safeguards**, version consistency, Node/shell/Python syntax and diff
+  checks passed. Native bundle reused read-only from an existing local cache with
+  SHA256/pinned bc9c263 identity checks; no native rebuild or dependency upgrade.
+- Fresh Intel package and mounted-DMG verify/smoke on **17149** exit0: JVM/JNI,
+  Mach-O/linkage, LSUIElement/template glyph, ad-hoc signature, DMG checksum and
+  **181-file DMG/ZIP identity**. Production JS matches frontend build. Versioned
+  0.8.0 DMG/ZIP contain `hradar.app`; installer metadata matches schema12.
+- Packaged smoke covers real hostname home/settings launch, Host/Origin/cookie/CSRF
+  and encoded Stage C denials, local match read/read-state, paused subscription and
+  checkpoint/recovery cursor preservation across restart, graceful shutdown,
+  duplicate/foreign/forged listener refusal, saved-tab cookie/CSRF rotation,
+  future13 refusal and headless cleanup. Synthetic local tables join old CRM/archive
+  snapshot comparisons; no Telegram client or real ~/.hradar was used.
+- Independent read-only review of integration and additional fixtures found no
+  actionable issue. Existing Intel/ARM64 workflows and version-derived artifact
+  names retained. Other branches/worktrees and real user data were not changed.
+
+NOT VERIFIED: hosted exact-head CI/ARM64 execution, CI-pinned Temurin, real Telegram
+updates/discussions/access/recovery or Close, physical Finder/Dock/menu pointer/
+appearance tests, Gatekeeper/notarization, real profile11->12 upgrade. Local matches
+remain in-app owner-local evidence, not OS/phone delivery or Bot/MCP/outbox grants.
+The initial non-reproduced lsof refusal is a remaining test-environment risk.
+
+NEXT ACTION: commit/push only existing PR#14 using explicit --force-with-lease
+against checked remote dc359c2b6541d6d948cca1c8969c936333d5b3f6; Ready for review
+is authorized after these local checks. Inspect CI once immediately after push,
+then stop without waiting/polling. Owner checks final exact-head Fast/Intel/ARM64
+results before merge and performs the synthetic-chat QA in STAGE_C_HANDOFF.
+For a real upgrade, first quit0.7.0 and back up a consistent stopped pre12 profile;
+restore that stopped backup for downgrade, never lower user_version. No real startup,
+merge, tag or Release is part of this task.
+
+
 ## PR #15 integrated with merged Menu Bar #16 — 2026-11-08
 
 Existing `feat/local-domain-1709` in `hradar-local-domain` rebased onto fetched

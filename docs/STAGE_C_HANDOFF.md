@@ -1,10 +1,18 @@
 # Telegram Sources Stage C handoff — 2026-10-26
 
-Later review/checkpoint: [STAGE_C_REVIEW.md](STAGE_C_REVIEW.md) and the first section
-of DEV_STATUS (2026-11-01). The new owner task explicitly authorizes fixing/pushing
-PR #14, updating its Draft description and inspecting/waiting for CI after push;
-the original session's no-poll restriction below is historical. Real profile startup
-remains excluded. Continue the same branch/PR and keep #15 separate until merged.
+## Current integration — 0.8.0 (2026-11-08)
+
+PR #14 is rebased onto master ec9f629 (merged #15/#16). Stage C now shares
+DesktopAccess launch codes, Menu Bar lifecycle and http://hradar.localhost:1709.
+The local worker/callback is stopped by the common cleanup; HTTP mutations,
+including local reads, require the desktop cookie/Origin/CSRF. SQLite remains12.
+See the latest DEV_STATUS for exact checks and pending hosted/manual evidence.
+Only one immediate CI check is allowed after push; no waiting, polling or sleep.
+No real-profile launch or migration is part of this integration task. Manual
+owner QA below still requires synthetic controlled chats and a stopped pre12 backup.
+
+The original implementation notes below are historical; their branch/version,
+parallel-PR and Draft instructions are superseded by this checkpoint.
 
 ## Branch and boundaries
 

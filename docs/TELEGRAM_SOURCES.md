@@ -17,7 +17,9 @@ master rather than a merged feature branch.
 ## Stage C — explicit owner-local monitoring and discussions
 
 Implementation is on `feat/telegram-sources-stage-c`; final verification and version
-are recorded in DEV_STATUS. Local processing is separate from external permissions.
+are recorded in DEV_STATUS. The 0.8.0 integration includes master #15/#16:
+Menu Bar, single-use desktop launch codes and http://hradar.localhost:1709.
+Local processing is separate from external permissions.
 
 - Saved cloud chats, basic groups, public/private supergroups/channels, whole forums,
   native topics and verified discussion threads can be explicitly linked to existing

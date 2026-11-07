@@ -2,7 +2,6 @@ package dev.radar.sources
 
 import dev.radar.research.Repositories
 import dev.radar.research.ResourceNotFound
-import dev.radar.desktop.DesktopRuntime
 import dev.radar.capabilities.LocalMcpSecurity
 import io.ktor.server.application.*
 import io.ktor.server.routing.*
@@ -19,9 +18,7 @@ fun Application.configureSourceRoutes(service: SourceCatalogService, repo: Repos
         onCall { call ->
             call.response.headers.append("Cache-Control", "no-store")
             val mutation = call.request.httpMethod !in setOf(HttpMethod.Get, HttpMethod.Head)
-            val desktop = DesktopRuntime.enabled && call.request.headers["Host"] == "127.0.0.1:${DesktopRuntime.port}" &&
-                (call.request.headers["Origin"] == "http://127.0.0.1:${DesktopRuntime.port}" || (!mutation && call.request.headers["Origin"] == null))
-            if (!desktop && !LocalMcpSecurity.valid(call.request.headers["Host"], call.request.headers["Origin"], mutation))
+            if (!LocalMcpSecurity.valid(call.request.headers["Host"], call.request.headers["Origin"], mutation))
                 call.respondText("{\"error\":\"Требуется локальный доступ\"}", ContentType.Application.Json, HttpStatusCode.Forbidden)
         }
     }

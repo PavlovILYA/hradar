@@ -248,6 +248,37 @@ class LocalMonitoringTest {
         }
     }
 
+    @Test fun startedWorkerCloseCancelsRecoveryAndPreservesCheckpoint(): Unit = runBlocking {
+        val path = Files.createTempDirectory("local-monitor-shutdown-").resolve("db")
+        var checkpoint: LocalSubscription? = null
+        Repositories(path).use { repo ->
+            val source = save(repo); val template = rule(repo)
+            val reading = CompletableDeferred<Unit>(); val cancelled = CompletableDeferred<Unit>()
+            var calls = 0
+            monitor(repo, { _, _, _ ->
+                if (calls++ == 0) SourceMessagePage(listOf(message(source, 1)), null)
+                else {
+                    reading.complete(Unit)
+                    try { awaitCancellation() } finally { cancelled.complete(Unit) }
+                }
+            }).use { service ->
+                checkpoint = service.configure(source.key, template.id, true)
+                service.start()
+                withTimeout(10_000) { reading.await() }
+                withTimeout(10_000) { withContext(Dispatchers.IO) { service.close() } }
+                assertTrue(cancelled.isCompleted)
+                assertEquals(checkpoint, service.list().single())
+                assertTrue(repo.localMatches().items.isEmpty())
+                service.offer(native(2)) // Detached/closed worker cannot process late hints.
+                assertEquals(2, calls)
+            }
+        }
+        Repositories(path).use { repo ->
+            assertEquals(checkpoint, repo.localSubscriptions().single())
+            assertTrue(repo.localMatches().items.isEmpty())
+        }
+    }
+
     @Test fun invalidPublicationRollsBackEarlierMatchAndCheckpointTogether(): Unit = runBlocking {
         val path = Files.createTempDirectory("local-monitor-atomic-").resolve("db")
         Repositories(path).use { repo ->

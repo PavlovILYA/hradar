@@ -1,5 +1,7 @@
 package dev.radar.sources
 
+import dev.radar.desktop.DesktopAccess
+import dev.radar.desktop.DesktopRuntime
 import dev.radar.desktop.configureDesktopSecurity
 import dev.radar.research.*
 import dev.radar.telegram.TdlibGateway
@@ -32,13 +34,19 @@ class LocalMonitoringRoutesTest {
         val reader = SourceReadService(repo, native)
         val monitor = LocalMonitoringService(repo, reader, { true })
         val archive = SourceArchiveService(repo, { key,cursor -> reader.recent(key,cursor,100) }, { true })
+        val access = DesktopAccess("synthetic-launch")
         application {
             install(ContentNegotiation) { json() }
-            configureDesktopSecurity("synthetic-launch", "synthetic-csrf")
+            configureDesktopSecurity(access, "synthetic-csrf")
             configureSourceRoutes(SourceCatalogService(TdlibSourceCatalog(native), repo), repo, reader, archive, monitor)
         }
-        fun HttpRequestBuilder.owner() { header(HttpHeaders.Host,"127.0.0.1:8080"); header(HttpHeaders.Origin,"http://127.0.0.1:8080"); header(HttpHeaders.Cookie,"hradar-desktop=synthetic-launch"); header("X-Hradar-CSRF","synthetic-csrf"); contentType(ContentType.Application.Json) }
+        fun HttpRequestBuilder.owner() { header(HttpHeaders.Host,"hradar.localhost:${DesktopRuntime.port}"); header(HttpHeaders.Origin,DesktopRuntime.browserOrigin); header(HttpHeaders.Cookie,"hradar-desktop=synthetic-launch"); header("X-Hradar-CSRF","synthetic-csrf"); contentType(ContentType.Application.Json) }
         try {
+            val launch = client.post("/desktop/launch") {
+                owner(); setBody("{\"token\":\"${access.issueLaunch()}\"}")
+            }
+            assertEquals(HttpStatusCode.OK, launch.status)
+            assertTrue(launch.headers[HttpHeaders.SetCookie]!!.contains("hradar-desktop=synthetic-launch"))
             assertEquals(HttpStatusCode.Forbidden, client.get("/api/local-notifications") { header(HttpHeaders.Host,"evil.example") }.status)
             val path = "/api/sources/${source.key}/monitoring"
             val initial = client.get(path) { owner() }
@@ -51,6 +59,15 @@ class LocalMonitoringRoutesTest {
             for (localPath in listOf(path, "/api/local-notifications/read-all", "/api/sources/${source.key}/messages/5/discussion")) {
                 assertEquals(HttpStatusCode.Forbidden, client.post(localPath) { owner(); headers.remove("X-Hradar-CSRF"); setBody("{}") }.status)
                 assertEquals(HttpStatusCode.Forbidden, client.post(localPath) { owner(); headers.remove(HttpHeaders.Cookie); setBody("{}") }.status)
+            }
+            // Encoded paths must retain the same cookie/CSRF boundary as routed paths.
+            for (encoded in listOf("/%61pi/sources/${source.key}/monitoring", "/api/local-%6eotifications/read-all", "/api//sources/${source.key}/messages/5/discussion")) {
+                assertEquals(HttpStatusCode.Forbidden, client.post {
+                    url.encodedPath = encoded; owner(); headers.remove("X-Hradar-CSRF"); setBody("{}")
+                }.status, encoded)
+                assertEquals(HttpStatusCode.Forbidden, client.post {
+                    url.encodedPath = encoded; owner(); headers.remove(HttpHeaders.Cookie); setBody("{}")
+                }.status, encoded)
             }
             assertTrue(repo.localMatches().items.isEmpty())
             val enabled = client.post(path) { owner(); setBody(json.encodeToString(ConfigureLocalMonitoring(template.id,true))) }

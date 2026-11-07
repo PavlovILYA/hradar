@@ -61,7 +61,12 @@ FLOOD_WAIT behavior and restart recovery still need owned synthetic-chat QA as
 described in STAGE_C_HANDOFF. Restore a stopped consistent pre12 backup for downgrade;
 never lower user_version or run an old binary against the migrated profile.
 
-## PR #15 integration risks — no integration performed
+## Historical PR #15 integration risks (reviewed 2026-11-01)
+
+Integration checkpoint (2026-11-08): #15/#16 are merged; PR #14 rebased onto
+master ec9f629 for app0.8.0/schema12. Shared launcher/Menu Bar cleanup, route
+authority/CSRF, encoded-path and installer-schema integration is now included.
+See current DEV_STATUS for results; the following risks describe the old review.
 
 At review time #15 is OPEN, head `3e74206353f1e5be7f259dfcd77f44e4535e4862`.
 Both PRs target app0.6.0; keep C at0.6.0 until #15 actually merges. Policy bumps
