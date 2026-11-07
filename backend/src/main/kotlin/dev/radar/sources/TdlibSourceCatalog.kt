@@ -9,6 +9,7 @@ interface SourceCatalogPort {
     suspend fun describe(chatId: Long): TelegramSource?
     suspend fun topics(chatId: Long, cursor: TopicCursor): TopicPage
     suspend fun topic(chatId: Long, topicId: Int): TelegramSource
+    suspend fun thread(anchorChatId: Long, anchorMessageId: Long): TelegramSource = throw SourceUnavailable()
 }
 
 /** Metadata only: never return native Chat/ForumTopic (lastMessage and drafts). */
@@ -83,6 +84,20 @@ class TdlibSourceCatalog(private val request: suspend (TdApi.Function<*>) -> TdA
         scoped(forum(chatId), request(TdApi.GetForumTopic(chatId, topicId)) as TdApi.ForumTopic).also {
             require(it.scope.forumTopicId == topicId) { "Telegram вернул другую тему" }
         }
+    override suspend fun thread(anchorChatId: Long, anchorMessageId: Long): TelegramSource {
+        require(anchorChatId != 0L && anchorMessageId > 0) { "Некорректное исходное сообщение" }
+        val anchor = request(TdApi.GetMessage(anchorChatId, anchorMessageId)) as TdApi.Message
+        require(anchor.chatId == anchorChatId && anchor.id == anchorMessageId) { "Telegram вернул другое исходное сообщение" }
+        val properties = request(TdApi.GetMessageProperties(anchorChatId, anchorMessageId)) as TdApi.MessageProperties
+        require(properties.canGetMessageThread) { "Telegram не разрешает открыть обсуждение этого сообщения" }
+        val info = request(TdApi.GetMessageThread(anchorChatId, anchorMessageId)) as TdApi.MessageThreadInfo
+        require(info.chatId != 0L && info.messageThreadId > 0) { "Telegram не вернул область обсуждения" }
+        val source = describe(info.chatId)
+        if (source == null || source.access == SourceAccess.UNAVAILABLE) throw TelegramRequestException(403, "SOURCE_UNAVAILABLE")
+        require(source.type == SourceType.SUPERGROUP && !source.isForum) { "Форумные темы выбираются отдельно от веток обсуждения" }
+        return source.copy(scope = SourceScope(ScopeKind.MESSAGE_THREAD, messageThreadId = info.messageThreadId),
+            scopeTitle = "Обсуждение", threadAnchorChatId = anchorChatId, threadAnchorMessageId = anchorMessageId)
+    }
     private fun scoped(source: TelegramSource, topic: TdApi.ForumTopic): TelegramSource {
         require(topic.info.chatId == source.chatId && topic.info.forumTopicId > 0) { "Тема не принадлежит чату" }
         return source.copy(scope = SourceScope(ScopeKind.FORUM_TOPIC, topic.info.forumTopicId), scopeTitle = topic.info.name.orEmpty().take(256))

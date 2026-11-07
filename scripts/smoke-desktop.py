@@ -57,6 +57,17 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
                 http('/api/onboarding', headers={'Cookie':cookie,'Origin':'https://evil.example'}, expected=403)
                 state = http('/api/onboarding', headers=headers)
                 assert state['state'] == 'Credentials'
+                # Stage C routes use the same packaged hostname/cookie/CSRF policy.
+                local_headers = dict(headers, Host=f'hradar.localhost:{port}', Origin=f'http://hradar.localhost:{port}')
+                if attempt == 0: assert http('/api/local-notifications', headers=local_headers)['items'] == []
+                http('/api/sources', headers=local_headers)
+                for path in ['/api/local-notifications', '/%61pi/local-notifications', '/api//local-notifications']:
+                    http(path, headers={'Host':f'hradar.localhost:{port}'}, expected=403)
+                for path in ['/api/local-notifications/read-all', '/api/local-%6eotifications/read-all', '/api/sources/synthetic/monitoring', '/api/sources/synthetic/messages/5/discussion']:
+                    http(path, {}, local_headers, expected=403)
+                local_headers['X-Hradar-CSRF'] = state['csrfToken']
+                assert http('/api/local-notifications/read-all', {}, local_headers) == {'read':True}
+
                 http('/api/onboarding/credentials', {'apiId':1,'apiHash':'0'*32}, headers, expected=403)
                 http('/api/%6fnboarding/credentials', {'apiId':1,'apiHash':'0'*32}, headers, expected=403)
                 http('/api/projects', expected=403)
@@ -64,7 +75,7 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
                 database = home/'.hradar/data/research.sqlite'
                 if attempt == 0:
                     with sqlite3.connect(database) as db:
-                        assert db.execute('PRAGMA user_version').fetchone() == (11,)
+                        assert db.execute('PRAGMA user_version').fetchone() == (12,)
                         if metadata is not None:
                             assert metadata['sqliteSchemaVersion'] == db.execute('PRAGMA user_version').fetchone()[0], 'Installer metadata must match the actual SQLite schema'
                         source = {'id':-1001,'username':'synthetic_jobs','title':'Synthetic source'}
@@ -84,10 +95,33 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
                     card = http(f'/api/projects/{project_id}/cards', headers=headers)['items'][0]
                     assert (card['stage'],card['notes'],card['interest']) == ('CONTACTED','Synthetic preserved note',5)
                     with sqlite3.connect(database) as db:
-                        assert db.execute('PRAGMA user_version').fetchone() == (11,)
+                        assert db.execute('PRAGMA user_version').fetchone() == (12,)
                         assert db.execute('PRAGMA integrity_check').fetchone() == ('ok',)
                         assert db.execute('PRAGMA foreign_key_check').fetchall() == []
                         assert crm_snapshot == {table:db.execute(f'SELECT * FROM {table} ORDER BY 1,2').fetchall() for table in crm_snapshot}
+                if attempt == 0:
+                    # Synthetic existing Stage C state; never calls a native Telegram client.
+                    rule = http('/api/templates', {'name':'Synthetic local rule','required':['Java'],'telegramQuery':'Java'}, local_headers, expected=201)
+                    local_source = {'key':'smoke-local-source','chatId':3001,'type':'PRIVATE','title':'Synthetic cloud chat'}
+                    local_subscription = {'id':'smoke-local-subscription','sourceKey':local_source['key'],'templateId':rule['id'],
+                                          'enabled':False,'checkpoint':42,'recoveryCursor':40,'recoveryHead':44,'sinceDate':1700000000,'status':'paused'}
+                    local_match = {'id':'smoke-local-match','templateId':rule['id'],'templateName':rule['name'],
+                                   'message':{'id':42,'channelId':3001,'date':1700000000,'text':'Synthetic local Java','title':local_source['title'],'username':None,'sourceKey':local_source['key']}}
+                    with sqlite3.connect(database) as db:
+                        db.execute('INSERT INTO telegram_sources VALUES(?,?,?,?,?,?)', (local_source['key'],3001,'CHAT',0,None,json.dumps(local_source)))
+                        db.execute('INSERT INTO local_subscriptions VALUES(?,?,?,?)', (local_subscription['id'],local_source['key'],rule['id'],json.dumps(local_subscription)))
+                        db.execute('INSERT INTO local_matches(id,template_id,chat_id,message_id,data) VALUES(?,?,?,?,?)', (local_match['id'],rule['id'],3001,42,json.dumps(local_match)))
+                    assert http('/api/local-notifications', headers=local_headers)['unread'] == 1
+                    denied_headers = dict(local_headers); del denied_headers['X-Hradar-CSRF']
+                    http('/api/local-%6eotifications/smoke-local-match/read', {}, denied_headers, expected=403)
+                    assert http('/api/local-notifications', headers=local_headers)['unread'] == 1
+                    http('/api/local-%6eotifications/smoke-local-match/read', {}, local_headers)
+                matches = http('/api/local-notifications', headers=local_headers)
+                assert matches['unread'] == 0 and len(matches['items']) == 1 and matches['items'][0]['read']
+                subscriptions = http('/api/sources/smoke-local-source/monitoring', headers=local_headers)
+                assert len(subscriptions) == 1 and subscriptions[0]['checkpoint'] == 42
+                assert subscriptions[0]['recoveryCursor'] == 40 and subscriptions[0]['recoveryHead'] == 44 and not subscriptions[0]['enabled']
+                http('/api/sources/smoke-local-source/monitoring', {'templateId':subscriptions[0]['templateId'],'enabled':False}, local_headers)
                 # Browser executes actual production JS/CSS and the launch handshake.
                 if attempt == 0:
                     browser_env = dict(os.environ, HRADAR_SMOKE_TOKEN=token, HRADAR_SMOKE_PORT=str(port))
@@ -102,7 +136,7 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
                     else:
                         assert db.execute('SELECT value FROM distribution_smoke').fetchone() == ('preserved',)
                 with sqlite3.connect(database) as db:
-                    crm_snapshot = {table:db.execute(f'SELECT * FROM {table} ORDER BY 1,2').fetchall() for table in ['recruitment_projects','recruitment_cards','recruitment_publications','monitored_channels','imported_messages','search_templates','template_sources','recruitment_templates']}
+                    crm_snapshot = {table:db.execute(f'SELECT * FROM {table} ORDER BY 1,2').fetchall() for table in ['recruitment_projects','recruitment_cards','recruitment_publications','monitored_channels','imported_messages','search_templates','template_sources','recruitment_templates','telegram_sources','local_subscriptions','local_matches','local_monitoring_limits']}
                 headers['X-Hradar-CSRF'] = state['csrfToken']
                 http('/api/desktop/shutdown', {}, headers)
                 process.wait(timeout=20)
@@ -156,11 +190,11 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
             server.shutdown(); server.server_close(); thread.join(); marker.unlink()
         # No downgrade of a database created by a newer local feature build.
         with sqlite3.connect(home/'.hradar/data/research.sqlite') as db:
-            db.execute('PRAGMA user_version=12')
+            db.execute('PRAGMA user_version=13')
         subprocess.run([str(launcher)],env=env,stdout=log,stderr=log,check=True,timeout=20)
         assert not marker.exists()
         with sqlite3.connect(home/'.hradar/data/research.sqlite') as db:
-            assert db.execute('PRAGMA user_version').fetchone() == (12,)
+            assert db.execute('PRAGMA user_version').fetchone() == (13,)
             assert db.execute('SELECT value FROM distribution_smoke').fetchone() == ('preserved',)
             assert crm_snapshot == {table:db.execute(f'SELECT * FROM {table} ORDER BY 1,2').fetchall() for table in crm_snapshot}
 print('Production UI, origin/cookie/CSRF denial, duplicate/legacy-port refusal, restart persistence, newer-schema refusal and graceful shutdown passed')

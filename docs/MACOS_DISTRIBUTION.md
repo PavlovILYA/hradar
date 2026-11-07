@@ -80,7 +80,7 @@ On first launch, previous locations are copied with a checked backup before TDLi
 starts. The installed app uses the same `RuntimePaths` as Gradle. Details and recovery:
 [storage migration](STORAGE_MIGRATION.md).
 
-This branch currently supports SQLite schemas through v11 (including the saved source catalog and scoped archive). A database created by a
+This branch currently supports SQLite schemas through v12 (including scoped archive and owner-local monitoring). A database created by a
 newer feature build is refused with a visible message, without a downgrade or
 deletion; use a build containing that newer schema/features. Bot API settings are
 stored separately in `~/.hradar/config/telegram-bot.json` and can be managed in the
@@ -177,12 +177,12 @@ bash scripts/package-macos.sh "$(uname -m)"
 bash scripts/verify-macos-dmg.sh "$(uname -m)" ".tdlib-build/distribution-$(uname -m)"
 ```
 
-Installer metadata records `sqliteSchemaVersion: 11`, `recruitment-crm` and `telegram-bot-settings`.
+Installer metadata records `sqliteSchemaVersion: 12`, `recruitment-crm` and `telegram-bot-settings`.
 Both architecture jobs also execute the offline Playwright suite. Mounted-DMG smoke
 creates synthetic CRM/archive records through real REST, preserves notes/stages and
-compares stored rows after reopening an existing v11 database. It checks SQLite
+compares stored rows after reopening an existing v12 database. It checks SQLite
 integrity/foreign keys, verifies installer schema metadata against the actual database,
-and refuses v12 without changing CRM rows. Browser CRM uses
+and refuses v13 without changing CRM rows. Browser CRM uses
 production resources and real REST; authorization status is mocked and its live SSE channel isolated.
 
 The smoke test uses an isolated temporary home, no account client, a restricted PATH
@@ -283,8 +283,13 @@ and obtains a fresh single-use code from `DesktopAccess` for every initial/menu
 open. Menu Bar never receives or puts the process capability in a URL. Duplicate
 launches verify the private marker with HMAC before opening another one-time code.
 Home and settings use the same hostname and handshake; closing tabs leaves the
-backend running. Version 0.7.0 integrates this access flow with Menu Bar lifecycle;
-SQLite schema remains 11.
+backend running. Stage C source/monitoring/discussion/local-notification routes
+share this desktop cookie, exact Host/Origin and mutation CSRF policy; encoded
+paths receive the same checks. Menu/web quit also detach the local update callback
+and close the local monitoring worker before TDLib and SQLite. Version 0.7.0 integrates this access flow with Menu Bar lifecycle;
+SQLite schema is 12 with Stage C in 0.8.0. Before upgrading a real profile,
+quit the previous app and make a consistent stopped pre12 backup; downgrade
+requires restoring that stopped backup, never lowering user_version.
 
 ## Stable local address and upgrade from 0.5.0
 

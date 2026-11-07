@@ -6,7 +6,7 @@ export interface TelegramSource {
   key: string; chatId: number; type: 'PRIVATE' | 'BASIC_GROUP' | 'SUPERGROUP' | 'CHANNEL'; title: string;
   username?: string | null; scope: SourceScope; scopeTitle?: string | null; isPublic: boolean;
   access: 'AVAILABLE' | 'UNKNOWN' | 'UNAVAILABLE'; isForum: boolean; protectedContent: boolean;
-  legacyChannel: boolean; monitoringEnabled: boolean;
+  legacyChannel: boolean; monitoringEnabled: boolean; threadAnchorChatId?: number | null; threadAnchorMessageId?: number | null;
 }
 export interface SourcePage { items: TelegramSource[]; cursor?: string | null; notice?: string | null }
 interface TopicCursor { date: number; messageId: number; forumTopicId: number }
@@ -89,7 +89,7 @@ export function SourceBrowser({ saved, onAdded, onClose }: { saved: TelegramSour
   }
   async function save(source: TelegramSource) {
     if (mutationRequest.current) return;
-    if (source.scope.kind === 'MESSAGE_THREAD') { setError('Сохранение веток сообщений пока недоступно.'); return; }
+    if (source.scope.kind === 'MESSAGE_THREAD') { setError('Добавьте обсуждение через детали доступной публикации.'); return; }
     const controller = new AbortController(); mutationRequest.current = controller;
     setSaving(true); setError(''); setNotice('');
     const scope = source.scope.kind === 'FORUM_TOPIC' ? { kind: 'FORUM_TOPIC', forumTopicId: source.scope.forumTopicId } : { kind: 'CHAT' };
@@ -130,7 +130,7 @@ export function SourceBrowser({ saved, onAdded, onClose }: { saved: TelegramSour
   }
   return <section className="source-browser" aria-label="Выбор Telegram-источника" onKeyDown={event => { if (event.key === 'Escape' && !saving) { event.stopPropagation(); onClose(); } }}>
     <header><h3 ref={heading} tabIndex={-1}>Добавить из Telegram</h3><button className="text-button" disabled={saving} onClick={onClose}>Закрыть выбор источника</button></header>
-    <p className="helper">Выберите доступный чат или тему. После сохранения доступны чтение, поиск, ручной архив и проекты. Мониторинг новых источников пока недоступен. Добавление не вступает в чат и не импортирует историю.</p>
+    <p className="helper">Выберите доступный чат или тему. После сохранения доступны чтение, поиск, ручной архив и проекты. Локальный мониторинг включается отдельно для источника и шаблона. Добавление не вступает в чат и не импортирует историю.</p>
     <form className="catalog-search" onSubmit={event => { event.preventDefault(); setAppliedQuery(query.trim()); setRevision(value => value + 1); }}>
       <div><label htmlFor="catalog-query">Поиск в Telegram</label><input id="catalog-query" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Название чата или username" /></div>
       <div><label htmlFor="catalog-filter">Тип чата</label><select id="catalog-filter" value={filter} onChange={event => setFilter(event.target.value as Filter)}><option value="all">Все чаты</option><option value="private">Личные чаты</option><option value="groups">Группы</option><option value="channels">Каналы</option></select></div>

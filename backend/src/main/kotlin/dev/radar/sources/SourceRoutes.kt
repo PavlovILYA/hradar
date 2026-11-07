@@ -2,7 +2,6 @@ package dev.radar.sources
 
 import dev.radar.research.Repositories
 import dev.radar.research.ResourceNotFound
-import dev.radar.desktop.DesktopRuntime
 import dev.radar.capabilities.LocalMcpSecurity
 import io.ktor.server.application.*
 import io.ktor.server.routing.*
@@ -14,14 +13,12 @@ import kotlinx.coroutines.*
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 
-fun Application.configureSourceRoutes(service: SourceCatalogService, repo: Repositories, reader: SourceReadService? = null, archive: SourceArchiveService? = null) {
+fun Application.configureSourceRoutes(service: SourceCatalogService, repo: Repositories, reader: SourceReadService? = null, archive: SourceArchiveService? = null, monitoring: LocalMonitoringService? = null) {
     val local = createRouteScopedPlugin("SourceCatalogLocalAccess") {
         onCall { call ->
             call.response.headers.append("Cache-Control", "no-store")
             val mutation = call.request.httpMethod !in setOf(HttpMethod.Get, HttpMethod.Head)
-            val desktop = DesktopRuntime.enabled && call.request.headers["Host"] == "127.0.0.1:${DesktopRuntime.port}" &&
-                (call.request.headers["Origin"] == "http://127.0.0.1:${DesktopRuntime.port}" || (!mutation && call.request.headers["Origin"] == null))
-            if (!desktop && !LocalMcpSecurity.valid(call.request.headers["Host"], call.request.headers["Origin"], mutation))
+            if (!LocalMcpSecurity.valid(call.request.headers["Host"], call.request.headers["Origin"], mutation))
                 call.respondText("{\"error\":\"Требуется локальный доступ\"}", ContentType.Application.Json, HttpStatusCode.Forbidden)
         }
     }
@@ -48,6 +45,10 @@ fun Application.configureSourceRoutes(service: SourceCatalogService, repo: Repos
                     val id = call.parameters["message"]?.toLongOrNull() ?: throw BadRequestException("Некорректное сообщение")
                     call.respond(reader.detail(call.key(), id))
                 }
+                post("/{key}/messages/{message}/discussion") {
+                    val id = call.parameters["message"]?.toLongOrNull() ?: throw BadRequestException("Некорректное сообщение")
+                    call.respond(HttpStatusCode.Created, reader.discussion(call.key(), id))
+                }
                 get("/{key}/archive") {
                     val key = call.key(); val before = call.before(); val limit = call.limit(); val query = call.request.queryParameters["query"].orEmpty()
                     call.respond(withContext(Dispatchers.IO) { repo.sourceArchive(key, limit, before, query) })
@@ -72,6 +73,21 @@ fun Application.configureSourceRoutes(service: SourceCatalogService, repo: Repos
                     call.respond(archive.stop(key) ?: SourceSyncRecord(key, source.chatId, source.title))
                 }
             }
+            if (monitoring != null) {
+                get("/{key}/monitoring") {
+                    val key = call.parameters["key"].orEmpty()
+                    require(key.length in 1..36) { "Некорректный источник" }
+                    call.respond(withContext(Dispatchers.IO) {
+                        if (repo.sources().none { it.key == key }) throw ResourceNotFound()
+                        monitoring.list(key)
+                    })
+                }
+                post("/{key}/monitoring") {
+                    val key = call.parameters["key"].orEmpty()
+                    val input = call.receive<ConfigureLocalMonitoring>()
+                    call.respond(monitoring.configure(key, input.templateId, input.enabled))
+                }
+            }
             post("/{key}/refresh") {
                 val key = call.parameters["key"].orEmpty()
                 require(key.length in 1..36) { "Некорректный источник" }
@@ -83,6 +99,21 @@ fun Application.configureSourceRoutes(service: SourceCatalogService, repo: Repos
                 if (!withContext(Dispatchers.IO) { repo.deleteSource(key) }) throw ResourceNotFound()
                 call.respond(mapOf("deleted" to true))
             }
+        }
+        if (monitoring != null) route("/api/local-notifications") {
+            install(local)
+            get {
+                val limit = call.request.queryParameters["limit"]?.let { it.toIntOrNull() ?: throw BadRequestException("Некорректный лимит") } ?: 50
+                val before = call.request.queryParameters["before"]?.let { it.toLongOrNull() ?: throw BadRequestException("Некорректный курсор") } ?: Long.MAX_VALUE
+                require(limit in 1..100 && before > 0) { "Некорректная страница" }
+                call.respond(withContext(Dispatchers.IO) { repo.localMatches(limit, before) })
+            }
+            post("/{id}/read") {
+                val id = call.parameters["id"].orEmpty()
+                withContext(Dispatchers.IO) { if (!repo.markLocalRead(id)) throw ResourceNotFound() }
+                call.respond(mapOf("read" to true))
+            }
+            post("/read-all") { withContext(Dispatchers.IO) { repo.markAllLocalRead() }; call.respond(mapOf("read" to true)) }
         }
         route("/api/source-catalog") {
             install(local)
