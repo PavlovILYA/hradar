@@ -31,7 +31,7 @@ class LocalMonitoringRoutesTest {
             is TdApi.GetChatHistory -> TdApi.Messages().apply { messages = if (fn.fromMessageId == 0L) arrayOf(message(5)) else emptyArray() }
             else -> error("Unexpected native operation")
         } }
-        val reader = SourceReadService(repo, native)
+        val reader = SourceReadService(repo, execute = native)
         val monitor = LocalMonitoringService(repo, reader, { true })
         val archive = SourceArchiveService(repo, { key,cursor -> reader.recent(key,cursor,100) }, { true })
         val access = DesktopAccess("synthetic-launch")

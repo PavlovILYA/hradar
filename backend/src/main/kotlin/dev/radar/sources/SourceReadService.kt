@@ -17,6 +17,7 @@ import java.util.UUID
 /** Owner-local selected sources. Never feeds the public recruiter, Bot or MCP adapters. */
 class SourceReadService(
     private val repo: Repositories,
+    private val now: () -> Long = System::currentTimeMillis,
     private val execute: suspend (TdApi.Function<*>) -> TdApi.Object,
 ) {
     private val catalog = TdlibSourceCatalog(execute)
@@ -173,6 +174,8 @@ class SourceReadService(
     suspend fun search(input: SearchRequest): SearchPage = withTimeout(90_000) {
         require(input.limit in 1..100 && input.sourceKeys.distinct().size in 1..10) { "Выберите от 1 до 10 источников" }
         require(input.cursor.length <= 36) { "Некорректный курсор поиска" }
+        val deadline = repo.localMonitoringRetryAt()
+        if (now() < deadline) return@withTimeout SearchPage(cursor = input.cursor, state = "rate_limited", notice = "Telegram ограничил частоту запросов до ${java.time.Instant.ofEpochMilli(deadline)}. Курсор сохранён.")
         val template = input.templateId?.let { repo.template(it) ?: throw ResourceNotFound() }
         require(template == null || template.active) { "Шаблон приостановлен" }
         val query = (template?.telegramQuery ?: input.query).trim()
@@ -194,6 +197,7 @@ class SourceReadService(
         for (source in active) {
             if (rate || seen.size >= 10_000) break
             try {
+                withTimeout(8_000) {
                 accessible(source)
                 val count = minOf((input.limit / active.size).coerceAtLeast(1), 10_000 - seen.size)
                 val page = execute(TdApi.SearchChatMessages().apply {
@@ -211,15 +215,24 @@ class SourceReadService(
                 else if (page.nextFromMessageId < 0 || previous > 0 && page.nextFromMessageId >= previous)
                     errors += "Telegram не продвинула курсор источника. Повторите позже."
                 else positions[source.key] = page.nextFromMessageId
+                // Original links are resolved on explicit detail open; optional link IO must not lose a page.
                 for (message in page.messages) {
                     if (!seen.add(message.chatId to message.id)) continue
                     val explanation = template?.let { matching.check(it, messageText(message.content)) }
                     if (explanation?.matches != false) results += convert(source, message,
-                        withLink = input.withLinks && !rate, onRate = { rate = true }).copy(explanation = explanation)
+                        withLink = false).copy(explanation = explanation)
                 }
+                }
+            } catch (ex: TimeoutCancellationException) {
+                currentCoroutineContext().ensureActive()
+                errors += "${source.title}: время ожидания Telegram истекло. Повторите позже."
             } catch (ex: TelegramRequestException) {
-                if (rateLimited(ex)) rate = true
-                else errors += "Источник недоступен (${ex.code}). Сохранённые страницы доступны."
+                if (rateLimited(ex)) {
+                    rate = true
+                    val seconds = Regex("(?:FLOOD_WAIT_|retry after )(\\d+)", RegexOption.IGNORE_CASE).find(ex.reason)?.groupValues?.get(1)?.toLongOrNull() ?: 60L
+                    repo.deferLocalMonitoring(now() + seconds.coerceIn(1, 604800) * 1000)
+                }
+                else errors += "${source.title}: чат недоступен (${ex.code}). Остальные результаты сохранены."
             }
         }
         selected.forEach(::selectedStillExists)

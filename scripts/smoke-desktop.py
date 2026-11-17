@@ -75,7 +75,7 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
                 database = home/'.hradar/data/research.sqlite'
                 if attempt == 0:
                     with sqlite3.connect(database) as db:
-                        assert db.execute('PRAGMA user_version').fetchone() == (12,)
+                        assert db.execute('PRAGMA user_version').fetchone() == (13,)
                         if metadata is not None:
                             assert metadata['sqliteSchemaVersion'] == db.execute('PRAGMA user_version').fetchone()[0], 'Installer metadata must match the actual SQLite schema'
                         source = {'id':-1001,'username':'synthetic_jobs','title':'Synthetic source'}
@@ -95,7 +95,7 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
                     card = http(f'/api/projects/{project_id}/cards', headers=headers)['items'][0]
                     assert (card['stage'],card['notes'],card['interest']) == ('CONTACTED','Synthetic preserved note',5)
                     with sqlite3.connect(database) as db:
-                        assert db.execute('PRAGMA user_version').fetchone() == (12,)
+                        assert db.execute('PRAGMA user_version').fetchone() == (13,)
                         assert db.execute('PRAGMA integrity_check').fetchone() == ('ok',)
                         assert db.execute('PRAGMA foreign_key_check').fetchall() == []
                         assert crm_snapshot == {table:db.execute(f'SELECT * FROM {table} ORDER BY 1,2').fetchall() for table in crm_snapshot}
@@ -190,7 +190,7 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
             server.shutdown(); server.server_close(); thread.join(); marker.unlink()
         # No downgrade of a database created by a newer local feature build.
         with sqlite3.connect(home/'.hradar/data/research.sqlite') as db:
-            db.execute('PRAGMA user_version=13')
+            db.execute('PRAGMA user_version=14')
         subprocess.run([str(launcher)],env=env,stdout=log,stderr=log,check=True,timeout=20)
         assert not marker.exists()
         with sqlite3.connect(home/'.hradar/data/research.sqlite') as db:

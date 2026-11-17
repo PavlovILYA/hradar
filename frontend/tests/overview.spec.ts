@@ -19,6 +19,9 @@ async function fixture(page: Page, options: { empty?: boolean; criteria?: boolea
     const method = route.request().method();
     if (method !== 'GET') writes.push(path);
     if (path === '/api/sources') return route.fulfill({ json: { items: [] } });
+    if (path === '/api/source-catalog') return route.fulfill({ json: { items: [], cursor: null } });
+    if (path === '/api/workspace/desktop') return route.fulfill({ json: { enabled: false, hidePreview: true } });
+    if (path === '/api/workspace/saved' || path === '/api/workspace/monitoring') return route.fulfill({ json: path.endsWith('saved') ? { items: [], nextCursor: null } : [] });
     if (path === '/api/events') return route.abort();
     if (fail === 'all' || fail === path) return route.fulfill({ status: 503, json: { error: 'Синтетическая ошибка' } });
     const reply = (json: unknown) => route.fulfill({ json });

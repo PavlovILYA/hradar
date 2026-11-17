@@ -3,4 +3,5 @@ export async function openSection(page: Page, name: string) {
   const navigation = page.getByRole('navigation', { name: 'Основная навигация' });
   if (!(await navigation.isVisible())) await page.getByRole('button', { name: 'Открыть навигацию', exact: true }).click();
   await navigation.getByRole('button', { name, exact: true }).click();
+  if (name === 'Поиск') await page.getByLabel('Область поиска', { exact: true }).selectOption('channel');
 }

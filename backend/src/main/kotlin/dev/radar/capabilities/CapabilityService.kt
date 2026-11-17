@@ -87,7 +87,7 @@ class CapabilityService(private val telegram: TelegramReadPort, private val repo
                     "list_monitoring_rules" -> {
                         val input = decode<ListInput>(arguments); checkLimit(input.limit); require(input.cursor in 0..10000)
                         val ids = repo.mcpSources().map { it.id }
-                        val all = repo.templates().filter { it.sourceMode != "global" && ids.isNotEmpty() && (it.sourceMode == "all" || it.sources.any { id -> id in ids }) }
+                        val all = repo.templates().filter { it.sourceMode !in setOf("global", "chats") && ids.isNotEmpty() && (it.sourceMode == "all" || it.sources.any { id -> id in ids }) }
                         val page = all.drop(input.cursor).take(input.limit).map { RuleDto(it.id, it.name, it.required, it.any, it.excluded, it.active, it.subscribed, if (it.sourceMode == "all") ids else it.sources.filter { id -> id in ids }) }
                         objectOf(RulePage(page, (input.cursor + page.size).takeIf { it < all.size }))
                     }
@@ -156,7 +156,7 @@ class CapabilityService(private val telegram: TelegramReadPort, private val repo
         val allowed = channel(record.message.channelId.toString())
         val rule = repo.template(record.templateId)
         val sources = repo.mcpSources().map { it.id }.toSet()
-        val name = if (rule != null && rule.sourceMode != "global" && (rule.sourceMode == "all" || rule.sources.all { it in sources })) record.templateName.take(100) else "Matching rule"
+        val name = if (rule != null && rule.sourceMode !in setOf("global", "chats") && (rule.sourceMode == "all" || rule.sources.all { it in sources })) record.templateName.take(100) else "Matching rule"
         return record.copy(templateName = name, message = record.message.copy(text = record.message.text?.take(2000), title = allowed.title, username = allowed.username, link = dev.radar.bot.verifiedTelegramLink(record.message.link)))
     }
     private fun failure(code: String, message: String, retry: Long? = null) = CapabilityResult(false, error = CapabilityError(code, message, retry))

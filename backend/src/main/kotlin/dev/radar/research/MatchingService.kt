@@ -20,10 +20,12 @@ class MatchingService {
     fun validate(template: SearchTemplate): SearchTemplate {
         require(template.name.trim().length in 1..100) { "Название шаблона: от 1 до 100 символов" }
         require(template.telegramQuery.trim().length in 1..256) { "Укажите отдельный запрос Telegram (до 256 символов)" }
-        require(template.sourceMode in setOf("all", "selected", "global")) { "Неизвестный режим источников" }
+        require(template.sourceMode in setOf("all", "selected", "global", "chats")) { "Неизвестный режим источников" }
         require(template.sourceMode != "global" || !template.subscribed) { "Глобальные шаблоны запускаются только вручную" }
         require(template.sources.size <= 10) { "Не более 10 источников в шаблоне" }
         require(template.sourceMode != "selected" || template.sources.isNotEmpty()) { "Выберите источники" }
+        require(template.sourceKeys.distinct().size <= 10 && template.sourceKeys.all { it.length in 1..36 }) { "Выберите до 10 чатов или тем" }
+        require(template.sourceMode != "chats" || template.sourceKeys.isNotEmpty()) { "Выберите чаты" }
         val lists = listOf(template.required, template.any, template.excluded)
         require(lists.all { words -> words.size <= 20 && words.all { it.trim().length in 1..100 } }) { "Не более 20 слов или фраз в каждом условии, до 100 символов" }
         require(template.required.isNotEmpty() || template.any.isNotEmpty()) { "Укажите обязательные слова или хотя бы одно слово" }

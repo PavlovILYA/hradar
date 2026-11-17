@@ -95,7 +95,7 @@ internal fun runApplication(
         (telegram.executeRead(TdApi.GetMessageLink().apply { this.chatId = chatId; this.messageId = messageId }) as TdApi.MessageLink).link
     })
     val monitoring = MonitoringService(telegram, repositories, search, notifications)
-    val sourceReader = dev.radar.sources.SourceReadService(repositories, telegram::executeRead)
+    val sourceReader = dev.radar.sources.SourceReadService(repositories, execute = telegram::executeRead)
     val localMonitoring = dev.radar.sources.LocalMonitoringService(repositories, sourceReader, { telegram.getStatus().let { it.authorized && it.connectionState == "Ready" } })
     val sourceArchive = dev.radar.sources.SourceArchiveService(repositories, { key, cursor -> sourceReader.recent(key, cursor, 100) }, { telegram.getStatus().let { it.authorized && it.connectionState == "Ready" } })
     val historySync = HistorySyncService(repositories, telegram::getHistoryPage, { telegram.getStatus().let { it.authorized && it.connectionState == "Ready" } })
@@ -166,6 +166,7 @@ internal fun runApplication(
         configureRecruitmentRoutes(RecruitmentProjectService(repositories, matching, subscriptions, recruiter, localSearch = LocalProjectSearchService(repositories, RecruiterSearchPort(search::search))))
         configureSavedRoutes(repositories)
         configureRoutes(telegram)
+        configureOwnerWorkflow(repositories, sourceReader, localMonitoring)
         configureResearchRoutes(telegram, repositories, matching, search, notifications)
         configureSourceRoutes(SourceCatalogService(TdlibSourceCatalog(telegram::executeRead), repositories), repositories, sourceReader, sourceArchive, localMonitoring)
         configureHistoryRoutes(telegram, repositories, historySync)

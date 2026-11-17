@@ -51,7 +51,7 @@ class SourceThreadTest {
 
     @Test fun explicitDiscussionUsesNativeLinkedGroupAndKeepsOriginalAnchorSeparate(): Unit = runBlocking {
         repo().use { repo ->
-            val parent = parent(repo); val native = Native(); val reader = SourceReadService(repo, native::execute)
+            val parent = parent(repo); val native = Native(); val reader = SourceReadService(repo, execute = native::execute)
             val selected = reader.discussion(parent.key, 55)
             assertEquals(-200L, selected.chatId); assertEquals(SourceScope(ScopeKind.MESSAGE_THREAD, messageThreadId = 9000), selected.scope)
             assertEquals(-100L, selected.threadAnchorChatId); assertEquals(55L, selected.threadAnchorMessageId)
@@ -65,7 +65,7 @@ class SourceThreadTest {
     }
     @Test fun threadSearchUsesTypedThreadAndScopeIdWithoutForumConversion(): Unit = runBlocking {
         repo().use { repo ->
-            val native = Native(); val reader = SourceReadService(repo, native::execute); val source = reader.discussion(parent(repo).key, 55)
+            val native = Native(); val reader = SourceReadService(repo, execute = native::execute); val source = reader.discussion(parent(repo).key, 55)
             val page = reader.search(SearchRequest(mode = "sources", query = "Java", sourceKeys = listOf(source.key), withLinks = false))
             assertEquals(1, page.messages.size)
             val query = native.calls.filterIsInstance<TdApi.SearchChatMessages>().single()
@@ -76,7 +76,7 @@ class SourceThreadTest {
     @Test fun twoThreadsAndWholeGroupSearchStayScopedAndDeduplicateOverlap(): Unit = runBlocking {
         repo().use { repo ->
             val native = Native().apply { threadMap = mapOf(55L to 9000L, 56L to 9001L) }
-            val reader = SourceReadService(repo, native::execute); val parent = parent(repo)
+            val reader = SourceReadService(repo, execute = native::execute); val parent = parent(repo)
             val one = reader.discussion(parent.key, 55); val two = reader.discussion(parent.key, 56)
             val whole = repo.saveSource(TelegramSource(chatId = -200, type = SourceType.SUPERGROUP, title = "Synthetic whole"))
             val page = reader.search(SearchRequest(mode = "sources", query = "Java", sourceKeys = listOf(one.key, two.key, whole.key), limit = 6, withLinks = false))
@@ -87,7 +87,7 @@ class SourceThreadTest {
     }
     @Test fun manualThreadIdsCannotBeSavedAndUnavailablePropertiesNeverResolveDiscussion(): Unit = runBlocking {
         repo().use { repo ->
-            val native = Native(); val parent = parent(repo); val reader = SourceReadService(repo, native::execute)
+            val native = Native(); val parent = parent(repo); val reader = SourceReadService(repo, execute = native::execute)
             assertFailsWith<IllegalArgumentException> { SourceCatalogService(TdlibSourceCatalog(native::execute), repo).save(SaveSourceInput(-200, SourceScope(ScopeKind.MESSAGE_THREAD, messageThreadId = 9000))) }
             native.canGet = false
             assertFailsWith<IllegalArgumentException> { reader.discussion(parent.key, 55) }
@@ -97,7 +97,7 @@ class SourceThreadTest {
     }
     @Test fun laterAnchorLossTargetAccessLossAndChangedMappingFailWithoutFallback(): Unit = runBlocking {
         repo().use { repo ->
-            val native = Native(); val reader = SourceReadService(repo, native::execute); val source = reader.discussion(parent(repo).key, 55)
+            val native = Native(); val reader = SourceReadService(repo, execute = native::execute); val source = reader.discussion(parent(repo).key, 55)
             native.anchorAvailable = false
             assertFailsWith<TelegramRequestException> { reader.recent(source.key) }
             native.anchorAvailable = true; native.targetAvailable = false
@@ -109,7 +109,7 @@ class SourceThreadTest {
     }
     @Test fun foreignThreadMessagesRejectedAndDeletedDetailsExplicit(): Unit = runBlocking {
         repo().use { repo ->
-            val native = Native(); val reader = SourceReadService(repo, native::execute); val source = reader.discussion(parent(repo).key, 55)
+            val native = Native(); val reader = SourceReadService(repo, execute = native::execute); val source = reader.discussion(parent(repo).key, 55)
             native.foreignMessage = true
             assertFailsWith<IllegalArgumentException> { reader.recent(source.key) }
             native.foreignMessage = false; native.deleted = true
@@ -119,7 +119,7 @@ class SourceThreadTest {
     }
     @Test fun forumTopicsCannotBecomeThreadsAndWrongAnchorsOrRateErrorsCannotSaveSource(): Unit = runBlocking {
         repo().use { repo ->
-            val native = Native(); val parent = parent(repo); val reader = SourceReadService(repo, native::execute)
+            val native = Native(); val parent = parent(repo); val reader = SourceReadService(repo, execute = native::execute)
             native.forum = true
             assertFailsWith<IllegalArgumentException> { reader.discussion(parent.key, 55) }
             native.forum = false; native.wrongAnchor = true
@@ -131,7 +131,7 @@ class SourceThreadTest {
     }
     @Test fun savedThreadRefreshRechecksOriginalAnchorAndPreservesItsIdentity(): Unit = runBlocking {
         repo().use { repo ->
-            val native = Native(); val reader = SourceReadService(repo, native::execute)
+            val native = Native(); val reader = SourceReadService(repo, execute = native::execute)
             val source = reader.discussion(parent(repo).key, 55)
             val refreshed = SourceCatalogService(TdlibSourceCatalog(native::execute), repo).refresh(source.key)
             assertEquals(source.key, refreshed.key); assertEquals(source.scope, refreshed.scope)
@@ -140,7 +140,7 @@ class SourceThreadTest {
     }
     @Test fun observeOnlyReturnsSelectedThreadAndWholeChatOverlapRetainsIdentity(): Unit = runBlocking {
         repo().use { repo ->
-            val native = Native(); val reader = SourceReadService(repo, native::execute); val source = reader.discussion(parent(repo).key, 55)
+            val native = Native(); val reader = SourceReadService(repo, execute = native::execute); val source = reader.discussion(parent(repo).key, 55)
             val whole = repo.saveSource(TelegramSource(chatId = -200, type = SourceType.SUPERGROUP, title = "Synthetic whole"))
             assertNull(reader.observe(source.key, native.message(thread = 8000)))
             val scoped = reader.observe(source.key, native.message())!!; val all = reader.observe(whole.key, native.message())!!

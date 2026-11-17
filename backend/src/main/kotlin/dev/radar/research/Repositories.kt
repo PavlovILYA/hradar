@@ -29,7 +29,7 @@ class Repositories(path: Path) : AutoCloseable {
             s.execute("PRAGMA busy_timeout=5000")
             s.execute("PRAGMA journal_mode=WAL")
             val version = s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) }
-            check(version <= 12) { "Database schema is newer than this application" }
+            check(version <= 13) { "Database schema is newer than this application" }
             if (version == 0) transaction {
                 s.execute("CREATE TABLE monitored_channels(id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, data TEXT NOT NULL)")
                 s.execute("CREATE TABLE search_templates(id TEXT PRIMARY KEY, data TEXT NOT NULL)")
@@ -117,6 +117,18 @@ class Repositories(path: Path) : AutoCloseable {
                 s.execute("PRAGMA user_version=12")
             }
 
+            if (version < 13) transaction {
+                s.execute("CREATE TABLE owner_inbox(sequence INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,template_id TEXT NOT NULL REFERENCES search_templates(id) ON DELETE CASCADE,chat_id INTEGER NOT NULL,message_id INTEGER NOT NULL,data TEXT NOT NULL,is_read INTEGER NOT NULL,detected_at INTEGER NOT NULL,delivery TEXT NOT NULL DEFAULT 'NONE',UNIQUE(template_id,chat_id,message_id))")
+                s.execute("CREATE INDEX owner_inbox_unread ON owner_inbox(is_read,sequence)")
+                s.execute("CREATE TABLE desktop_preferences(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL)")
+                update("INSERT INTO desktop_preferences VALUES(1,?)", json.encodeToString(DesktopPreferences()))
+                s.execute("CREATE TABLE owner_bookmarks(sequence INTEGER PRIMARY KEY AUTOINCREMENT,id TEXT NOT NULL UNIQUE,chat_id INTEGER NOT NULL,message_id INTEGER NOT NULL,data TEXT NOT NULL,updated_at INTEGER NOT NULL,UNIQUE(chat_id,message_id))")
+                s.execute("CREATE TABLE search_cache(cache_key TEXT PRIMARY KEY,data TEXT NOT NULL,fetched_at INTEGER NOT NULL)")
+                // Backfill raw records without reinterpreting or rewriting legacy archive bytes.
+                s.execute("INSERT INTO owner_inbox(id,template_id,chat_id,message_id,data,is_read,detected_at) SELECT m.id,m.template_id,m.channel_id,m.message_id,m.data,n.is_read,n.created_at FROM matched_messages m JOIN notifications n ON n.id=m.id ORDER BY n.rowid")
+                s.execute("INSERT INTO owner_inbox(id,template_id,chat_id,message_id,data,is_read,detected_at) SELECT id,template_id,chat_id,message_id,data,is_read,0 FROM local_matches WHERE 1 ORDER BY sequence ON CONFLICT(template_id,chat_id,message_id) DO UPDATE SET is_read=MAX(owner_inbox.is_read,excluded.is_read)")
+                s.execute("PRAGMA user_version=13")
+            }
 
         } } catch (ex: Throwable) { db.close(); throw ex }
     }
@@ -137,7 +149,7 @@ class Repositories(path: Path) : AutoCloseable {
     private fun legacySource(channel: MonitoredChannel) = TelegramSource(chatId = channel.id, type = SourceType.CHANNEL,
         title = channel.title, username = channel.username, isPublic = true, access = SourceAccess.UNKNOWN, legacyChannel = true)
     @Synchronized fun sources(): List<TelegramSource> {
-        val subscriptions = templates().filter { it.active && it.subscribed && it.sourceMode != "global" }
+        val subscriptions = templates().filter { it.active && it.subscribed && it.sourceMode !in setOf("global", "chats") }
         return rows("SELECT data FROM telegram_sources ORDER BY rowid") { json.decodeFromString<TelegramSource>(it.getString(1)) }.map { source ->
             source.copy(monitoringEnabled = source.legacyChannel && subscriptions.any { it.sourceMode == "all" || source.chatId in it.sources })
         }
@@ -201,13 +213,14 @@ class Repositories(path: Path) : AutoCloseable {
     @Synchronized fun deleteTemplate(id: String): Boolean = update("DELETE FROM search_templates WHERE id=?", id) > 0
     @Synchronized fun recordMatch(template: SearchTemplate, message: ResearchMessage, monitoring: MatchingService? = null): Boolean = transaction {
         val current = this.template(template.id) ?: return@transaction false
+        if (current.sourceMode == "chats") return@transaction false
         val effectiveTemplate = if (monitoring == null) {
             if (current != template) return@transaction false
             template
         } else {
             // Recheck live rules and source permission in the same transaction as the
             // notification/outbox write. UI edits/removal may race the worker's snapshot.
-            if (!current.active || !current.subscribed || current.sourceMode == "global" ||
+            if (!current.active || !current.subscribed || current.sourceMode in setOf("global", "chats") ||
                 message.date < current.subscriptionSince || channels().none { it.id == message.channelId } ||
                 current.sourceMode == "selected" && message.channelId !in current.sources) return@transaction false
             current
@@ -221,8 +234,9 @@ class Repositories(path: Path) : AutoCloseable {
         val inserted = update("INSERT INTO matched_messages(id,template_id,channel_id,message_id,data,message_date) VALUES(?,?,?,?,?,?) ON CONFLICT(template_id,channel_id,message_id) DO NOTHING", record.id, template.id, message.channelId, message.id, json.encodeToString(record), message.date)
         if (inserted > 0) {
             update("INSERT INTO notifications VALUES(?,0,?)", record.id, System.currentTimeMillis())
+            projectInbox(record, monitoring != null)
             val botId = botPolicyId
-            if (botId != null) {
+            if (botId != null && effectiveTemplate.notificationsEnabled) {
                 val payload = inboxPayload(record).let { it.copy(buttons = listOf(listOf(BotButton("Просмотреть", "match:${record.id}"))) + it.buttons) }
                 rows("SELECT user_id,chat_id FROM bot_recipients WHERE bot_id=? AND active=1 AND registered_since<=?", listOf(botId, message.date)) { it.getLong(1) to it.getLong(2) }
                     .filter { it.first in botAllowedUsers && publicationStatus(botId, it.first, message.channelId, message.id) != "REJECTED" }.forEach { (userId, chatId) -> enqueueBot(botId, "match:${record.id}", userId, chatId, payload) }
@@ -337,8 +351,16 @@ class Repositories(path: Path) : AutoCloseable {
     }
     @Synchronized fun unreadByChannel(): Map<Long, Int> = rows("SELECT m.channel_id,COUNT(*) FROM notifications n JOIN matched_messages m ON m.id=n.id WHERE n.is_read=0 GROUP BY m.channel_id") { it.getLong(1) to it.getInt(2) }.toMap()
     @Synchronized fun unreadCount(): Int = rows("SELECT COUNT(*) FROM notifications WHERE is_read=0") { it.getInt(1) }.single()
-    @Synchronized fun markRead(id: String): Boolean = update("UPDATE notifications SET is_read=1 WHERE id=?", id) > 0
-    @Synchronized fun markAllRead() { update("UPDATE notifications SET is_read=1") }
+    @Synchronized fun markRead(id: String): Boolean = atomic {
+        val record = rows("SELECT template_id,channel_id,message_id FROM matched_messages WHERE id=?", listOf(id)) { Triple(it.getString(1),it.getLong(2),it.getLong(3)) }.firstOrNull() ?: return@atomic false
+        readInboxIdentity(record.first, record.second, record.third)
+        true
+    }
+    @Synchronized fun markAllRead() = atomic {
+        update("UPDATE owner_inbox SET is_read=1 WHERE (template_id,chat_id,message_id) IN (SELECT template_id,channel_id,message_id FROM matched_messages)")
+        update("UPDATE local_matches SET is_read=1 WHERE (template_id,chat_id,message_id) IN (SELECT template_id,channel_id,message_id FROM matched_messages)")
+        update("UPDATE notifications SET is_read=1"); Unit
+    }
     @Synchronized fun state(channelId: Long): MonitoringState? = rows("SELECT data FROM monitoring_state WHERE channel_id=?", listOf(channelId)) { json.decodeFromString<MonitoringState>(it.getString(1)) }.firstOrNull()
     @Synchronized fun saveState(state: MonitoringState) {
         // A source can disappear while an IO operation is suspended. Late checkpoints
@@ -492,6 +514,23 @@ class Repositories(path: Path) : AutoCloseable {
             sources().firstOrNull { it.key == key && (sourceKey == null || sourceKey == key) && key in projectSourceKeys(project) && sourceContains(it, publication) }?.let { sourceMessage(it, publication) }
         }
     }
+    @Synchronized fun saveOwnerTemplate(input: SearchTemplate, previous: SearchTemplate?, subscriptions: List<LocalSubscription>, observations: List<SubscriptionObservation>): SearchTemplate = atomic {
+        require(template(input.id) == previous && localSubscriptions().filter { it.templateId == input.id } == subscriptions) { "Шаблон изменился; обновите страницу" }
+        require(observations.all { sameLocalSource(it.source) }) { "Чат изменился; повторите действие" }
+        val saved = saveValidatedTemplate(input, MatchingService(), previous != null)
+        val enabled = saved.active && saved.subscribed
+        for (old in subscriptions.filter { saved.sourceMode == "chats" && it.sourceKey !in saved.sourceKeys }) {
+            val source = sources().firstOrNull { it.key == old.sourceKey } ?: continue
+            configureLocalSubscription(source, saved, old, false)
+        }
+        for (item in observations) {
+            if (saved.sourceMode != "chats") continue
+            if (item.previous == null && !enabled) continue
+            if (item.previous?.enabled == enabled) continue
+            configureLocalSubscription(item.source, saved, item.previous, enabled, item.head, item.since)
+        }
+        saved
+    }
     @Synchronized fun localMonitoringRetryAt(): Long = rows("SELECT retry_at FROM local_monitoring_limits WHERE id=1") { it.getLong(1) }.single()
     @Synchronized fun deferLocalMonitoring(at: Long) { require(at >= 0); update("UPDATE local_monitoring_limits SET retry_at=MAX(retry_at,?) WHERE id=1", at) }
     @Synchronized fun localSubscriptions(sourceKey: String? = null): List<LocalSubscription> =
@@ -531,12 +570,92 @@ class Repositories(path: Path) : AutoCloseable {
             writeLocalPublication(publication)
             val id = UUID.nameUUIDFromBytes("local:${template.id}:${message.channelId}:${message.id}".toByteArray()).toString()
             val record = LocalMatch(id, template.id, template.name, publication)
+            projectInbox(NotificationRecord(id, template.id, template.name, publication), true)
             update("INSERT INTO local_matches(id,template_id,chat_id,message_id,data) VALUES(?,?,?,?,?) ON CONFLICT(template_id,chat_id,message_id) DO UPDATE SET data=excluded.data",
                 id, template.id, message.channelId, message.id, json.encodeToString(record))
         }
         update("UPDATE local_subscriptions SET data=? WHERE id=?", json.encodeToString(next), next.id)
         true
     }
+    /** Owner-local projection only. Public adapter queries deliberately keep their old tables. */
+    private fun projectInbox(record: NotificationRecord, live: Boolean, at: Long = System.currentTimeMillis()) {
+        val prefs = desktopPreferences()
+        val deliver = live && prefs.enabled && template(record.templateId)?.notificationsEnabled != false
+        update("INSERT INTO owner_inbox(id,template_id,chat_id,message_id,data,is_read,detected_at,delivery) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(template_id,chat_id,message_id) DO NOTHING",
+            record.id, record.templateId, record.message.channelId, record.message.id, json.encodeToString(record), record.read, at, if (deliver) "PENDING" else "NONE")
+        if (record.read) readInboxIdentity(record.templateId, record.message.channelId, record.message.id)
+    }
+    @Synchronized fun inboxPage(limit: Int, before: Long): NotificationPage {
+        require(limit in 1..100 && before > 0)
+        val items = rows("SELECT data,is_read,sequence,detected_at FROM owner_inbox WHERE sequence<? ORDER BY sequence DESC LIMIT ?", listOf(before, limit + 1)) {
+            json.decodeFromString<NotificationRecord>(it.getString(1)).copy(read = it.getInt(2) != 0, sequence = it.getLong(3), detectedAt = it.getLong(4))
+        }
+        return NotificationPage(items.take(limit), inboxUnread(), items.take(limit).lastOrNull()?.sequence?.takeIf { items.size > limit })
+    }
+    @Synchronized fun inboxItem(id: String): NotificationRecord? = rows("SELECT data,is_read,sequence,detected_at FROM owner_inbox WHERE id=?", listOf(id)) {
+        json.decodeFromString<NotificationRecord>(it.getString(1)).copy(read = it.getInt(2) != 0, sequence = it.getLong(3), detectedAt = it.getLong(4))
+    }.firstOrNull()
+    @Synchronized fun inboxUnread(): Int = rows("SELECT COUNT(*) FROM owner_inbox WHERE is_read=0") { it.getInt(1) }.single()
+    @Synchronized fun inboxByChat(): Map<Long, Int> = rows("SELECT chat_id,COUNT(*) FROM owner_inbox WHERE is_read=0 GROUP BY chat_id") { it.getLong(1) to it.getInt(2) }.toMap()
+    @Synchronized fun inboxRevision(): Long = rows("SELECT COALESCE(MAX(sequence),0) FROM owner_inbox") { it.getLong(1) }.single()
+    private fun readInboxIdentity(rule: String, chat: Long, message: Long) {
+        update("UPDATE owner_inbox SET is_read=1 WHERE template_id=? AND chat_id=? AND message_id=?", rule, chat, message)
+        update("UPDATE local_matches SET is_read=1 WHERE template_id=? AND chat_id=? AND message_id=?", rule, chat, message)
+        update("UPDATE notifications SET is_read=1 WHERE id IN (SELECT id FROM matched_messages WHERE template_id=? AND channel_id=? AND message_id=?)", rule, chat, message)
+    }
+    @Synchronized fun readInbox(id: String? = null): Boolean = atomic {
+        if (id == null) {
+            update("UPDATE owner_inbox SET is_read=1"); update("UPDATE local_matches SET is_read=1"); update("UPDATE notifications SET is_read=1"); return@atomic true
+        }
+        val targets = inboxItem(id)?.let { listOf(Triple(it.templateId, it.message.channelId, it.message.id)) } ?: return@atomic false
+        for ((rule, chat, message) in targets) readInboxIdentity(rule, chat, message)
+        true
+    }
+    @Synchronized fun desktopPreferences(): DesktopPreferences = rows("SELECT data FROM desktop_preferences WHERE id=1") { json.decodeFromString<DesktopPreferences>(it.getString(1)) }.single()
+    @Synchronized fun saveDesktopPreferences(value: DesktopPreferences): DesktopPreferences = atomic {
+        update("UPDATE desktop_preferences SET data=? WHERE id=1", json.encodeToString(value))
+        if (!value.enabled) update("UPDATE owner_inbox SET delivery='CANCELLED' WHERE delivery='PENDING'")
+        value
+    }
+    /** Claim before side effect: at-most-once attempt across tabs/restarts; a crash may lose a popup. */
+    @Synchronized fun claimDesktopDeliveries(): List<DesktopDelivery> = atomic {
+        val prefs = desktopPreferences()
+        if (!prefs.enabled) return@atomic emptyList()
+        rows("SELECT id,data,detected_at FROM owner_inbox WHERE delivery='PENDING' ORDER BY sequence LIMIT 5") {
+            Triple(it.getString(1), json.decodeFromString<NotificationRecord>(it.getString(2)), it.getLong(3))
+        }.mapNotNull { (id, item, at) ->
+            update("UPDATE owner_inbox SET delivery='CLAIMED' WHERE id=?", id)
+            if (template(item.templateId)?.notificationsEnabled == false || System.currentTimeMillis() - at > 300_000) null
+            else DesktopDelivery(id, if (prefs.hidePreview) "Новое совпадение" else item.templateName,
+                if (prefs.hidePreview) "Откройте hradar для просмотра" else item.message.text.orEmpty().replace(Regex("\\s+"), " ").take(160))
+        }
+    }
+    @Synchronized fun cacheSearch(key: String, page: SearchPage, at: Long = System.currentTimeMillis()) {
+        require(key.length in 1..128 && page.messages.size <= 100)
+        update("DELETE FROM search_cache WHERE fetched_at<?", at - 86_400_000)
+        update("INSERT INTO search_cache VALUES(?,?,?) ON CONFLICT(cache_key) DO UPDATE SET data=excluded.data,fetched_at=excluded.fetched_at", key,
+            json.encodeToString(page.copy(messages = page.messages.map { it.copy(text = it.text?.take(4000)) })), at)
+        update("DELETE FROM search_cache WHERE cache_key NOT IN (SELECT cache_key FROM search_cache ORDER BY fetched_at DESC,rowid DESC LIMIT 50)")
+    }
+    @Synchronized fun cachedSearch(key: String, now: Long = System.currentTimeMillis()): CachedSearchPage? = rows("SELECT data,fetched_at FROM search_cache WHERE cache_key=? AND fetched_at>=?", listOf(key, now - 86_400_000)) {
+        CachedSearchPage(json.decodeFromString<SearchPage>(it.getString(1)), it.getLong(2))
+    }.firstOrNull()
+    @Synchronized fun saveOwnerBookmark(message: ResearchMessage) {
+        require(message.id > 0 && message.channelId != 0L && message.sourceKey != null && message.availability == "available")
+        val publication = message.copy(text = message.text?.take(4000))
+        update("INSERT INTO owner_bookmarks(id,chat_id,message_id,data,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(chat_id,message_id) DO UPDATE SET data=excluded.data,updated_at=excluded.updated_at",
+            UUID.randomUUID().toString(), message.channelId, message.id, json.encodeToString(publication), System.currentTimeMillis())
+    }
+    @Synchronized fun ownerBookmarks(limit: Int, before: Long): SavedResultsPage {
+        require(limit in 1..100 && before > 0)
+        val items = rows("SELECT id,data,sequence,updated_at FROM owner_bookmarks WHERE sequence<? ORDER BY sequence DESC LIMIT ?", listOf(before, limit + 1)) {
+            SavedResult(it.getString(1), "SAVED", json.decodeFromString<ResearchMessage>(it.getString(2)), it.getLong(3), it.getLong(4))
+        }
+        return SavedResultsPage(items.take(limit), items.take(limit).lastOrNull()?.sequence?.takeIf { items.size > limit })
+    }
+    @Synchronized fun removeOwnerBookmark(id: String): Boolean = update("DELETE FROM owner_bookmarks WHERE id=?", id) > 0
+    @Synchronized fun clearSearchCache() { update("DELETE FROM search_cache") }
+
     @Synchronized fun localMatches(limit: Int = 50, before: Long = Long.MAX_VALUE): LocalMatchPage {
         require(limit in 1..100 && before > 0)
         val records = rows("SELECT data,is_read,sequence FROM local_matches WHERE sequence<? ORDER BY sequence DESC LIMIT ?", listOf(before, limit + 1)) {
@@ -546,8 +665,16 @@ class Repositories(path: Path) : AutoCloseable {
         val unread = rows("SELECT COUNT(*) FROM local_matches WHERE is_read=0") { it.getInt(1) }.single()
         return LocalMatchPage(page, unread, page.lastOrNull()?.sequence?.takeIf { records.size > limit })
     }
-    @Synchronized fun markLocalRead(id: String): Boolean = update("UPDATE local_matches SET is_read=1 WHERE id=?", id) > 0
-    @Synchronized fun markAllLocalRead() { update("UPDATE local_matches SET is_read=1") }
+    @Synchronized fun markLocalRead(id: String): Boolean = atomic {
+        val record = rows("SELECT template_id,chat_id,message_id FROM local_matches WHERE id=?", listOf(id)) { Triple(it.getString(1),it.getLong(2),it.getLong(3)) }.firstOrNull() ?: return@atomic false
+        readInboxIdentity(record.first, record.second, record.third)
+        true
+    }
+    @Synchronized fun markAllLocalRead() = atomic {
+        update("UPDATE owner_inbox SET is_read=1 WHERE (template_id,chat_id,message_id) IN (SELECT template_id,chat_id,message_id FROM local_matches)")
+        update("UPDATE notifications SET is_read=1 WHERE id IN (SELECT m.id FROM matched_messages m JOIN local_matches l ON m.template_id=l.template_id AND m.channel_id=l.chat_id AND m.message_id=l.message_id)")
+        update("UPDATE local_matches SET is_read=1"); Unit
+    }
     @Synchronized fun mcpEnabled(): Boolean = rows("SELECT enabled FROM mcp_settings WHERE id=1") { it.getInt(1) != 0 }.single()
     private fun cancelAgentPublications() {
         update("UPDATE bot_publish_request SET state='CANCELLED' WHERE state='PENDING'")
