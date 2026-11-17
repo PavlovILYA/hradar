@@ -26,6 +26,10 @@ def wait_ready(process, marker):
         time.sleep(.1)
     raise RuntimeError('Packaged server never became ready\n' + '\n'.join((marker.parent.parent/'runtime.log').read_text().splitlines()[-20:]))
 
+def user_database_snapshot(db):
+    tables = [row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")]
+    return {table: db.execute(f'SELECT * FROM "{table}" ORDER BY rowid').fetchall() for table in tables}
+
 with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
     home = pathlib.Path(temporary)
     # Sentinel emulates an existing legacy TDLib directory; never open a real session.
@@ -190,11 +194,18 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
             server.shutdown(); server.server_close(); thread.join(); marker.unlink()
         # No downgrade of a database created by a newer local feature build.
         with sqlite3.connect(home/'.hradar/data/research.sqlite') as db:
+            tables_snapshot = user_database_snapshot(db)
             db.execute('PRAGMA user_version=14')
-        subprocess.run([str(launcher)],env=env,stdout=log,stderr=log,check=True,timeout=20)
+        refused = subprocess.run([str(launcher)],env=env,stdout=log,stderr=log,timeout=20)
+        assert refused.returncode == 0, f'Newer-schema refusal did not exit cleanly: {refused.returncode}'
         assert not marker.exists()
+        log.flush()
+        assert 'База данных создана более новой версией hradar' in (home/'runtime.log').read_text(), 'Application did not report refusing the newer schema'
         with sqlite3.connect(home/'.hradar/data/research.sqlite') as db:
-            assert db.execute('PRAGMA user_version').fetchone() == (13,)
+            assert db.execute('PRAGMA user_version').fetchone() == (14,)
+            assert db.execute('PRAGMA integrity_check').fetchone() == ('ok',)
+            assert db.execute('PRAGMA foreign_key_check').fetchall() == []
+            assert user_database_snapshot(db) == tables_snapshot
             assert db.execute('SELECT value FROM distribution_smoke').fetchone() == ('preserved',)
             assert crm_snapshot == {table:db.execute(f'SELECT * FROM {table} ORDER BY 1,2').fetchall() for table in crm_snapshot}
 print('Production UI, origin/cookie/CSRF denial, duplicate/legacy-port refusal, restart persistence, newer-schema refusal and graceful shutdown passed')
