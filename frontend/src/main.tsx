@@ -7,7 +7,9 @@ import type { FormEvent, ReactNode } from 'react';
 import { normalizeUsername, request, mutate } from './api';
 import { Templates } from './Templates';
 import { Notifications } from './Notifications';
-import { LocalNotifications } from './LocalMonitoring';
+import { ChatSearch } from './ChatSearch';
+import { NotificationPreferences } from './NotificationPreferences';
+import { ownerMutation } from './ownerApi';
 import { DiscussionSource } from './DiscussionSource';
 import type { TelegramSource } from './SourceCatalog';
 import { HistoryArchive } from './HistoryArchive';
@@ -43,10 +45,11 @@ function App() {
   const [error, setError] = useState('');
   const [result, setResult] = useState<{ username: string; messages: ResearchMessage[] } | null>(null);
   const [filter, setFilter] = useState('');
-  const [screen, setScreen] = useState<Screen>(() => new URLSearchParams(location.search).get('screen') === 'application' ? 'application' : 'overview');
+  const [screen, setScreen] = useState<Screen>(() => (['application', 'search', 'notifications'].includes(new URLSearchParams(location.search).get('screen') ?? '') ? new URLSearchParams(location.search).get('screen') : 'overview') as Screen);
   const [visited, setVisited] = useState<Set<Screen>>(() => new Set([screen]));
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [archiveUsername, setArchiveUsername] = useState('telegram');
+  const [sourceReading, setSourceReading] = useState(false);
   const [selectedSourceKey, setSelectedSourceKey] = useState('');
   const [sourceIntentRevision, setSourceIntentRevision] = useState(0);
   const [archiveSourceKey, setArchiveSourceKey] = useState<string | null>(null);
@@ -79,8 +82,7 @@ function App() {
   useEffect(() => {
     const events = new EventSource('/api/events');
     let lastRevision: string | null = null;
-    let known = new Set<string>();
-    let initialized = false;
+    let claiming = false;
     let stopped = false;
     let fetching = false;
     events.onopen = () => { if (!stopped) setEventConnected(true); };
@@ -90,23 +92,24 @@ function App() {
       if (stopped) return;
       setEventConnected(true); setEventAt(Date.now()); setByChannel(summary.byChannel);
       if (summary.telegram) { setStatus(summary.telegram); setStatusAt(Date.now()); }
+      if (!claiming && 'Notification' in window && Notification.permission === 'granted') {
+        claiming = true;
+        void ownerMutation<{ id: string; title: string; body: string }[]>('/api/workspace/deliveries/claim', 'POST').then(deliveries => {
+          if (stopped) return;
+          for (const item of deliveries) {
+            try {
+              const notice = new Notification(`hradar · ${item.title}`, { body: item.body, tag: item.id });
+              notice.onclick = () => { window.focus(); void request<NotificationRecord>(`/api/workspace/inbox/${item.id}`).then(openNotification).catch(e => setError((e as Error).message)); notice.close(); };
+            } catch { /* One durable attempt; inbox remains available even if permission changes. */ }
+          }
+        }).catch(() => {}).finally(() => { claiming = false; });
+      }
       const revision = `${summary.revision}:${summary.unread}`;
       if (revision === lastRevision || fetching) return;
       lastRevision = revision; fetching = true;
       try {
         const page = await request<NotificationPage>('/api/notifications');
         if (stopped) return;
-        if (initialized && 'Notification' in window && Notification.permission === 'granted') {
-          for (const item of page.items.filter(n => !n.read && !known.has(n.id)).slice(0, 5)) {
-            try {
-              const notice = new Notification(`hradar · ${item.message.title || item.message.username || item.templateName}`, {
-                body: `${item.templateName}: ${(item.message.text || 'Публикация без текста').replace(/\s+/g, ' ').slice(0, 160)}`, tag: item.id,
-              });
-              notice.onclick = () => { window.focus(); openNotification(item); notice.close(); };
-            } catch { /* Browser/OS may block delivery; the in-app match remains available. */ }
-          }
-        }
-        initialized = true; page.items.forEach(n => known.add(n.id));
         setNotificationPage(page); setDashboardRevision(n => n + 1);
       } catch (e) { if (!stopped) setError((e as Error).message); lastRevision = null; }
       finally { fetching = false; }
@@ -135,16 +138,17 @@ function App() {
   function openSelectedSource(source: TelegramSource, archive = false) {
     setSourceIntentRevision(n => n + 1); setSelected(null); setDetailsOpen(false);
     if (archive) { setArchiveSourceKey(source.key); navigate('archive'); }
-    else { setSelectedSourceKey(source.key); setSearchMode('sources'); navigate('search'); }
+    else { setSelectedSourceKey(source.key); setSourceReading(true); setChatTemplateId(''); setSearchMode('sources'); navigate('search'); }
   }
-  function openLocalNotification(item: NotificationRecord) {
-    setSelectedSourceKey(item.message.sourceKey ?? ''); setSourceIntentRevision(n => n + 1); setSearchMode('sources'); navigate('search');
-    void selectMessage(item.message);
-  }
-  function openNotification(item: NotificationRecord) {
+  async function openNotification(item: NotificationRecord) {
+    if (!item.read) {
+      try { await mutate(`/api/notifications/${item.id}/read`, 'POST'); await refreshNotifications(); }
+      catch(e) { setError((e as Error).message); return; }
+    }
+    if (!item.message.sourceKey) { setSearchMode('channel'); setSourceReading(false); }
     navigate('search'); setResult({ username: item.message.username ?? '', messages: [item.message] });
     setApplied(null); setSearchPage(null); setLastSearch(null); setFilter('');
-    void selectMessage(item.message); void notificationAction(`/api/notifications/${item.id}/read`);
+    void selectMessage(item.message);
   }
   const [sources, setSources] = useState<MonitoredChannel[]>([]);
   const [templates, setTemplates] = useState<SearchTemplate[]>([]);
@@ -160,12 +164,13 @@ function App() {
     try { await mutate('/api/channels', 'POST', { username: result.username }); await refreshResearch(); }
     catch (e) { setError((e as Error).message); }
   }
-  const [searchMode, setSearchMode] = useState<SearchInput['mode']>('channel');
+  const [searchMode, setSearchMode] = useState<SearchInput['mode']>('sources');
   const [query, setQuery] = useState('');
   const [chosenSources, setChosenSources] = useState<string[]>([]);
   const [searchPage, setSearchPage] = useState<SearchPage | null>(null);
   const [lastSearch, setLastSearch] = useState<SearchInput | null>(null);
   async function runSearch(template?: SearchTemplate, next = false) {
+    if (template?.sourceMode === 'chats') { setSourceReading(false); setChatTemplateId(template.id); setSearchMode('sources'); setSourceIntentRevision(n => n + 1); navigate('search'); return; }
     if (loading) return;
     navigate('search');
     const input: SearchInput = next && lastSearch ? { ...lastSearch, cursor: searchPage?.cursor } : {
@@ -186,6 +191,7 @@ function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('hradar-theme') || 'light');
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectionContext, setSelectionContext] = useState<'search' | 'archive'>('search');
+  const [chatTemplateId, setChatTemplateId] = useState('');
   const [chosenTemplate, setChosenTemplate] = useState('');
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('hradar-theme', theme); }, [theme]);
   async function checkStatus(signal?: AbortSignal) {
@@ -197,7 +203,7 @@ function App() {
   useEffect(() => { const c = new AbortController(); void checkStatus(c.signal); return () => c.abort(); }, []);
   async function loadMessages(event?: FormEvent, source = username) {
     event?.preventDefault();
-    navigate('search');
+    setSearchMode('channel'); setSourceReading(false); navigate('search');
     if (loading) return;
     setError('');
     let channel: string;
@@ -239,12 +245,12 @@ function App() {
           {view('bot', <BotIntegration />)}
           {view('mcp', <McpIntegration active={screen === 'mcp'} />)}
           {view('archive', <><div className="archive-actions"><button className="secondary-button" onClick={() => { setArchiveSourceKey(''); setSelected(null); }}>Выбрать сохранённый источник</button><button className="text-button" onClick={() => { setArchiveSourceKey(null); setSelected(null); }}>Архив публичного канала по username</button></div>{archiveSourceKey !== null ? <SelectedSourceArchive key={`${archiveSourceKey}:${sourceIntentRevision}`} initialKey={archiveSourceKey} authorized={!!status?.authorized} onSelect={m => void selectMessage(m, 'archive')} /> : <HistoryArchive key={archiveUsername} username={archiveUsername} autoStart={false} onSourceChange={name => { setUsername('@' + name); setArchiveUsername(name); if (selectionContext === 'archive') setSelected(null); }} authorized={!!status?.authorized} onSelect={m => void selectMessage(m, 'archive')} />}</>)}
-          {view('notifications', <><section className="notification-preferences"><h2>Уведомления о новых совпадениях</h2><p className="helper">Мониторинг работает, пока запущен hradar. Для уведомлений браузера оставьте приложение открытым.</p><button className="secondary-button" disabled={desktopPermission !== 'default'} onClick={async () => { if ('Notification' in window) setDesktopPermission(await Notification.requestPermission()); }}>{desktopPermission === 'granted' ? 'Desktop-уведомления разрешены' : desktopPermission === 'denied' ? 'Уведомления запрещены в браузере' : desktopPermission === 'unsupported' ? 'Браузер не поддерживает уведомления' : 'Разрешить desktop-уведомления'}</button><p className="helper compact">{eventConnected ? 'Обновления подключены (SSE)' : 'SSE переподключается; обновите статус при длительном сбое.'}</p></section><Notifications items={notificationPage.items} unread={notificationPage.unread} cursor={notificationPage.cursor} onRead={id => void notificationAction(`/api/notifications/${id}/read`)} onReadAll={() => void notificationAction('/api/notifications/read-all')} onOpen={openNotification} onMore={() => void refreshNotifications(true).catch(e => setError((e as Error).message))} /><LocalNotifications active={screen === 'notifications'} onOpen={openLocalNotification} /></>)}
+          {view('notifications', <><NotificationPreferences /><p className="helper">{eventConnected ? 'Обновления подключены (SSE)' : 'SSE переподключается; обновите статус при длительном сбое.'}</p><Notifications items={notificationPage.items} unread={notificationPage.unread} cursor={notificationPage.cursor} onRead={id => void notificationAction(`/api/notifications/${id}/read`)} onReadAll={() => void notificationAction('/api/notifications/read-all')} onOpen={openNotification} onMore={() => void refreshNotifications(true).catch(e => setError((e as Error).message))} /></>)}
           {view('application', <section className="data-screen application-state"><h2>Подключение и работа приложения</h2><dl><dt>Версия hradar</dt><dd>{appVersion}</dd><dt>Telegram</dt><dd>{statusLabel}</dd><dt>Этап авторизации</dt><dd>{status?.authorizationState ?? 'Нет ответа'}</dd><dt>Соединение</dt><dd>{status?.connectionState ?? 'Нет ответа'}</dd><dt>Обновления уведомлений</dt><dd>{eventConnected ? 'Подключены' : 'Переподключение'}</dd></dl><p className="helper">Настройки и данные сохраняются локально. При завершении hradar мониторинг и доставка сообщений ботом остановятся.</p>{isDesktop() ? <button className="secondary-button" onClick={() => void shutdownDesktop().catch(e => setError((e as Error).message))}>Завершить hradar</button> : <p className="helper">Кнопка завершения доступна при запуске через desktop-приложение.</p>}</section>)}
           {view('search', <>
-            <section className="online-search" aria-label="Онлайн-поиск"><h2>Поиск в Telegram</h2><p className="helper compact">Источник результатов: Telegram API. Локальный архив не используется.</p>
-              <label htmlFor="search-mode">Область поиска</label><select id="search-mode" value={searchMode} onChange={e => setSearchMode(e.target.value as SearchInput['mode'])}><option value="sources">В сохранённых чатах и темах</option><option value="channel">В текущем канале</option><option value="tracked">В выбранных источниках</option><option value="global">Публичные публикации · глобально</option></select>
-              {searchMode === 'sources' ? <SelectedSourceSearch key={`${selectedSourceKey}:${sourceIntentRevision}`} initialKey={selectedSourceKey} templates={templates} onSelect={m => void selectMessage(m)} /> : <>
+            <section className="online-search" aria-label="Онлайн-поиск">{searchMode !== 'sources' && <><h2>Поиск в Telegram</h2><p className="helper compact">Источник результатов: Telegram API. Локальный архив не используется.</p></>}
+              <label htmlFor="search-mode">Область поиска</label><select id="search-mode" value={searchMode} onChange={e => { setSourceReading(false); setSearchMode(e.target.value as SearchInput['mode']); }}><option value="sources">В чатах Telegram</option><option value="channel">В текущем канале</option><option value="tracked">В выбранных источниках</option><option value="global">Публичные публикации · глобально</option></select>
+              {searchMode === 'sources' ? sourceReading ? <SelectedSourceSearch key={`${selectedSourceKey}:${sourceIntentRevision}`} initialKey={selectedSourceKey} templates={templates} onSelect={m => void selectMessage(m)} /> : <ChatSearch key={`${selectedSourceKey}:${sourceIntentRevision}:${chatTemplateId}`} initialKey={selectedSourceKey} templateId={chatTemplateId} templates={templates} refresh={refreshResearch} onSelect={m => void selectMessage(m)} /> : <>
               {searchMode === 'channel' && <><label htmlFor="search-source">Сохранённый источник</label><select id="search-source" value={sources.some(s => '@' + s.username === username) ? username.replace(/^@/, '') : ''} onChange={e => setUsername('@' + e.target.value)}><option value="" disabled>Или введите username ниже</option>{sources.map(s => <option value={s.username} key={s.id}>{s.title} · @{s.username}</option>)}</select><label htmlFor="username">Username канала</label><input id="username" value={username} onChange={e => setUsername(e.target.value)} placeholder="@telegram" /></>}
               <label htmlFor="search-query">Поисковый запрос</label><input id="search-query" value={query} onChange={e => setQuery(e.target.value)} placeholder="Java developer" maxLength={256} />
               <label htmlFor="limit">Сообщений</label><input id="limit" type="number" min="1" max="100" value={limit} onChange={e => setLimit(e.target.value)} disabled={loading} />

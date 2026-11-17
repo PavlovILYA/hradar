@@ -20,6 +20,10 @@ test.beforeEach(async ({ page, request }, testInfo) => {
     if (path === '/api/channels' || path === '/api/templates' || path === '/api/monitoring') return route.fulfill({ json: [] });
     if (path === '/api/notifications') return route.fulfill({ json: { items: [], unread: 0, cursor: null } });
     if (path === '/api/projects') return route.fulfill({ json: { items: [], total: 0 } });
+    if (path === '/api/onboarding') return route.fulfill({ json: { csrfToken: 'synthetic' } });
+    if (path === '/api/source-catalog') return route.fulfill({ json: { items: [], cursor: null } });
+    if (path === '/api/workspace/desktop') return route.fulfill({ json: { enabled: false, hidePreview: true } });
+    if (path === '/api/workspace/saved' || path === '/api/workspace/monitoring') return route.fulfill({ json: path.endsWith('saved') ? { items: [], nextCursor: null } : [] });
     if (path === '/api/events') return route.abort();
     if (/^\/api\/messages\/-?\d+\/\d+\/link$/.test(path)) return route.fulfill({ json: { link: 'https://t.me/synthetic_source/1' } });
     if (path === '/api/history/syncs') return route.fulfill({ json: [] });
@@ -314,7 +318,11 @@ test('online and archive searches use separate APIs and retain channel switching
 
 test('SSE updates and reconnect deduplicate desktop notices and click opens the publication', async ({ page }) => {
   const item = { id: 'sse-synthetic', templateId: 'test', templateName: 'Java rule', read: false, sequence: 1, message: { id: 42, channelId: -100123, date: 1700000000, title: 'Synthetic source', username: 'synthetic_source', text: 'Java Spring developer: synthetic new publication', link: 'https://t.me/synthetic_source/1' } };
-  let hasItem = false;
+  let hasItem = false; let claimed = false;
+  let prefs = { enabled: false, hidePreview: true };
+  await page.route('**/api/workspace/desktop', route => { if (route.request().method() === 'PUT') prefs = route.request().postDataJSON(); return route.fulfill({ json: prefs }); });
+  await page.route('**/api/workspace/deliveries/claim', route => { const items = hasItem && prefs.enabled && !claimed ? [{ id: item.id, title: 'Новое совпадение', body: 'Откройте hradar для просмотра' }] : []; if (items.length) claimed = true; return route.fulfill({ json: items }); });
+  await page.route('**/api/workspace/inbox/sse-synthetic', route => route.fulfill({ json: item }));
   await page.route('**/api/notifications', route => route.fulfill({ json: { items: hasItem ? [item] : [], unread: hasItem ? 1 : 0, cursor: null } }));
   await page.route('**/api/notifications/sse-synthetic/read', route => route.fulfill({ json: { deleted: true } }));
   await page.addInitScript(() => {
@@ -340,8 +348,9 @@ test('SSE updates and reconnect deduplicate desktop notices and click opens the 
   await page.goto('/');
   await openSection(page, 'Поиск');
   await openSection(page, 'Уведомления');
-  await page.getByRole('button', { name: 'Разрешить desktop-уведомления' }).click();
-  await expect(page.getByRole('button', { name: 'Desktop-уведомления разрешены' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Разрешить уведомления браузера' }).click();
+  await expect(page.getByRole('button', { name: 'Разрешение браузера получено' })).toBeDisabled();
+  await page.getByLabel('Включить всплывающие уведомления').check();
   async function emit(revision: number, unread: number) {
     await page.evaluate(async ({ revision, unread }) => {
       const events = (window as unknown as { testEvents: { onmessage: (event: MessageEvent) => void } }).testEvents;
@@ -356,7 +365,7 @@ test('SSE updates and reconnect deduplicate desktop notices and click opens the 
     const n = (window as unknown as { testNotices: { title: string; options: NotificationOptions }[] }).testNotices[0];
     return { title: n.title, body: n.options.body };
   });
-  expect(notice.title).toContain('Synthetic source'); expect(notice.body).toContain('Java Spring developer');
+  expect(notice.title).toContain('Новое совпадение'); expect(notice.body).not.toContain('Java Spring developer');
   await page.evaluate(() => (window as unknown as { testEvents: { onerror: () => void } }).testEvents.onerror());
   await expect(page.getByText(/SSE переподключается/)).toBeVisible();
   await page.evaluate(() => (window as unknown as { testEvents: { onopen: () => void } }).testEvents.onopen());

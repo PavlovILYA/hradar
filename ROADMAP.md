@@ -104,3 +104,19 @@ notification → digest. Automated fake-port checks cover this application path;
 Telegram search, actual phone notification/display and OS/browser behavior require
 separate manual evidence in DEV_STATUS. No broad ATS, AI matching, shell bridge or
 private-chat access is introduced.
+
+## Current priority — unified search and monitoring (0.9.0)
+
+- [x] Owner-local chat/topic picker without a separate save-source step, bounded
+  search, fixed ten-scope monitoring selection and automatic template subscriptions.
+- [x] One local inbox/read/unread flow over legacy and local matches, retaining
+  Bot/MCP isolation; bounded timestamped search cache and explicit local favorites.
+- [x] Global/per-template browser delivery controls, private previews by default,
+  durable delivery claims and no historical notification backfill.
+- [ ] Native Notification Center delivery and click routing while browser is closed:
+  requires a small bundled native integration and physical macOS permission QA.
+- [ ] Owner's live hradar QA check: new post, one match, restart/dedup, OS/browser
+  permission behavior. Automated fake-port results are not proof of real delivery.
+
+This current task supersedes the earlier mobile-workflow priority. Existing public
+workers/adapters remain compatibility boundaries; no new private Bot/MCP grants.

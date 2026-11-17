@@ -115,8 +115,9 @@ state; global and per-pair retry deadlines survive restart, including failed ini
 activation. Unique `(templateId,chatId,messageId)` merges whole-chat/topic overlap.
 
 Schema12 adds `local_subscriptions`, `local_matches` and a singleton
-`local_monitoring_limits` deadline. None feeds public matches/notifications, legacy
-ALL, Bot, MCP or outbox. Source/template/generation snapshots are rechecked inside
+`local_monitoring_limits` deadline. None feeds public match tables, legacy
+ALL, Bot, MCP or outbox. The owner-local inbox projects these matches alongside
+legacy notifications; this local projection does not grant external access. Source/template/generation snapshots are rechecked inside
 the same transaction as match and checkpoint writes. Existing public monitoring
 continues through its existing callback and tables; local delivery grants do not exist.
 
@@ -152,7 +153,7 @@ MCP is **a tool protocol, not an agent runtime**. The bot calls shared services 
 
 ## Local storage and security boundaries
 
-- SQLite: `~/.hradar/data/research.sqlite` (schema tracked via migrations; currently v12, including owner-local scoped subscriptions and matches).
+- SQLite: `~/.hradar/data/research.sqlite` (schema tracked via migrations; currently v13, including owner-local scoped subscriptions, a unified local inbox, bounded search cache and local bookmarks).
 - TDLib account session: `~/.hradar/tdlib/`. It is sensitive and never belongs in Git, logs, or MCP results.
 - Credentials: desktop owner-only `~/.hradar/config/telegram-api.json` for API ID/hash and `~/.hradar/config/telegram-bot.json` for the Bot API token. Development `.env`/environment may provide legacy `TG_BOT_TOKEN` and `TG_BOT_ALLOWED_USER_IDS`; saved bot settings take precedence. Tokens are never returned to UI or status endpoints.
 - `RuntimePaths` owns the paths. Startup checks the fixed port and migrates old files, including saved bot configuration, before opening SQLite or TDLib. Migration retains originals and verified private backups; see [`STORAGE_MIGRATION.md`](docs/STORAGE_MIGRATION.md).
@@ -239,3 +240,46 @@ tray and session lease, including when health/browser startup adapters stall.
 Stage C detaches `localMessageListener` and closes `LocalMonitoringService` in
 that same cleanup sequence before TDLib and SQLite. Its source/discussion/local
 notification routes reuse the shared authority policy and decoded-path CSRF checks.
+
+## Unified owner search and template workflow (0.9.0)
+
+`OwnerWorkflowService` validates template changes, reads bounded initial heads through
+`LocalMonitoringService.activationPage` (same ready/request/durable flood gate), then
+atomically writes the template and selected chat/topic subscriptions. New `chats`
+templates carry additive sourceKeys; public monitoring, Bot controls and MCP rule
+reads explicitly exclude that mode. Legacy template/public subscription flags and
+existing local pairs survive unchanged; their active flag still pauses processing.
+Owner-local writes live under `/api/workspace`, with the same decoded Host/Origin,
+launch-cookie and CSRF boundary as selected-source mutations.
+
+React ChatPicker uses existing metadata catalog pagination without history reads.
+Selection resolves internal stable keys automatically, with no source-management
+step, join or external grant. Up to ten explicit chat/topic scopes form a fixed
+monitoring snapshot. Select-all means the first supported entries in the displayed
+selection (up to ten), never every account dialog. SourceReadService searches
+sequential bounded pages, reports partial/access/timeout errors by chat, persists
+actual flood deadlines across restarts, and resolves optional original links only
+on explicit detail open so slow link IO cannot discard a search page.
+
+Schema13 adds an owner-only inbox projection, indexed by unique template/chat/message.
+Both workers insert into that projection in their existing match/checkpoint write
+transaction. Backfill copies raw historical records without a desktop delivery event.
+One local pagination/read/unread interface serves REST/SSE/React; read actions sync
+both old stores by publication identity. Old Bot/MCP queries keep their original
+public match/notification tables, and never query owner inbox/cache/bookmarks.
+
+Only already-returned search pages enter a cache (50 pages, 100 excerpts/page,
+4000 characters/excerpt, 24-hour read TTL). Cache reads are explicit and timestamped;
+continuation uses Telegram, not an expired cached cursor. Clearing the cache deletes
+only search_cache. Explicit search-result bookmarks have separate local storage;
+archive imports, cards, decisions and notes remain independent.
+
+DesktopPreferences defaults to disabled, with all identifying preview content hidden.
+A live insert can create one durable pending delivery; browser claims recheck global
+and template settings and claim before attempting the popup. Claims never replay
+after restart; a crash after claim may lose the popup, while the inbox remains.
+Deliveries older than five minutes are suppressed. Historical imports/backfill do
+not enqueue. Browser permission and an open tab are required. The Java21 AWT menu
+cannot provide a reliable native Notification Center permission/click lifecycle;
+a native macOS adapter with physical-Mac verification remains unimplemented. See
+[UNIFIED_SEARCH.md](docs/UNIFIED_SEARCH.md) for limits and manual QA.
