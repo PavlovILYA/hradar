@@ -54,6 +54,10 @@ java = app / 'Contents/runtime/Contents/Home/bin/java'
 # jpackage's jlink runtime can omit the java launcher; use the actual packaged launcher.
 launcher = app / 'Contents/MacOS/hradar'
 env = dict(os.environ, PATH='/usr/bin:/bin:/usr/sbin:/sbin', JAVA_HOME='', NODE_PATH='')
-env['JAVA_TOOL_OPTIONS'] = '-Dhradar.jniSmoke=true'
-subprocess.run([str(launcher)], env=env, check=True, timeout=45)
+with tempfile.TemporaryDirectory(prefix='hradar-runtime-smoke-') as smoke_home:
+    env = {key: value for key, value in env.items() if not key.startswith('TG_')}
+    env['HOME'] = smoke_home
+    env['JAVA_TOOL_OPTIONS'] = f'-Dhradar.jniSmoke=true -Duser.home="{smoke_home}"'
+    # Three sequential parser children have individual 20s deadlines, plus JVM/JNI startup.
+    subprocess.run([str(launcher)], env=env, check=True, timeout=90)
 print('All Mach-O architectures/linkage and packaged JVM/JNI passed')

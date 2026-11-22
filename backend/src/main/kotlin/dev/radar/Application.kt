@@ -1,6 +1,7 @@
 package dev.radar
 
 import dev.radar.sources.*
+import dev.radar.documents.configureDocuments
 
 import dev.radar.desktop.*
 import io.ktor.server.http.content.staticResources
@@ -71,7 +72,7 @@ internal fun runApplication(
     }
     val desktopAccess = if (DesktopRuntime.enabled) DesktopAccess(DesktopRuntime.token()) else null
     val credentials = if (DesktopRuntime.smoke) null else paths.loadCredentials()
-    val telegram = TdlibGateway(credentials?.apiId, credentials?.apiHash, paths.session)
+    val telegram = TdlibGateway(credentials?.apiId, credentials?.apiHash, paths.session.toRealPath())
     val repositories = try { Repositories(paths.database) } catch (ex: Exception) {
         lease.close()
         DesktopRuntime.conflict(if (ex is IllegalStateException && ex.message == "Database schema is newer than this application")
@@ -96,6 +97,9 @@ internal fun runApplication(
     })
     val monitoring = MonitoringService(telegram, repositories, search, notifications)
     val sourceReader = dev.radar.sources.SourceReadService(repositories, execute = telegram::executeRead)
+    // Resolve the established private profile: macOS temporary homes may use the /var alias.
+    val documents = dev.radar.documents.DocumentService(repositories, sourceReader,
+        paths.data.toRealPath().resolve("documents"), paths.session.toRealPath().resolve("documents"), telegram::executeRead)
     val localMonitoring = dev.radar.sources.LocalMonitoringService(repositories, sourceReader, { telegram.getStatus().let { it.authorized && it.connectionState == "Ready" } })
     val sourceArchive = dev.radar.sources.SourceArchiveService(repositories, { key, cursor -> sourceReader.recent(key, cursor, 100) }, { telegram.getStatus().let { it.authorized && it.connectionState == "Ready" } })
     val historySync = HistorySyncService(repositories, telegram::getHistoryPage, { telegram.getStatus().let { it.authorized && it.connectionState == "Ready" } })
@@ -170,6 +174,7 @@ internal fun runApplication(
         configureResearchRoutes(telegram, repositories, matching, search, notifications)
         configureSourceRoutes(SourceCatalogService(TdlibSourceCatalog(telegram::executeRead), repositories), repositories, sourceReader, sourceArchive, localMonitoring)
         configureHistoryRoutes(telegram, repositories, historySync)
+        configureDocuments(documents)
     }
     val marker = paths.data.resolve("desktop-instance.json")
     val stopped = java.util.concurrent.CountDownLatch(1)
@@ -184,7 +189,7 @@ internal fun runApplication(
             val steps: List<() -> Unit> = listOf(
                 { server.stop(500, 3000) },
                 { telegram.localMessageListener = null }, { localMonitoring.close() },
-                { sourceArchive.close() }, { historySync.close() }, { monitoring.close() },
+                { documents.close() }, { sourceArchive.close() }, { historySync.close() }, { monitoring.close() },
                 { bot.close() }, { telegram.close() }, { repositories.close() },
                 { if (desktopAccess != null) Files.deleteIfExists(marker); Unit },
                 { menu?.close(); Unit }, { lease.close() },

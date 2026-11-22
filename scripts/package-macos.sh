@@ -37,7 +37,7 @@ bash scripts/generate-macos-icon.sh
   --input "$INPUT" --main-jar "$JAR_NAME" --main-class dev.radar.ApplicationKt \
   --dest "$OUT" --vendor hradar --mac-package-identifier dev.hradar.desktop \
   --java-options '-Dhradar.desktop=true' --java-options '-Dapple.awt.enableTemplateImages=true' --java-options '-Djava.library.path=$APPDIR/native' \
-  --java-options '-Dorg.sqlite.lib.path=$APPDIR/native' --java-options '-Dorg.sqlite.lib.name=libsqlitejdbc.dylib' --java-options '-Dfile.encoding=UTF-8' --add-modules java.se,jdk.unsupported,jdk.crypto.ec,jdk.management,jdk.naming.dns --jlink-options '--strip-debug --no-header-files --no-man-pages'
+  --java-options '-Dorg.sqlite.lib.path=$APPDIR/native' --java-options '-Dorg.sqlite.lib.name=libsqlitejdbc.dylib' --java-options '-Dfile.encoding=UTF-8' --add-modules java.se,jdk.charsets,jdk.unsupported,jdk.crypto.ec,jdk.management,jdk.naming.dns --jlink-options '--strip-debug --no-header-files --no-man-pages'
 /usr/libexec/PlistBuddy -c 'Set :LSMinimumSystemVersion 15.0' "$OUT/hradar.app/Contents/Info.plist" || /usr/libexec/PlistBuddy -c 'Add :LSMinimumSystemVersion string 15.0' "$OUT/hradar.app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $SHORT_VERSION" "$OUT/hradar.app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c 'Add :LSUIElement bool true' "$OUT/hradar.app/Contents/Info.plist"
@@ -65,6 +65,6 @@ ditto -c -k --sequesterRsrc --keepParent "$OUT/hradar.app" "$OUT/hradar-$VERSION
 python3 - "$OUT" "$ARCH" "$VERSION" "$SHORT_VERSION" "$MAC_VERSION" <<'PY'
 import json,os,pathlib,subprocess,sys
 out=pathlib.Path(sys.argv[1])
-(out/'distribution.json').write_text(json.dumps({'version':sys.argv[3], 'macShortVersion':sys.argv[4], 'sqliteSchemaVersion':13, 'features':['recruitment-crm','telegram-bot-settings'], 'macBundleVersion':sys.argv[5], 'architecture':sys.argv[2], 'minimumMacOS':'15.0', 'signedAndNotarized':os.environ.get('HRADAR_SIGN')=='true', 'commit':os.environ.get('GITHUB_SHA'), 'run':os.environ.get('GITHUB_RUN_ID'), 'jdk':subprocess.check_output([os.environ['JAVA_HOME']+'/bin/java','--version'],text=True), 'native':json.load(open('.tdlib-build/release/tdlib-artifact.json'))},indent=2)+'\n')
+(out/'distribution.json').write_text(json.dumps({'version':sys.argv[3], 'macShortVersion':sys.argv[4], 'sqliteSchemaVersion':14, 'features':['recruitment-crm','telegram-bot-settings'], 'macBundleVersion':sys.argv[5], 'architecture':sys.argv[2], 'minimumMacOS':'15.0', 'signedAndNotarized':os.environ.get('HRADAR_SIGN')=='true', 'commit':os.environ.get('GITHUB_SHA'), 'run':os.environ.get('GITHUB_RUN_ID'), 'jdk':subprocess.check_output([os.environ['JAVA_HOME']+'/bin/java','--version'],text=True), 'native':json.load(open('.tdlib-build/release/tdlib-artifact.json'))},indent=2)+'\n')
 PY
 python3 -B scripts/version.py verify-distribution --path "$OUT/distribution.json" --build-number "$MAC_VERSION" --arch "$ARCH"

@@ -49,7 +49,7 @@ export function DocumentControls({ item, onChange }: { item: DocumentRecord; onC
   const waiting = !!retryAt && retryAt.getTime() > Date.now();
   return <div className="document-controls">
     <p role="status">{states[item.state] ?? item.state}{item.size ? ` · ${bytes(item.size)}` : ''}</p>
-    {item.state === 'DOWNLOADING' && <progress aria-label={`Загрузка ${item.fileName}`} max={Math.max(item.size, 1)} value={item.downloadedBytes} />}
+    {item.state === 'DOWNLOADING' && <progress aria-label={`Загрузка ${item.fileName}`} max={item.size > 0 ? item.size : undefined} value={item.size > 0 ? item.downloadedBytes : undefined} />}
     {item.error && <p className="helper">{item.error}</p>}{retryAt && <p className="helper">Повтор возможен после {retryAt.toLocaleString('ru-RU')}</p>}
     <div className="action-row">
       {running ? <button className="secondary-button" disabled={busy} onClick={() => void action('cancel')}>Отменить загрузку</button> : !item.hasFile && item.state !== 'UNAVAILABLE' && <button className="secondary-button" disabled={busy || waiting} onClick={() => void action('download')}>{item.state === 'ERROR' ? 'Повторить загрузку' : 'Скачать документ'}</button>}

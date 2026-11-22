@@ -22,4 +22,14 @@ class DocumentStorageTest {
         Repositories(dir.resolve("test.db")).use { assertEquals(2,it.documents(10,0).total) }
         dir.toFile().deleteRecursively()
     }
+    @Test fun `local search never silently discards later query words`() {
+        val dir=Files.createTempDirectory("document-long-query-")
+        try { Repositories(dir.resolve("db")).use { repo ->
+            val terms=(1..20).map { "skill$it" }
+            repo.saveDocument(StoredDocument(DocumentRecord("one",ResearchMessage(1,1,0,null,"Synthetic",null,sourceKey="test"),"resume.txt","text/plain",1,"txt",state="READY",hasFile=true,hasText=true),1,"remote","b".repeat(64),terms.joinToString(" ")))
+            assertEquals(1,repo.searchDocuments(terms.joinToString(" "),10,0).total)
+            assertEquals(0,repo.searchDocuments((terms+"absent").joinToString(" "),10,0).total)
+        } } finally { dir.toFile().deleteRecursively() }
+    }
+
 }

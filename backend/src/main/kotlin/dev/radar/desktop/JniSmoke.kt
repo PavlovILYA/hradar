@@ -8,5 +8,6 @@ fun jniSmoke() {
     val keyboard = TdApi.ReplyMarkupInlineKeyboard(emptyArray(), false)
     check(!keyboard.forceReply)
     check(Client.execute(TdApi.GetTextEntities("hradar packaged JNI smoke")) != null)
+    dev.radar.documents.documentExtractionSmoke()
     println("Packaged JVM + JNI smoke passed; no client or session created")
 }

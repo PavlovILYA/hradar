@@ -948,7 +948,7 @@ class Repositories(path: Path) : AutoCloseable {
     @Synchronized internal fun reusableDocument(remote: String): StoredDocument? = rows("SELECT id FROM documents WHERE remote_id=? AND hash IS NOT NULL ORDER BY rowid LIMIT 1",listOf(remote)) { it.getString(1) }.firstOrNull()?.let(::document)
     @Synchronized fun documentBytes(): Long = rows("SELECT data FROM documents WHERE hash IS NOT NULL GROUP BY hash") { json.decodeFromString<DocumentRecord>(it.getString(1)).size }.sum()
     @Synchronized fun searchDocuments(query: String, limit: Int, offset: Int): DocumentSearch {
-        val words = Regex("[\\p{L}\\p{N}_]+").findAll(query).take(20).map { "\"${it.value}\"" }.toList()
+        val words = Regex("[\\p{L}\\p{N}_]+").findAll(query).map { "\"${it.value}\"" }.toList()
         if (words.isEmpty()) return DocumentSearch(emptyList(),0)
         val q = words.joinToString(" AND ")
         val total = rows("SELECT COUNT(*) FROM document_fts WHERE document_fts MATCH ?",listOf(q)) { it.getInt(1) }.single()
