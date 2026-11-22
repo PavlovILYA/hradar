@@ -53,7 +53,7 @@ class LocalMonitoringMigrationTest {
         return path
     }
     private fun snapshot(path: Path): Map<String, List<List<String?>>> = DriverManager.getConnection("jdbc:sqlite:$path").use { db ->
-        val tables = db.createStatement().use { s -> s.executeQuery("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('owner_inbox','owner_bookmarks','desktop_preferences','search_cache','local_subscriptions','local_matches','local_monitoring_limits')").use { rows -> buildList { while (rows.next()) add(rows.getString(1)) } } }
+        val tables = db.createStatement().use { s -> s.executeQuery("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'document%' AND name NOT IN ('owner_inbox','owner_bookmarks','desktop_preferences','search_cache','local_subscriptions','local_matches','local_monitoring_limits')").use { rows -> buildList { while (rows.next()) add(rows.getString(1)) } } }
         tables.associateWith { name -> db.createStatement().use { s -> s.executeQuery("SELECT * FROM $name ORDER BY rowid").use { rows -> buildList { while (rows.next()) add((1..rows.metaData.columnCount).map(rows::getString)) } } } }
     }
     @Test fun actualV11ForwardMigrationPreservesArchiveCrmCursorsQueueAndDisabledDefaultsAcrossReopen() {
@@ -69,7 +69,7 @@ class LocalMonitoringMigrationTest {
         } }
         assertEquals(before, snapshot(path))
         DriverManager.getConnection("jdbc:sqlite:$path").use { db -> db.createStatement().use { s ->
-            assertEquals(13, s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) })
+            assertEquals(14, s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) })
         } }
     }
     @Test fun failedV12DdlRollsBackNewTablesVersionAndAllowsRetry() {
@@ -86,11 +86,11 @@ class LocalMonitoringMigrationTest {
     }
     @Test fun futureSchemaIsRefusedWithoutChangingPreservedV11Rows() {
         val path = v11(); val before = snapshot(path)
-        DriverManager.getConnection("jdbc:sqlite:$path").use { db -> db.createStatement().use { it.execute("PRAGMA user_version=14") } }
+        DriverManager.getConnection("jdbc:sqlite:$path").use { db -> db.createStatement().use { it.execute("PRAGMA user_version=15") } }
         assertFailsWith<IllegalStateException> { Repositories(path).close() }
         assertEquals(before, snapshot(path))
         DriverManager.getConnection("jdbc:sqlite:$path").use { db -> db.createStatement().use { s ->
-            assertEquals(14, s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) })
+            assertEquals(15, s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) })
             assertEquals(0, s.executeQuery("SELECT COUNT(*) FROM sqlite_master WHERE name='local_subscriptions'").use { it.next(); it.getInt(1) })
         } }
     }

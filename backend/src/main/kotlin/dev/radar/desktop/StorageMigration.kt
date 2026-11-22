@@ -172,7 +172,7 @@ internal class StorageMigration(private val paths: RuntimePaths) {
         if (Files.isDirectory(oldRoot) && Files.list(oldRoot).use { stream -> stream.anyMatch { it.fileName.toString() != "tdlib" } })
             System.err.println("В старом каталоге остались дополнительные файлы; проверьте их вручную.")
         val known = setOf("research.sqlite", "research.sqlite-wal", "research.sqlite-shm", "telegram-api.json", "telegram-bot.json",
-            "data", "config", "tdlib", "backups", "logs", "desktop-instance.json", "storage-migration.lock", "storage-migration-v1.complete")
+            "data", "config", "tdlib", "backups", "logs", "documents", "desktop-instance.json", "storage-migration.lock", "storage-migration-v1.complete")
         if (Files.list(paths.data).use { stream -> stream.anyMatch { it.fileName.toString() !in known } })
             System.err.println("В корне хранилища остались нераспознанные файлы; проверьте их вручную.")
     }
@@ -182,13 +182,14 @@ internal class StorageMigration(private val paths: RuntimePaths) {
             DriverManager.getConnection("jdbc:sqlite:${path.toUri()}?mode=ro").use { db ->
                 db.createStatement().use { statement ->
                     val version = statement.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) }
-                    check(version in 1..13) { "Неизвестная версия старой SQLite" }
+                    check(version in 1..14) { "Неизвестная версия старой SQLite" }
                     val required = buildSet {
                         addAll(listOf("monitored_channels", "search_templates"))
                         if (version >= 2) add("imported_messages")
                         if (version >= 8) addAll(listOf("recruitment_projects", "recruitment_cards"))
                         if (version >= 9) addAll(listOf("bot_access", "bot_invitations"))
                         if (version >= 10) add("telegram_sources")
+                        if (version >= 14) addAll(listOf("documents", "document_fts"))
                         if (version >= 13) addAll(listOf("owner_inbox", "owner_bookmarks", "desktop_preferences", "search_cache"))
                         if (version >= 12) addAll(listOf("local_subscriptions", "local_matches", "local_monitoring_limits"))
                         if (version >= 11) addAll(listOf("local_publications", "local_source_membership", "local_source_sync", "local_project_publications"))

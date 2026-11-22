@@ -19,7 +19,7 @@ class OwnerInboxMigrationTest {
             repo.saveState(MonitoringState(1, 10, 9, 11))
         }
         DriverManager.getConnection("jdbc:sqlite:$path").use { db -> db.createStatement().use { s ->
-            listOf("owner_inbox", "owner_bookmarks", "desktop_preferences", "search_cache").forEach { s.execute("DROP TABLE $it") }
+            listOf("document_fts", "documents", "owner_inbox", "owner_bookmarks", "desktop_preferences", "search_cache").forEach { s.execute("DROP TABLE $it") }
             s.execute("PRAGMA user_version=12")
         } }
         Repositories(path).use { repo ->
@@ -39,7 +39,7 @@ class OwnerInboxMigrationTest {
         val path = Files.createTempDirectory("owner-migration-rollback").resolve("db")
         Repositories(path).close()
         DriverManager.getConnection("jdbc:sqlite:$path").use { db -> db.createStatement().use { s ->
-            listOf("owner_inbox", "owner_bookmarks", "desktop_preferences", "search_cache").forEach { s.execute("DROP TABLE $it") }
+            listOf("document_fts", "documents", "owner_inbox", "owner_bookmarks", "desktop_preferences", "search_cache").forEach { s.execute("DROP TABLE $it") }
             s.execute("PRAGMA user_version=12"); s.execute("CREATE VIEW search_cache AS SELECT 1")
         } }
         assertFails { Repositories(path).close() }

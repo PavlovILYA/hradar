@@ -12,6 +12,7 @@ import dev.radar.history.*
 import dev.radar.bot.*
 import dev.radar.telegram.TelegramMessage
 import dev.radar.sources.*
+import dev.radar.documents.*
 
 /** All JDBC work is serialized, and invoked on Dispatchers.IO by services/routes. */
 class Repositories(path: Path) : AutoCloseable {
@@ -29,7 +30,7 @@ class Repositories(path: Path) : AutoCloseable {
             s.execute("PRAGMA busy_timeout=5000")
             s.execute("PRAGMA journal_mode=WAL")
             val version = s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) }
-            check(version <= 13) { "Database schema is newer than this application" }
+            check(version <= 14) { "Database schema is newer than this application" }
             if (version == 0) transaction {
                 s.execute("CREATE TABLE monitored_channels(id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, data TEXT NOT NULL)")
                 s.execute("CREATE TABLE search_templates(id TEXT PRIMARY KEY, data TEXT NOT NULL)")
@@ -128,6 +129,13 @@ class Repositories(path: Path) : AutoCloseable {
                 s.execute("INSERT INTO owner_inbox(id,template_id,chat_id,message_id,data,is_read,detected_at) SELECT m.id,m.template_id,m.channel_id,m.message_id,m.data,n.is_read,n.created_at FROM matched_messages m JOIN notifications n ON n.id=m.id ORDER BY n.rowid")
                 s.execute("INSERT INTO owner_inbox(id,template_id,chat_id,message_id,data,is_read,detected_at) SELECT id,template_id,chat_id,message_id,data,is_read,0 FROM local_matches WHERE 1 ORDER BY sequence ON CONFLICT(template_id,chat_id,message_id) DO UPDATE SET is_read=MAX(owner_inbox.is_read,excluded.is_read)")
                 s.execute("PRAGMA user_version=13")
+            }
+
+            if (version < 14) transaction {
+                s.execute("CREATE TABLE documents(id TEXT PRIMARY KEY,source_key TEXT NOT NULL,message_id INTEGER NOT NULL,file_id INTEGER NOT NULL,remote_id TEXT NOT NULL,hash TEXT,data TEXT NOT NULL,text TEXT NOT NULL DEFAULT '',UNIQUE(source_key,message_id,remote_id))")
+                s.execute("CREATE INDEX documents_hash ON documents(hash)")
+                s.execute("CREATE VIRTUAL TABLE document_fts USING fts5(id UNINDEXED,file_name,text,tokenize='unicode61')")
+                s.execute("PRAGMA user_version=14")
             }
 
         } } catch (ex: Throwable) { db.close(); throw ex }
@@ -916,6 +924,36 @@ class Repositories(path: Path) : AutoCloseable {
         val matched = rows("SELECT data FROM matched_messages WHERE channel_id=? AND message_id=? LIMIT 1", listOf(channelId, messageId)) { json.decodeFromString<NotificationRecord>(it.getString(1)).message }.firstOrNull()
         val found = rows("SELECT data FROM recruitment_publications WHERE channel_id=? AND message_id=?", listOf(channelId, messageId)) { json.decodeFromString<ResearchMessage>(it.getString(1)) }.firstOrNull()
         return archived?.copy(link = saved?.link ?: matched?.link ?: found?.link) ?: saved ?: matched ?: found
+    }
+    @Synchronized internal fun document(id: String): StoredDocument? = rows("SELECT data,file_id,remote_id,hash,text FROM documents WHERE id=?", listOf(id)) {
+        StoredDocument(json.decodeFromString<DocumentRecord>(it.getString(1)), it.getInt(2), it.getString(3), it.getString(4), it.getString(5))
+    }.firstOrNull()
+    @Synchronized internal fun documentReference(source: String, message: Long, remote: String): StoredDocument? =
+        rows("SELECT id FROM documents WHERE source_key=? AND message_id=? AND remote_id=?", listOf(source,message,remote)) { it.getString(1) }.firstOrNull()?.let(::document)
+    @Synchronized internal fun saveDocument(value: StoredDocument) = atomic {
+        val r = value.record
+        update("INSERT INTO documents(id,source_key,message_id,file_id,remote_id,hash,data,text) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET file_id=excluded.file_id,hash=excluded.hash,data=excluded.data,text=excluded.text", r.id,r.message.sourceKey,r.message.id,value.fileId,value.remoteId,value.hash,json.encodeToString(r),value.text.take(200_000))
+        update("DELETE FROM document_fts WHERE id=?",r.id)
+        if (r.hasFile) update("INSERT INTO document_fts(id,file_name,text) VALUES(?,?,?)",r.id,r.fileName,value.text.take(200_000))
+    }
+    @Synchronized internal fun documentIds(): List<String> = rows("SELECT id FROM documents ORDER BY rowid DESC") { it.getString(1) }
+    @Synchronized fun documents(limit: Int, offset: Int, sourceKey: String? = null): DocumentList {
+        val args = listOf(sourceKey,sourceKey)
+        val total = rows("SELECT COUNT(*) FROM documents WHERE (? IS NULL OR source_key=?)",args) { it.getInt(1) }.single()
+        val items = rows("SELECT data FROM documents WHERE (? IS NULL OR source_key=?) ORDER BY rowid DESC LIMIT ? OFFSET ?",args + listOf(limit,offset)) { json.decodeFromString<DocumentRecord>(it.getString(1)) }
+        return DocumentList(items,total,documentBytes())
+    }
+    @Synchronized internal fun documentCount(): Int = rows("SELECT COUNT(*) FROM documents") { it.getInt(1) }.single()
+    @Synchronized internal fun documentTextChars(excluding: String): Long = rows("SELECT COALESCE(SUM(length(text)),0) FROM documents WHERE id<>?",listOf(excluding)) { it.getLong(1) }.single()
+    @Synchronized internal fun reusableDocument(remote: String): StoredDocument? = rows("SELECT id FROM documents WHERE remote_id=? AND hash IS NOT NULL ORDER BY rowid LIMIT 1",listOf(remote)) { it.getString(1) }.firstOrNull()?.let(::document)
+    @Synchronized fun documentBytes(): Long = rows("SELECT data FROM documents WHERE hash IS NOT NULL GROUP BY hash") { json.decodeFromString<DocumentRecord>(it.getString(1)).size }.sum()
+    @Synchronized fun searchDocuments(query: String, limit: Int, offset: Int): DocumentSearch {
+        val words = Regex("[\\p{L}\\p{N}_]+").findAll(query).take(20).map { "\"${it.value}\"" }.toList()
+        if (words.isEmpty()) return DocumentSearch(emptyList(),0)
+        val q = words.joinToString(" AND ")
+        val total = rows("SELECT COUNT(*) FROM document_fts WHERE document_fts MATCH ?",listOf(q)) { it.getInt(1) }.single()
+        val hits = rows("SELECT d.data,snippet(document_fts,2,'','',' … ',32) FROM document_fts JOIN documents d ON d.id=document_fts.id WHERE document_fts MATCH ? ORDER BY rank,d.id LIMIT ? OFFSET ?",listOf(q,limit,offset)) { DocumentHit(json.decodeFromString<DocumentRecord>(it.getString(1)),it.getString(2)) }
+        return DocumentSearch(hits,total)
     }
     @Synchronized override fun close() { db.close() }
 }

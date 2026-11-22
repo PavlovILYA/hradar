@@ -36,7 +36,7 @@ fun Application.configureDesktopSecurity(access: DesktopAccess?, csrf: String) {
             val api = path.startsWith("/api/")
             val login = path.startsWith("/api/onboarding") || path == "/api/desktop/shutdown"
             val botSettings = path.startsWith("/api/integrations/bot")
-            val sourceSettings = path.startsWith("/api/workspace") || path == "/api/sources" || path.startsWith("/api/sources/") || path.startsWith("/api/source-catalog") || path.startsWith("/api/local-notifications")
+            val sourceSettings = path == "/api/documents" || path.startsWith("/api/documents/") || path.startsWith("/api/workspace") || path == "/api/sources" || path.startsWith("/api/sources/") || path.startsWith("/api/source-catalog") || path.startsWith("/api/local-notifications")
             val mutation = call.request.httpMethod !in setOf(HttpMethod.Get, HttpMethod.Head)
             if (!validHost || !validOrigin || (access != null && api && call.request.cookies["hradar-desktop"] != access.capability) ||
                 ((login || botSettings || sourceSettings) && mutation && (origin == null || call.request.headers["X-Hradar-CSRF"] != csrf))) {
