@@ -4,11 +4,11 @@ import { request, type MonitoredChannel, type SearchTemplate, type NotificationP
 export interface DashboardProject { id: string; criteria: { name: string; required: string[]; desired: string[]; excluded: string[]; sources: number[] }; updatedAt: number }
 interface ProjectPage { items: DashboardProject[]; total: number }
 interface Resource<T> { data?: T; at: number; error: boolean }
-interface Data { projects: Resource<ProjectPage>; sources: Resource<MonitoredChannel[]>; templates: Resource<SearchTemplate[]>; notifications: Resource<NotificationPage>; telegram: Resource<TelegramStatus> }
+interface Data { monitoring: Resource<{ templateId: string; enabled: boolean; status: string }[]>; projects: Resource<ProjectPage>; sources: Resource<MonitoredChannel[]>; templates: Resource<SearchTemplate[]>; notifications: Resource<NotificationPage>; telegram: Resource<TelegramStatus> }
 const empty = () => ({ at: 0, error: false });
-const paths = { projects: '/api/projects?limit=3&offset=0&status=ACTIVE', sources: '/api/channels', templates: '/api/templates', notifications: '/api/notifications?limit=3', telegram: '/api/telegram/status' } as const;
+const paths = { monitoring: '/api/workspace/monitoring', projects: '/api/projects?limit=3&offset=0&status=ACTIVE', sources: '/api/channels', templates: '/api/templates', notifications: '/api/notifications?limit=3', telegram: '/api/telegram/status' } as const;
 export function useDashboard(active: boolean, revision: number) {
-  const [data, setData] = useState<Data>({ projects: empty(), sources: empty(), templates: empty(), notifications: empty(), telegram: empty() });
+  const [data, setData] = useState<Data>({ monitoring: empty(), projects: empty(), sources: empty(), templates: empty(), notifications: empty(), telegram: empty() });
   const [loading, setLoading] = useState(false);
   const [now, setNow] = useState(Date.now());
   const controller = useRef<AbortController | null>(null);

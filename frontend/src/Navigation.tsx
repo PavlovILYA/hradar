@@ -3,10 +3,14 @@ import { useEffect, useRef } from 'react';
 export type Screen = 'overview' | 'projects' | 'search' | 'saved' | 'notifications' | 'sources' | 'archive' | 'templates' | 'bot' | 'mcp' | 'application';
 const groups: { title: string; items: { id: Screen; label: string; symbol: string }[] }[] = [
   { title: 'Рабочее пространство', items: [
-    { id: 'overview', label: 'Обзор', symbol: '◫' }, { id: 'projects', label: 'Проекты', symbol: '▤' },
-    { id: 'search', label: 'Поиск', symbol: '⌕' }, { id: 'saved', label: 'Избранное', symbol: '☆' }, { id: 'notifications', label: 'Уведомления', symbol: '◉' },
+    { id: 'overview', label: 'Обзор', symbol: '◫' },
+    { id: 'search', label: 'Поиск', symbol: '⌕' },
+    { id: 'templates', label: 'Сохранённые поиски', symbol: '≡' },
+    { id: 'notifications', label: 'Совпадения', symbol: '◉' },
+    { id: 'saved', label: 'Сохранённые публикации', symbol: '☆' },
+    { id: 'projects', label: 'Проекты', symbol: '▤' },
   ] },
-  { title: 'Данные', items: [{ id: 'sources', label: 'Источники', symbol: '▥' }, { id: 'archive', label: 'Архив', symbol: '▣' }, { id: 'templates', label: 'Шаблоны', symbol: '≡' }] },
+  { title: 'Локальные данные', items: [{ id: 'sources', label: 'Управление чатами', symbol: '▥' }, { id: 'archive', label: 'Локальный архив', symbol: '▣' }] },
   { title: 'Настройки', items: [{ id: 'bot', label: 'Telegram Bot', symbol: '↗' }, { id: 'mcp', label: 'MCP', symbol: '◇' }, { id: 'application', label: 'Состояние приложения', symbol: '⚙' }] },
 ];
 export const screenTitles = Object.fromEntries(groups.flatMap(group => group.items.map(item => [item.id, item.label]))) as Record<Screen, string>;
@@ -27,7 +31,7 @@ export function Navigation({ screen, navigate, unread, theme, toggleTheme, open,
         if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
       }
     }}>
-      <div className="workspace-brand"><span className="brand-mark" aria-hidden="true">h</span><strong>hradar</strong><button className="navigation-close icon-button" aria-label="Закрыть навигацию" onClick={close}>×</button></div>
+      <div className="workspace-brand"><img className="brand-logo" src="/hradar-logo.png" width="40" height="40" alt="" /><strong>hradar</strong><button className="navigation-close icon-button" aria-label="Закрыть навигацию" onClick={close}>×</button></div>
       <nav aria-label="Основная навигация">{groups.map(group => <section className="navigation-group" key={group.title} aria-label={group.title}>
         <h2>{group.title}</h2>{group.items.map(item => <button key={item.id} aria-label={item.label} aria-current={screen === item.id ? 'page' : undefined} aria-describedby={item.id === 'notifications' ? 'navigation-unread' : undefined} onClick={() => navigate(item.id)}>
           <span className="navigation-symbol" aria-hidden="true">{item.symbol}</span><span>{item.label}</span>{item.id === 'notifications' && <span className="badge" aria-hidden="true">{unread}</span>}
