@@ -7,11 +7,11 @@ export async function request<T>(path: string, signal?: AbortSignal, init: Reque
     response = await fetch(path, { ...init, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs) });
   } catch (error) {
     if (signal?.aborted) throw error;
-    throw new Error('Не удалось связаться с сервером. Проверьте, что backend запущен, и повторите попытку.');
+    throw new Error('Не удалось связаться с сервером. Проверьте, что hradar запущен, и повторите попытку.');
   }
   if (!response.ok) {
     const messages: Record<number, string> = {
-      400: 'Проверьте username: нужен публичный Telegram-канал, а не группа или профиль.',
+      400: 'Проверьте параметры действия и повторите попытку.',
       403: 'Канал недоступен для текущего Telegram-аккаунта.',
       404: 'Канал не найден. Проверьте его username.',
       429: 'Telegram ограничил частоту запросов. Попробуйте немного позже.',
@@ -19,10 +19,10 @@ export async function request<T>(path: string, signal?: AbortSignal, init: Reque
     };
     const detail = await response.json().catch(() => null) as { error?: string } | null;
     const readable = detail?.error && /[а-яё]/i.test(detail.error) ? detail.error : null;
-    throw new Error(readable ?? messages[response.status] ?? 'Не удалось получить данные. Проверьте backend и повторите попытку.');
+    throw new Error(readable ?? messages[response.status] ?? 'Не удалось получить данные. Проверьте подключение hradar и повторите попытку.');
   }
   try { return await response.json() as T; }
-  catch { throw new Error('Сервер вернул неожиданный ответ. Проверьте backend.'); }
+  catch { throw new Error('Сервер вернул неожиданный ответ. Проверьте подключение hradar.'); }
 }
 
 export function normalizeUsername(value: string): string {
@@ -44,8 +44,8 @@ export function mutate<T>(path: string, method: string, body?: unknown, timeoutM
   return request<T>(path, undefined, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }, timeoutMs);
 }
 
-export interface ResearchMessage extends TelegramMessage { sourceKey?: string | null; forumTopicId?: number | null; scopeTitle?: string | null; availability?: string; canGetMessageThread?: boolean; title?: string; username?: string | null; link?: string | null; explanation?: MatchExplanation | null }
-export interface SearchInput { mode: 'channel' | 'tracked' | 'global' | 'sources'; sourceKeys?: string[]; query: string; usernames: string[]; templateId?: string; limit: number; cursor?: string }
+export interface ResearchMessage extends TelegramMessage { attachments?: { kind: string; fileName?: string | null; mimeType?: string | null; size?: number | null }[] | null; sourceKey?: string | null; forumTopicId?: number | null; messageThreadId?: number | null; scopeTitle?: string | null; availability?: string; canGetMessageThread?: boolean; title?: string; username?: string | null; link?: string | null; explanation?: MatchExplanation | null }
+export interface SearchInput { mode: 'channel' | 'tracked' | 'global' | 'sources'; sourceKeys?: string[]; conditions?: { required: string[]; any: string[]; excluded: string[] }; query: string; usernames: string[]; templateId?: string; withLinks?: boolean; limit: number; cursor?: string }
 export interface SearchPage { messages: ResearchMessage[]; cursor: string; state: string; notice?: string | null }
 export interface NotificationRecord { id: string; templateId: string; templateName: string; message: ResearchMessage; read: boolean; sequence: number; detectedAt?: number }
 export interface NotificationPage { items: NotificationRecord[]; unread: number; cursor: number | null }

@@ -7,7 +7,8 @@ test('search chooses an unsaved account chat and saves a monitored template', as
     const path = new URL(route.request().url()).pathname;
     let body: unknown = {};
     if (path === '/api/telegram/status') body = { authorized: true, connectionState: 'Ready' };
-    else if (path === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: 'data: {"unread":0,"revision":0,"byChannel":{}}\n\n' });
+    else if (path === '/api/workspace/monitoring') return route.fulfill({ json: [] });
+    if (path === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: 'data: {"unread":0,"revision":0,"byChannel":{}}\n\n' });
     else if (path === '/api/channels' || path === '/api/templates') body = [];
     else if (path === '/api/source-catalog') body = { items: [chat], cursor: null, notice: 'Synthetic bounded catalog' };
     else if (path === '/api/sources') body = route.request().method() === 'POST' ? { ...chat, key: 'synthetic-key' } : { items: [] };
@@ -19,12 +20,13 @@ test('search chooses an unsaved account chat and saves a monitored template', as
   });
   await page.goto('/?screen=search');
   await page.getByRole('checkbox', { name: 'Synthetic QA', exact: true }).check();
+  await page.getByRole('button', { name: 'Далее: что искать' }).click();
   await page.getByLabel('Запрос в чатах').fill('java');
   await page.getByRole('button', { name: 'Искать в выбранных чатах', exact: true }).click();
   await expect(page.getByText('Synthetic java', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Сохранить как шаблон', exact: true }).click();
+  await page.getByRole('button', { name: 'Сохранить поиск…', exact: true }).click();
   await page.getByLabel('Название сохранённого поиска').fill('Java');
-  await page.getByLabel('Включить мониторинг').check();
+  await page.getByLabel('Отслеживать новые публикации').check();
   await page.getByRole('button', { name: 'Сохранить поиск', exact: true }).click();
   await expect.poll(() => template).toMatchObject({ sourceMode: 'chats', sourceKeys: ['synthetic-key'], subscribed: true, required: ['java'] });
 });
@@ -34,6 +36,7 @@ test('select all fills the ten chat bound after a partial selection', async ({ p
   const chats = Array.from({ length: 12 }, (_, i) => ({ key: `synthetic-${i}`, chatId: 100 + i, type: 'BASIC_GROUP', title: `QA ${i + 1}`, scope: { kind: 'CHAT' }, access: 'AVAILABLE' }));
   await page.route('**/api/**', route => {
     const path = new URL(route.request().url()).pathname;
+    if (path === '/api/workspace/monitoring') return route.fulfill({ json: [] });
     if (path === '/api/events') return route.abort();
     if (path === '/api/telegram/status') return route.fulfill({ json: { authorized: true, connectionState: 'Ready' } });
     if (path === '/api/source-catalog' || path === '/api/sources') return route.fulfill({ json: { items: chats, cursor: null } });

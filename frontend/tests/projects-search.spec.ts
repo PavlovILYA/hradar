@@ -11,9 +11,9 @@ async function open(page: Page, pages: unknown[], sources = true) {
     const reply = (json: unknown) => route.fulfill({ json });
     if (path === '/api/events') return route.abort();
     if (path === '/api/telegram/status') return reply({ authorized: true, authorizationState: 'Ready', connectionState: 'Ready' });
-    if (path === '/api/sources') return reply({ items: [] });
+    if (path === '/api/sources' || path === '/api/source-catalog') return reply({ items: [] });
     if (path === '/api/channels') return reply(sources ? [{ id: -1001, title: 'Synthetic source', username: 'synthetic_jobs' }] : []);
-    if (path === '/api/templates' || path === '/api/monitoring') return reply([]);
+    if (path === '/api/templates' || path === '/api/monitoring' || path === '/api/workspace/monitoring') return reply([]);
     if (path === '/api/notifications') return reply({ items: [], unread: 0, cursor: null });
     if (path === '/api/projects') return reply({ items: [project], total: 1 });
     if (path === '/api/projects/p1') return reply(project);
@@ -74,11 +74,12 @@ for (const [state, text] of [
 
 test('missing sources disables search and explains how to save channels', async ({ page }) => {
   const data = await open(page, [], false);
-  await expect(page.getByText('Нет сохранённых источников проекта.', { exact: false })).toBeVisible();
+  await expect(page.getByText('Нет доступных чатов проекта.', { exact: false })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Найти публикации', exact: true })).toBeDisabled();
   expect(data.searches).toHaveLength(0);
   await page.getByRole('button', { name: 'Настроить критерии' }).click();
-  await expect(page.getByText('Нет сохранённых источников.', { exact: false })).toBeVisible();
+  await page.locator('.project-legacy-sources > summary').click();
+  await expect(page.getByRole('checkbox', { name: 'Удалённый источник -1001 · уберите из критериев', exact: true })).toBeChecked();
 });
 
 test('failed request can be retried and exhausted query differs from restrictive requirements', async ({ page }) => {

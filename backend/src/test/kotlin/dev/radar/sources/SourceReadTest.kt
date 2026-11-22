@@ -159,7 +159,7 @@ class SourceReadTest {
     @Test fun sharedSearchDispatchKeepsCrossChatIdentityAndTemplateAndOrNot(): Unit = runBlocking {
         Repositories(Files.createTempDirectory("local-template").resolve("db")).use { repo ->
             val a = save(repo, 1); val b = save(repo, 2); val native = Native()
-            val template = repo.saveTemplate(SearchTemplate(name = "Synthetic", telegramQuery = "Java", required = listOf("Java"), any = listOf("Spring", "Ktor"), excluded = listOf("junior")))
+            val template = repo.saveTemplate(SearchTemplate(name = "Synthetic", telegramQuery = "Java", required = listOf("Java"), any = listOf("Spring", "Ktor"), excluded = listOf("junior"), sourceMode = "chats", sourceKeys = listOf(a.key, b.key)))
             native.search = { q -> TdApi.FoundChatMessages().apply { messages = if (q.fromMessageId == 0L) arrayOf(
                 message(q.chatId, 10, text = "Java Spring synthetic"), message(q.chatId, 9, text = "Java Ktor junior synthetic"),
                 message(q.chatId, 8, text = "Java only synthetic"), message(q.chatId, 7, text = "Spring only synthetic")) else arrayOf(message(q.chatId, 10, text = "Java Spring synthetic"))
@@ -171,7 +171,9 @@ class SourceReadTest {
             assertEquals(setOf(1L to 10L, 2L to 10L), first.messages.map { it.channelId to it.id }.toSet()); assertEquals(2, first.messages.size)
             assertTrue(first.messages.all { it.explanation?.matches == true })
             assertTrue(service.search(request.copy(cursor = first.cursor)).messages.isEmpty())
-            assertFailsWith<IllegalArgumentException> { service.search(request.copy(sourceKeys = listOf(a.key), cursor = first.cursor)) }
+            assertTrue(service.search(request.copy(sourceKeys = listOf(a.key), cursor = first.cursor)).messages.isEmpty())
+            repo.saveTemplate(template.copy(sourceKeys = listOf(a.key)))
+            assertFailsWith<IllegalArgumentException> { service.search(request.copy(cursor = first.cursor)) }
         }
     }
     @Test fun nativeExclusiveHistoryReachesRealEmptyBottomForChatAndTopic(): Unit = runBlocking {
@@ -263,6 +265,38 @@ class SourceReadTest {
             instant += 601_000
             assertEquals("ok", reader.search(SearchRequest(mode = "sources", query = "java", sourceKeys = listOf(key))).state)
             assertEquals(2, calls)
+        }
+    }
+
+    @Test fun inlineConditionsFilterUnsavedSearchAndRejectChangedCursorRules(): Unit = runBlocking {
+        Repositories(Files.createTempDirectory("inline-conditions").resolve("db")).use { repo ->
+            val source = save(repo, 1); val native = Native()
+            native.search = { q -> TdApi.FoundChatMessages().apply {
+                messages = arrayOf(message(1, 10, text = "Java Spring"), message(1, 9, text = "Java Spring junior"), message(1, 8, text = "Java only"), message(1, 7, text = "Spring only"))
+                nextFromMessageId = 6
+            } }
+            val input = kotlinx.serialization.json.Json.decodeFromString<SearchRequest>("""{"mode":"sources","query":"Java","sourceKeys":["${source.key}"],"conditions":{"required":[" Java "],"any":["Spring","Ktor"],"excluded":["junior"]}}""")
+            val service = SourceReadService(repo, execute = native::execute)
+            val first = service.search(input)
+            assertEquals(listOf(10L), first.messages.map { it.id }); assertTrue(first.messages.single().explanation!!.matches)
+            val changed = kotlinx.serialization.json.Json.decodeFromString<SearchRequest>("""{"mode":"sources","query":"Java","sourceKeys":["${source.key}"],"cursor":"${first.cursor}","conditions":{"excluded":["junior"]}}""")
+            assertFailsWith<IllegalArgumentException> { service.search(changed) }
+            val negativeOnly = service.search(changed.copy(cursor = ""))
+            assertEquals(setOf(10L, 8L, 7L), negativeOnly.messages.map { it.id }.toSet())
+        }
+    }
+
+    @Test fun documentDetailsExposeOnlyMetadataWithoutDownloadOrLocalPath(): Unit = runBlocking {
+        Repositories(Files.createTempDirectory("attachment-detail").resolve("db")).use { repo ->
+            val source = save(repo, 1); val native = Native()
+            native.detail = message(1, 10).apply { content = TdApi.MessageDocument().apply {
+                caption = TdApi.FormattedText("Synthetic caption", emptyArray())
+                document = TdApi.Document().apply { fileName = "synthetic-cv.pdf"; mimeType = "application/pdf"; document = TdApi.File().apply { size = 4096 } }
+            } }
+            val detail = SourceReadService(repo, execute = native::execute).detail(source.key, 10)
+            val encoded = kotlinx.serialization.json.Json.encodeToString(ResearchMessage.serializer(), detail)
+            assertTrue(encoded.contains("synthetic-cv.pdf")); assertTrue(encoded.contains("4096")); assertTrue(encoded.contains("application/pdf"))
+            assertTrue(native.calls.none { it is TdApi.DownloadFile }); assertFalse(encoded.contains("localPath"))
         }
     }
 

@@ -1,5 +1,51 @@
 # hradar — Development status / session handoff
 
+## Recruiter UX 0.10.0 — 2026-11-22
+
+Branch `feat/ux-workflow-0.10`, isolated worktree `hradar-ux`, based on merged
+PR #18 / master `c879bb6`. Latest tested application code: `6803346`.
+Version **0.10.0**, version.py sync/check; SQLite remains **v13**, no migration,
+runtime/dependency upgrades or native TDLib rebuild.
+
+VERIFIED:
+- Guided three-panel chat search, saved-search scope ownership (including legacy),
+  explicit tracking/popup consent, shared publication dialog without navigation,
+  contextual dismissible errors, unified inbox grouping, local-data navigation,
+  updated overview, approved transparent logo and responsive project board.
+- JDK21 `:backend:build`: **255 tests, zero failures/errors/skips**. Fake Telegram,
+  temporary SQLite, scope/owner isolation, restart, cursor and duplicate regressions.
+- `npm run build --prefix frontend`: exit0; full offline Playwright **81/81**.
+  Deterministic SSE delayed-claim/reconnect test also **3/3** repeated. New failures
+  reproduced before fixes: stale popup selection and retry leaving an old error.
+- Python unittest **32/32**; real Ktor + fake Telegram browser project flow **1/1**:
+  bounded online pagination, card creation, stage/notes/rating and reload persistence.
+- Intel JNI smoke without creating a client/session; actual desktop SystemTray and
+  stalled-health/browser quit cleanup. Local Intel DMG/ZIP smoke includes production
+  UI, byte identity, architecture/JNI, Host/Origin/CSRF, duplicate-instance refusal,
+  synthetic-profile restart/recovery, newer-schema refusal and graceful shutdown.
+  Latest package source SHA and exact outcomes are recorded in the Draft PR.
+- Desktop/laptop/390px layouts and light/dark inspected; logo alpha and DPR2 verified.
+  Root untracked `hradar_stop.py`, existing worktrees and installed app PID12073
+  preserved. No tests used real private messages/session/SQLite or external sends.
+
+NOT VERIFIED:
+- Hosted Fast CI/Intel/ARM64 results at the final PR SHA until Actions reports them.
+  Local Intel evidence is not ARM64 evidence. Per user instruction, inspect Actions
+  once after push; do not wait/poll pipelines.
+- Real 0.10 Telegram post → matching → Chrome/macOS popup, physical Focus/permissions,
+  real-profile restart cursor preservation and equally named search rules. User's
+  physical 0.9 results remain prior evidence, not 0.10 acceptance.
+- Closed-browser native Notification Center remains unimplemented. Local project
+  tracking uses separately configured saved searches and manual card addition.
+  Fresh legacy public results may require searching inside the target project.
+  Popup claims are at-most-once attempts per rule; a crash after claim can lose a
+  popup, never its inbox record. Presentation grouping does not merge rule records.
+
+NEXT ACTION:
+- One Draft PR into master, with all 18 acceptance statuses and current CI snapshot.
+  No merge, Release, tags or installer publication. Manual steps and retained limits:
+  [UX_WORKFLOW_0_10.md](UX_WORKFLOW_0_10.md).
+
 ## Unified chat search and template monitoring — 2026-11-17
 
 Feature `feat/unified-search-monitoring`, isolated from fetched master

@@ -15,9 +15,9 @@ test('recruiter creates a project, searches, reviews Kanban and restores notes a
     }
     if (path === '/api/events') return route.abort();
     if (path === '/api/telegram/status') return reply({ authorizationState: 'Ready', authorized: true, connectionState: 'Ready' });
-    if (path === '/api/sources') return reply({ items: [] });
+    if (path === '/api/sources' || path === '/api/source-catalog') return reply({ items: [] });
     if (path === '/api/channels') return reply([{ id: -1001, username: 'synthetic_jobs', title: 'Synthetic source' }]);
-    if (path === '/api/templates' || path === '/api/monitoring') return reply([]);
+    if (path === '/api/templates' || path === '/api/monitoring' || path === '/api/workspace/monitoring') return reply([]);
     if (path === '/api/notifications') return reply({ items: [], unread: 0, cursor: null });
     if (path === '/api/projects') {
       if (method === 'POST') { project = { id: 'p1', criteria: route.request().postDataJSON(), createdAt: 1700000000000, updatedAt: 1700000000000 }; return reply(project, 201); }
@@ -42,11 +42,13 @@ test('recruiter creates a project, searches, reviews Kanban and restores notes a
   await page.getByLabel('Обязательные технологии').fill('Java, Spring Boot, PostgreSQL');
   await page.getByLabel('Желательные технологии').fill('Kafka, Docker');
   await page.getByLabel('Исключения', { exact: true }).fill('junior');
+  await page.locator('.project-legacy-sources > summary').click();
   await page.getByRole('checkbox', { name: 'Synthetic source (@synthetic_jobs)' }).check();
   await page.getByRole('button', { name: 'Сохранить проект' }).click();
   await expect(page.getByRole('heading', { name: 'Senior Java Backend', exact: true })).toBeVisible();
   expect(project.criteria.required).toEqual(['Java', 'Spring Boot', 'PostgreSQL']);
   await page.getByText('Найти и добавить публикации', { exact: true }).click();
+  await page.getByLabel('Где искать').selectOption('archive');
   await page.getByRole('button', { name: 'Найти публикации', exact: true }).click();
   await expect(page.getByText('Обязательные слова в тексте: Java, Spring Boot, PostgreSQL')).toBeVisible();
   await expect(page.getByText('За этот шаг проверено публикаций: 31 · Совпадений: 1')).toBeVisible();

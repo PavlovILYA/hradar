@@ -6,6 +6,62 @@ import java.nio.file.Files
 import kotlin.test.*
 
 class LocalProjectTest {
+    @Test fun ownerSearchBookmarksAndInboxCanBeAddedWithoutProjectSearch() {
+        val path = Files.createTempDirectory("owner-project-evidence").resolve("db")
+        var projectId = ""
+        Repositories(path).use { repo ->
+            val source = repo.saveSource(TelegramSource(chatId = 123, type = SourceType.PRIVATE, title = "Synthetic local"))
+            val foreign = repo.saveSource(TelegramSource(chatId = 456, type = SourceType.PRIVATE, title = "Synthetic other"))
+            val matching = MatchingService()
+            val service = RecruitmentProjectService(repo, matching, SubscriptionService(repo, matching), RecruiterService(repo, RecruiterSearchPort { error("No Telegram reads") }))
+            val project = service.save(ProjectInput("Owner evidence", required = listOf("Java"), sourceKeys = listOf(source.key))); projectId = project.id
+            fun message(id: Long) = ResearchMessage(id, source.chatId, 2000000000, "Synthetic Java", source.title, null, sourceKey = source.key)
+            repo.cacheSearch("fresh", SearchPage(listOf(message(11))))
+            repo.saveOwnerBookmark(message(12))
+            val rule = repo.saveTemplate(SearchTemplate(name = "Java", required = listOf("Java"), telegramQuery = "Java"))
+            val state = repo.configureLocalSubscription(source, rule, null, true, 10, 1)
+            assertTrue(repo.commitLocalMonitoring(state, source, rule, state, listOf(message(13)), matching))
+            for (id in 11L..13L) {
+                val card = service.add(project.id, AddPublication(source.chatId, id, source.key))
+                service.update(project.id, card.id, CardUpdate(RecruitmentStage.INTERESTING, "Synthetic note", 4))
+                assertEquals(card.id, service.add(project.id, AddPublication(source.chatId, id, source.key)).id)
+                assertTrue(card.message.explanation!!.matches)
+            }
+            repo.cacheSearch("foreign", SearchPage(listOf(message(14).copy(channelId = foreign.chatId, sourceKey = foreign.key))))
+            repo.cacheSearch("stale", SearchPage(listOf(message(15))), System.currentTimeMillis() - 86_400_001)
+            assertFailsWith<ResourceNotFound> { service.add(project.id, AddPublication(foreign.chatId, 14, foreign.key)) }
+            assertFailsWith<ResourceNotFound> { service.add(project.id, AddPublication(source.chatId, 11, foreign.key)) }
+            assertFailsWith<ResourceNotFound> { service.add(project.id, AddPublication(source.chatId, 15, source.key)) }
+            assertFailsWith<ResourceNotFound> { service.add(project.id, AddPublication(source.chatId, 999, source.key)) }
+            assertTrue(repo.channels().isEmpty()); assertTrue(repo.savedResults().items.isEmpty()); assertTrue(repo.notifications().isEmpty())
+            repo.deleteSource(source.key)
+            assertFailsWith<ResourceNotFound> { service.add(project.id, AddPublication(source.chatId, 12, source.key)) }
+        }
+        Repositories(path).use { repo ->
+            val cards = repo.recruitmentCards(projectId, 25, 0, null, null, "", "", "updated").items
+            assertEquals(3, cards.size)
+            assertTrue(cards.all { it.notes == "Synthetic note" && it.interest == 4 && it.stage == RecruitmentStage.INTERESTING })
+        }
+    }
+
+    @Test fun ownerEvidenceCannotCrossProjectTopicScopesOrChangedCriteria() {
+        Repositories(Files.createTempDirectory("owner-project-topic").resolve("db")).use { repo ->
+            val source = repo.saveSource(TelegramSource(chatId = 123, type = SourceType.SUPERGROUP, title = "Synthetic forum", isForum = true, scope = SourceScope(ScopeKind.FORUM_TOPIC, forumTopicId = 10)))
+            val matching = MatchingService()
+            val service = RecruitmentProjectService(repo, matching, SubscriptionService(repo, matching), RecruiterService(repo, RecruiterSearchPort { SearchPage() }))
+            val project = service.save(ProjectInput("Topic", sourceKeys = listOf(source.key)))
+            val invalid = ResearchMessage(1, source.chatId, 100, "Synthetic Java", source.title, null, sourceKey = source.key, forumTopicId = 20)
+            repo.cacheSearch("wrong-topic", SearchPage(listOf(invalid)))
+            assertFailsWith<ResourceNotFound> { service.add(project.id, AddPublication(source.chatId, 1, source.key)) }
+            repo.saveOwnerBookmark(invalid.copy(id = 2, forumTopicId = 10))
+            val card = service.add(project.id, AddPublication(source.chatId, 2, source.key))
+            service.save(project.criteria.copy(name = "Changed"), project.id)
+            assertFailsWith<IllegalArgumentException> { repo.addRecruitmentCard(project.id, card.message, card.classification, project) }
+            service.save(service.get(project.id).criteria.copy(status = ProjectStatus.ARCHIVED), project.id)
+            assertFailsWith<IllegalArgumentException> { service.add(project.id, AddPublication(source.chatId, 2, source.key)) }
+        }
+    }
+
     @Test fun mixedProjectCanAddExistingLegacyArchiveWithoutNewSearch() {
         Repositories(Files.createTempDirectory("mixed-evidence").resolve("research.sqlite")).use { repo ->
             val public = repo.saveChannel(MonitoredChannel(-1001, "synthetic_jobs", "Synthetic public"))

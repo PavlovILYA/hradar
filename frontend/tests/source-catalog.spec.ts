@@ -57,14 +57,14 @@ async function fixture(page: Page, options: { saved?: any[]; fail?: boolean; del
       if (url.searchParams.get('forumTopicId') === '17') return reply({ items: [candidate(-2002, 'Synthetic forum', { scopeTitle: 'Second topic', scope: { kind: 'FORUM_TOPIC', forumTopicId: 23 } })], next: null });
       return reply({ items: [topic], next: { date: 1700000000, messageId: 900, forumTopicId: 17 } });
     }
-    if (path === '/api/templates' || path === '/api/monitoring' || path === '/api/history/syncs') return reply([]);
+    if (path === '/api/templates' || path === '/api/monitoring' || path === '/api/workspace/monitoring' || path === '/api/history/syncs') return reply([]);
     if (path === '/api/notifications') return reply({ items: [], unread: 0, cursor: null });
     if (path === '/api/notifications/summary') return reply({ unread: 0, revision: 0, byChannel: {} });
     if (path === '/api/projects') return reply({ items: [], total: 0 });
     if (path === '/api/saved') return reply({ items: [], nextCursor: null });
     throw new Error(`Unmocked offline source request: ${request.method()} ${path}`);
   });
-  await page.goto('/'); await openSection(page, 'Источники');
+  await page.goto('/'); await openSection(page, 'Управление чатами');
   await page.getByRole('button', { name: 'Добавить из Telegram', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Выбор Telegram-источника' })).toBeVisible();
   return { writes, catalogQueries, topicQueries };

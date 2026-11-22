@@ -46,30 +46,32 @@ async function fixture(page: Page, options: { empty?: boolean; criteria?: boolea
 }
 const card = (page: Page, name: string) => page.getByRole('region', { name, exact: true });
 
-test('empty workspace has factual zeroes and dependency-aware setup, without writes', async ({ page }) => {
+test('empty workspace offers search without forcing project or source setup', async ({ page }) => {
   const data = await fixture(page, { empty: true });
   await expect(card(page, 'Активные проекты').getByText('0', { exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Начните с первого источника' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Шаг 2. Создать проект найма' })).toBeDisabled();
+  await expect(page.getByRole('heading', { name: 'Начните с поиска в Telegram' })).toBeVisible();
   await expect(page.getByText('Непрочитанных совпадений нет')).toBeVisible();
   expect(data.writes).toEqual([]);
-  await page.getByRole('button', { name: 'Шаг 1. Добавить Telegram-источник' }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Источники');
-  await expect(page.getByLabel('Username нового источника')).toBeVisible();
+  await page.getByRole('button', { name: 'Начать поиск', exact: true }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Поиск');
+  await expect(page.getByRole('heading', { name: '1. Чаты и темы' })).toBeVisible();
 });
 
 test('populated overview uses exact totals, bounded records and existing notification read flow', async ({ page }) => {
   const data = await fixture(page);
   await expect(card(page, 'Активные проекты').getByText('12', { exact: true })).toBeVisible();
   await expect(card(page, 'Новые совпадения').getByText('7', { exact: true })).toBeVisible();
-  await expect(card(page, 'Мониторинг').getByText('Включён', { exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Начните с первого источника' })).toHaveCount(0);
+  await expect(card(page, 'Отслеживание').getByText('Отслеживание настроено', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Начните с поиска в Telegram' })).toHaveCount(0);
   await expect(card(page, 'Последние совпадения').getByText('Synthetic Jobs')).toBeVisible();
   await expect(card(page, 'Последние совпадения').getByText('Synthetic rule')).toBeVisible();
   await card(page, 'Последние совпадения').getByRole('button', { name: 'Открыть публикацию' }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Поиск');
-  await expect(page.getByRole('region', { name: 'Сообщения канала' }).getByText(message.text)).toBeVisible();
-  await expect(page.getByRole('complementary', { name: 'Детали публикации' }).getByText('42', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Обзор');
+  const dialog = page.getByRole('dialog', { name: 'Детали публикации' });
+  await expect(dialog.getByText(message.text)).toBeVisible();
+  await dialog.getByText('Дополнительно', { exact: true }).click();
+  await expect(dialog.getByText('42', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Закрыть детали' }).click();
   await expect.poll(() => data.writes).toEqual(['/api/notifications/n1/read']);
   await openSection(page, 'Обзор');
   await expect(card(page, 'Новые совпадения').getByText('0', { exact: true })).toBeVisible();
@@ -77,33 +79,19 @@ test('populated overview uses exact totals, bounded records and existing notific
   expect(data.paths.filter(path => path.includes('/history/'))).toEqual([]);
 });
 
-test('partial setup guides criteria and monitoring using saved facts, not visits', async ({ page }) => {
-  const data = await fixture(page, { criteria: false, subscribed: false, holdProjectDetail: true });
-  await expect(page.getByText('Следующий шаг: критерии последнего проекта')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Шаг 4. Настроить мониторинг' })).toBeDisabled();
-  await page.getByRole('button', { name: 'Шаг 3. Указать критерии поиска' }).click();
-  // The list may render before the requested project's detail. Exercise that order explicitly.
-  await expect(page.getByRole('button', { name: /Synthetic Kotlin.*Без обязательных технологий/ })).toBeVisible();
-  data.releaseProjectDetail();
-  await expect(page.getByRole('heading', { name: 'Настройка проекта' })).toBeVisible();
-  await expect(page.getByLabel('Обязательные технологии')).toHaveValue('');
-  await openSection(page, 'Обзор');
-  await expect(page.getByText('Следующий шаг: критерии последнего проекта')).toBeVisible();
-});
-
-test('disabled monitoring and Telegram reconnecting are explicit', async ({ page }) => {
-  await fixture(page, { subscribed: false, connection: 'Connecting' });
-  await expect(card(page, 'Мониторинг').getByText('Нет активных подписок')).toBeVisible();
-  await expect(card(page, 'Состояние приложения').getByText('Переподключается')).toBeVisible();
-  await page.getByRole('button', { name: 'Шаг 4. Настроить мониторинг' }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Шаблоны');
+test('projects are independent of search tracking and Telegram reconnect is explicit', async ({ page }) => {
+  await fixture(page, { criteria: false, subscribed: false, connection: 'Connecting' });
+  await expect(card(page, 'Отслеживание').getByText('Отслеживание не включено', { exact: true })).toBeVisible();
+  await expect(page.getByText('Telegram переподключается', { exact: true })).toBeVisible();
+  await card(page, 'Отслеживание').getByRole('button', { name: 'Настроить отслеживание' }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Сохранённые поиски');
 });
 
 test('unknown and failed data are never reported as zero or healthy; retry recovers', async ({ page }) => {
   const data = await fixture(page, { fail: 'all' });
   await expect(card(page, 'Активные проекты').getByText('Нет данных')).toBeVisible();
-  await expect(card(page, 'Состояние приложения').getByText('Недоступен')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Начните с первого источника' })).toHaveCount(0);
+  await expect(page.getByText('Нет связи с hradar', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Начните с поиска в Telegram' })).toHaveCount(0);
   data.recover();
   await page.getByRole('button', { name: 'Обновить обзор' }).click();
   await expect(card(page, 'Активные проекты').getByText('12', { exact: true })).toBeVisible();
@@ -112,7 +100,7 @@ test('unknown and failed data are never reported as zero or healthy; retry recov
 test('partial API failure leaves other cards usable and prevents false setup completion', async ({ page }) => {
   await fixture(page, { fail: '/api/templates' });
   await expect(card(page, 'Активные проекты').getByText('12', { exact: true })).toBeVisible();
-  await expect(card(page, 'Мониторинг').locator('.dashboard-state')).toHaveText('Нет данных');
+  await expect(card(page, 'Отслеживание').locator('.dashboard-state')).toHaveText('Нет актуальных данных');
   await expect(page.getByRole('button', { name: 'Шаг 4. Настроить мониторинг' })).toHaveCount(0);
 });
 
@@ -125,7 +113,7 @@ test('reentry refreshes setup facts and rapid navigation cannot redirect the scr
   await expect(card(page, 'Активные проекты').getByText('12', { exact: true })).toBeVisible();
   data.emptySources();
   await page.getByRole('button', { name: 'Обновить обзор' }).click();
-  await expect(card(page, 'Мониторинг').getByText('Нет доступных источников')).toBeVisible();
+  await expect(card(page, 'Отслеживание').getByText('Отслеживание настроено', { exact: true })).toBeVisible();
 });
 
 test('narrow dark/light overview stays usable with keyboard and localized timestamps', async ({ page }) => {
@@ -139,7 +127,7 @@ test('narrow dark/light overview stays usable with keyboard and localized timest
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.screenshot({ path: '/tmp/hradar-dashboard-mobile.png', fullPage: true });
   await expect(card(page, 'Последние совпадения').locator('time')).toHaveAttribute('datetime', new Date(message.date * 1000).toISOString());
-  await page.getByRole('button', { name: 'Начать поиск', exact: true }).focus();
+  await page.getByRole('button', { name: 'Новый поиск', exact: true }).focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Поиск');
 });
@@ -148,16 +136,16 @@ test('narrow dark/light overview stays usable with keyboard and localized timest
 test('several projects and sources show bounded previews; stale failures keep values without healthy status', async ({ page }) => {
   await page.clock.install();
   const data = await fixture(page, { multiple: true });
-  await expect(card(page, 'Источники').getByText('2', { exact: true })).toBeVisible();
+  await expect(card(page, 'Сохранённые поиски').getByText('1', { exact: true })).toBeVisible();
   await expect(card(page, 'Активные проекты').getByRole('listitem')).toHaveCount(3);
-  await expect(card(page, 'Мониторинг').getByText('Включён', { exact: true })).toBeVisible();
+  await expect(card(page, 'Отслеживание').getByText('Отслеживание настроено', { exact: true })).toBeVisible();
   await page.screenshot({ path: '/tmp/hradar-dashboard-desktop.png', fullPage: true });
   data.failAll();
   await page.clock.runFor(65_000);
-  await expect(card(page, 'Мониторинг').locator('.dashboard-state')).toHaveText('Нет данных');
+  await expect(card(page, 'Отслеживание').locator('.dashboard-state')).toHaveText('Нет актуальных данных');
   await expect(card(page, 'Активные проекты').getByText('12', { exact: true })).toBeVisible();
   await expect(card(page, 'Активные проекты').getByText(/Показаны предыдущие данные/)).toBeVisible();
-  await expect(card(page, 'Состояние приложения').getByText('Нет актуальных данных')).toBeVisible();
+  await expect(card(page, 'Отслеживание').getByText('Нет актуальных данных', { exact: true })).toBeVisible();
 });
 
 

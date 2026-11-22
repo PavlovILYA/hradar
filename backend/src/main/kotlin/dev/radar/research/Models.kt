@@ -23,9 +23,9 @@ data class SearchTemplate(
 @Serializable
 data class MatchExplanation(val matches: Boolean, val foundRequired: List<String>, val foundAny: List<String>, val foundExcluded: List<String>, val missingRequired: List<String>)
 @Serializable
-data class ResearchMessage(val id: Long, val channelId: Long, val date: Int, val text: String?, val title: String, val username: String?, val link: String? = null, val explanation: MatchExplanation? = null, val sourceKey: String? = null, val forumTopicId: Int? = null, val scopeTitle: String? = null, val availability: String = "available", val messageThreadId: Long? = null, val canGetMessageThread: Boolean? = null)
+data class ResearchMessage(val id: Long, val channelId: Long, val date: Int, val text: String?, val title: String, val username: String?, val link: String? = null, val explanation: MatchExplanation? = null, val sourceKey: String? = null, val forumTopicId: Int? = null, val scopeTitle: String? = null, val availability: String = "available", val messageThreadId: Long? = null, val canGetMessageThread: Boolean? = null, val attachments: List<PublicationAttachment>? = null)
 @Serializable
-data class SearchRequest(val mode: String = "channel", val query: String = "", val usernames: List<String> = emptyList(), val templateId: String? = null, val limit: Int = 20, val cursor: String = "", val withLinks: Boolean = true, val sourceKeys: List<String> = emptyList())
+data class SearchRequest(val mode: String = "channel", val query: String = "", val usernames: List<String> = emptyList(), val templateId: String? = null, val limit: Int = 20, val cursor: String = "", val withLinks: Boolean = true, val sourceKeys: List<String> = emptyList(), val conditions: SearchConditions? = null)
 @Serializable
 data class SearchPage(val messages: List<ResearchMessage> = emptyList(), val cursor: String = "", val state: String = "ok", val notice: String? = null)
 @Serializable
@@ -36,3 +36,14 @@ data class MonitoringState(val channelId: Long, val lastMessageId: Long = 0, val
 @Serializable data class DesktopPreferences(val enabled: Boolean = false, val hidePreview: Boolean = true)
 @Serializable data class DesktopDelivery(val id: String, val title: String, val body: String)
 @Serializable data class CachedSearchPage(val page: SearchPage, val fetchedAt: Long, val origin: String = "cache")
+
+/** Transient deterministic conditions for an unsaved owner search; never persisted as a rule. */
+@Serializable
+data class SearchConditions(val required: List<String> = emptyList(), val any: List<String> = emptyList(), val excluded: List<String> = emptyList()) {
+    fun rule(query: String): SearchTemplate {
+        require(listOf(required, any, excluded).all { terms -> terms.size <= 20 && terms.all { it.trim().length in 1..100 } }) { "Не более 20 слов или фраз в каждом условии, до 100 символов" }
+        return SearchTemplate(name = "Разовый поиск", telegramQuery = query, required = required.map(String::trim).distinct(), any = any.map(String::trim).distinct(), excluded = excluded.map(String::trim).distinct())
+    }
+}
+
+@Serializable data class PublicationAttachment(val kind: String, val fileName: String? = null, val mimeType: String? = null, val size: Long? = null)

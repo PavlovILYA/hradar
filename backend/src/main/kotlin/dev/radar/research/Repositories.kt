@@ -510,9 +510,26 @@ class Repositories(path: Path) : AutoCloseable {
         val evidence = rows("SELECT e.source_key,p.data FROM local_project_publications e JOIN local_publications p ON p.chat_id=e.chat_id AND p.message_id=e.message_id WHERE e.project_id=? AND e.chat_id=? AND e.message_id=?", listOf(project.id, chat, message)) {
             it.getString(1) to json.decodeFromString<ResearchMessage>(it.getString(2))
         }
-        return evidence.firstNotNullOfOrNull { (key, publication) ->
+        val existing = evidence.firstNotNullOfOrNull { (key, publication) ->
             sources().firstOrNull { it.key == key && (sourceKey == null || sourceKey == key) && key in projectSourceKeys(project) && sourceContains(it, publication) }?.let { sourceMessage(it, publication) }
         }
+        if (existing != null) return existing
+        val allowed = sources().filter { it.key in projectSourceKeys(project) && (sourceKey == null || it.key == sourceKey) && it.chatId == chat }
+        if (allowed.isEmpty()) return null
+        fun eligible(publication: ResearchMessage): ResearchMessage? = allowed.firstOrNull {
+            publication.id == message && publication.sourceKey == it.key && sourceContains(it, publication)
+        }?.let { sourceMessage(it, publication) }
+        // Only owner evidence can cross screens. Another project's local search results stay isolated.
+        rows("SELECT data FROM owner_inbox WHERE template_id IN (SELECT id FROM search_templates) AND chat_id=? AND message_id=?", listOf(chat, message)) {
+            json.decodeFromString<NotificationRecord>(it.getString(1)).message
+        }.firstNotNullOfOrNull(::eligible)?.let { return it }
+        rows("SELECT data FROM owner_bookmarks WHERE chat_id=? AND message_id=?", listOf(chat, message)) {
+            json.decodeFromString<ResearchMessage>(it.getString(1))
+        }.firstNotNullOfOrNull(::eligible)?.let { return it }
+        // Cache is already capped at 50 pages of 100 excerpts and retains its 24-hour read TTL.
+        return rows("SELECT data FROM search_cache WHERE fetched_at>=? ORDER BY fetched_at DESC LIMIT 50", listOf(System.currentTimeMillis() - 86_400_000)) {
+            json.decodeFromString<SearchPage>(it.getString(1))
+        }.firstNotNullOfOrNull { page -> page.messages.firstNotNullOfOrNull(::eligible) }
     }
     @Synchronized fun saveOwnerTemplate(input: SearchTemplate, previous: SearchTemplate?, subscriptions: List<LocalSubscription>, observations: List<SubscriptionObservation>): SearchTemplate = atomic {
         require(template(input.id) == previous && localSubscriptions().filter { it.templateId == input.id } == subscriptions) { "Шаблон изменился; обновите страницу" }

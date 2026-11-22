@@ -283,3 +283,13 @@ not enqueue. Browser permission and an open tab are required. The Java21 AWT men
 cannot provide a reliable native Notification Center permission/click lifecycle;
 a native macOS adapter with physical-Mac verification remains unimplemented. See
 [UNIFIED_SEARCH.md](docs/UNIFIED_SEARCH.md) for limits and manual QA.
+
+### 0.10 presentation and owner publication reuse
+
+The React adapter uses persistent search panels and a shared native publication
+dialog across sections. Optional transient `SearchConditions` reuse deterministic
+matching and are bound to pagination context; saved templates own their scope.
+Owner-only project additions may reuse trusted inbox/bookmark/fresh bounded-cache
+evidence after current source/topic and expected-project checks. Another project's
+local search evidence remains isolated. This adds no schema, worker, client or
+Bot/MCP capability. See [UX workflow and limits](docs/UX_WORKFLOW_0_10.md).

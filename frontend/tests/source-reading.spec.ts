@@ -29,7 +29,7 @@ async function fixture(page: Page, rateLimited = false) {
     if (path === '/api/telegram/status') return reply({ authorized: true, authorizationState: 'Ready', connectionState: 'Ready' });
     if (path === '/api/onboarding') return reply({ state: 'Ready', csrfToken: 'synthetic-local-csrf' });
     if (path === '/api/sources') return reply({ items: [source, personal] });
-    if (path === '/api/channels' || path === '/api/templates' || path === '/api/monitoring') return reply([]);
+    if (path === '/api/channels' || path === '/api/templates' || path === '/api/monitoring' || path === '/api/workspace/monitoring') return reply([]);
     if (path === '/api/notifications') return reply({ items: [], unread: 0, cursor: null });
     if (path === '/api/notifications/summary') return reply({ unread: 0, revision: 0, byChannel: {} });
     if (path === `/api/sources/${source.key}/messages`) return reply({ messages: [message], nextCursor: url.searchParams.has('before') ? null : 900, state: 'ok' });
@@ -66,7 +66,7 @@ async function fixture(page: Page, rateLimited = false) {
 
 test('selected topic reads searches archives and persists a project card without username', async ({ page }) => {
   const { writes } = await fixture(page);
-  await openSection(page, 'Источники');
+  await openSection(page, 'Управление чатами');
   const row = page.getByTestId('saved-catalog-source').filter({ hasText: source.scopeTitle });
   await expect(row).toContainText('чтение сообщений, поиск, ручной архив и проекты');
   await row.getByRole('button', { name: 'Последние сообщения' }).click();
@@ -77,13 +77,14 @@ test('selected topic reads searches archives and persists a project card without
   if (!process.env.SOURCE_FIXTURE_URL) await read.getByRole('button', { name: 'Ещё сообщения источника' }).click();
   await expect(read.locator('.message-card')).toHaveCount(1);
   await read.getByRole('button', { name: 'Детали ↗' }).click();
-  await expect(page.getByRole('complementary', { name: 'Детали публикации' })).toContainText(source.scopeTitle);
+  await expect(page.getByRole('dialog', { name: 'Детали публикации' })).toContainText(source.scopeTitle);
   await expect(page.getByRole('link', { name: 'Открыть в Telegram ↗' })).toHaveCount(0);
+  await page.keyboard.press('Escape');
   await read.getByLabel('Поисковый запрос источников').fill('Java');
   await read.getByRole('button', { name: 'Искать в выбранных источниках' }).click();
   await expect(read.getByText(message.text)).toBeVisible();
   expect(writes.find(w => w.path === '/api/search')).toMatchObject({ body: { mode: 'sources', sourceKeys: [source.key], usernames: [], query: 'Java' }, csrf: 'synthetic-local-csrf' });
-  await openSection(page, 'Источники');
+  await openSection(page, 'Управление чатами');
   await page.getByTestId('saved-catalog-source').filter({ hasText: source.scopeTitle }).getByRole('button', { name: 'Открыть архив' }).click();
   const archive = page.getByRole('region', { name: 'Архив сохранённого источника' });
   await expect(archive.getByLabel('Сохранённый источник для архива')).toHaveValue(source.key);
@@ -98,7 +99,8 @@ test('selected topic reads searches archives and persists a project card without
   await page.getByRole('button', { name: 'Сохранить проект', exact: true }).click();
   expect(writes.find(w => w.path === '/api/projects')).toMatchObject({ body: { sourceKeys: [source.key], sources: [] } });
   await page.getByText('Найти и добавить публикации', { exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Включить мониторинг по критериям' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Включить мониторинг по критериям' })).toHaveCount(0);
+  await expect(page.getByText('Мониторинг чатов проекта настраивается через сохранённый поиск.', { exact: false })).toBeVisible();
   await page.getByRole('button', { name: 'Найти публикации', exact: true }).click();
   await page.getByRole('button', { name: 'Добавить на доску', exact: true }).click();
   const card = page.locator('.recruitment-card');
@@ -122,6 +124,7 @@ test('multiple selected source search retains partial rate-limit results and nev
   const read = page.getByRole('region', { name: 'Поиск в чатах' });
   await read.getByRole('checkbox', { name: /Synthetic local forum/ }).check();
   await read.getByRole('checkbox', { name: /Synthetic cloud chat/ }).check();
+  await read.getByRole('button', { name: 'Далее: что искать' }).click();
   await read.getByLabel('Запрос в чатах').fill('Java');
   await read.getByRole('button', { name: 'Искать в выбранных чатах' }).click();
   await expect(read.getByText(message.text)).toBeVisible();
