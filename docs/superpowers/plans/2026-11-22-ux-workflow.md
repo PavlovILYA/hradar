@@ -18,28 +18,28 @@ Preserve user data and root edits, one TDLib runtime, no dependency/runtime upgr
 - Local project sources must not masquerade as supported public project subscriptions.
 
 ## 1. Compatibility and correctness
-- [ ] Add failing regression for saved-template dispatch, fix central service and UI request, run Kotlin tests.
-- [ ] Reproduce delayed SSE claim/fetch, coalesce pending work, test reconnect/dedup/read.
-- [ ] Commit focused fixes.
+- [x] Add failing regression for saved-template dispatch, fix central service and UI request, run Kotlin tests.
+- [x] Reproduce delayed SSE claim/fetch, coalesce pending work, test reconnect/dedup/read.
+- [x] Commit focused fixes.
 
 ## 2. Search and saved searches
-- [ ] Implement ChatSearch three panels preserving selection/query/results and bounded cancellation/pagination. Add optional AND/OR/NOT through supported DTOs only.
-- [ ] Templates four actions, explicit save, scope labels, tracking/delivery guidance, delete confirmation, compatibility.
-- [ ] Update/add offline workflow tests, run build and relevant Playwright, commit.
+- [x] Implement ChatSearch three panels preserving selection/query/results and bounded cancellation/pagination. Add optional AND/OR/NOT through supported DTOs only.
+- [x] Templates four actions, explicit save, scope labels, tracking/delivery guidance, delete confirmation, compatibility.
+- [x] Update/add offline workflow tests, run build and relevant Playwright, commit.
 
 ## 3. Shared details and navigation
-- [ ] PublicationDetails props: message: ResearchMessage, onClose, onSelectSource; common onSelect callback for every section. Use native dialog, safe lazy original lookup, bookmark/project actions.
-- [ ] Contextual dismissible errors; common status popover; overview metrics from unified inbox and local monitoring.
-- [ ] Navigation terminology/local-data group, approved PNG asset, design tokens and responsive layout.
-- [ ] Test context/focus, desktop/laptop/mobile and both themes; commit.
+- [x] PublicationDetails props: message: ResearchMessage, onClose, onSelectSource; common onSelect callback for every section. Use native dialog, safe lazy original lookup, bookmark/project actions.
+- [x] Contextual dismissible errors; common status popover; overview metrics from unified inbox and local monitoring.
+- [x] Navigation terminology/local-data group, approved PNG asset, design tokens and responsive layout.
+- [x] Test context/focus, desktop/laptop/mobile and both themes; commit.
 
 ## 4. Projects
-- [ ] Reuse ChatPicker in project creation; preserve legacy selections.
-- [ ] Simplify discovery and board layout; local monitoring guidance points to saved searches and states actual limitation. Common details via onSelect prop.
-- [ ] Exercise creation/search/card add/move/notes/rating, commit.
+- [x] Reuse ChatPicker in project creation; preserve legacy selections.
+- [x] Simplify discovery and board layout; local monitoring guidance points to saved searches and states actual limitation. Common details via onSelect prop.
+- [x] Exercise creation/search/card add/move/notes/rating, commit.
 
 ## 5. Integration and evidence
-- [ ] Bump appVersion once and version.py sync/check.
-- [ ] Run Kotlin build, frontend build/full offline Playwright, Python tests, desktop smoke with synthetic profile.
-- [ ] Update DEV_STATUS with VERIFIED / NOT VERIFIED / NEXT ACTION and manual acceptance steps.
-- [ ] Push feature and create one Draft PR with all 18 acceptance statuses. Inspect Fast CI and Intel/ARM64 at final SHA, fix failures, record exact outcomes.
+- [x] Bump appVersion once and version.py sync/check.
+- [x] Run Kotlin build, frontend build/full offline Playwright, Python tests, desktop smoke with synthetic profile.
+- [x] Update DEV_STATUS with VERIFIED / NOT VERIFIED / NEXT ACTION and manual acceptance steps.
+- [ ] Push feature and create one Draft PR with all 18 acceptance statuses. Inspect Fast CI and Intel/ARM64 once at final SHA; per later user instruction do not wait/poll. Pending results remain unverified.

@@ -6,6 +6,15 @@
 
 Build a local-first recruiting workspace centered on **explicitly permitted Telegram sources**, with searchable publications, deterministic monitoring, actionable saved results and, later, a bot/mobile control surface and carefully permissioned AI tools. The primary value is **relevant, reviewable recruitment leads**, not the volume of scraped messages.
 
+## 0.10 — recruiter workflow UX follow-up
+
+The agreed scope is a compact three-step chat search, saved-search/tracking model,
+shared publication details, contextual errors, unified navigation/design rules and
+project-board improvements. Existing services, bounded reads and SQLite v13 remain.
+Native notifications with the browser closed stay out of scope. Automated evidence,
+real-account verification gaps and exact-head CI status belong in DEV_STATUS and the
+single Draft PR; see [workflow and acceptance guide](docs/UX_WORKFLOW_0_10.md).
+
 ## Already implemented — maintain and verify
 
 - [x] Kotlin 21 / Ktor backend with a single authorized TDLib user session; React/TypeScript research UI.
