@@ -54,18 +54,18 @@ async function fixture(page: Page) {
 
 test('template monitoring configures its chats and exposes rate and access states in one screen', async ({ page }) => {
   const data = await fixture(page);
-  await openSection(page, 'Шаблоны');
+  await openSection(page, 'Сохранённые поиски');
   const card = page.locator('.template-card');
   expect(data.writes).toHaveLength(0);
-  await card.getByRole('button', { name: 'Включить мониторинг', exact: true }).click();
-  await expect(card).toContainText('Мониторинг включён');
+  await card.getByRole('button', { name: 'Включить отслеживание', exact: true }).click();
+  await expect(card).toContainText('Отслеживание включено');
   expect(data.writes[0]).toMatchObject({ path: `/api/workspace/templates/${template.id}`, body: { sourceKeys: [source.key], subscribed: true }, csrf: 'synthetic-csrf' });
-  data.status('rate_limited'); await page.getByRole('button', { name: 'Обновить подписки' }).click();
+  data.status('rate_limited'); await page.getByRole('button', { name: 'Обновить список' }).click();
   await expect(card).toContainText('Лимит Telegram');
   await expect(card).toContainText('Следующая попытка');
-  data.status('unavailable'); await page.getByRole('button', { name: 'Обновить подписки' }).click();
+  data.status('unavailable'); await page.getByRole('button', { name: 'Обновить список' }).click();
   await expect(card).toContainText('Нет доступа к чату');
-  await openSection(page, 'Источники');
+  await openSection(page, 'Управление чатами');
   await expect(page.getByText('Локальный мониторинг выбранного источника', { exact: true })).toHaveCount(0);
 });
 
@@ -73,23 +73,23 @@ test('failed local read keeps the unread match visible and allows retry before o
   await fixture(page);
   await page.route('**/api/notifications/synthetic-local-match/read', route =>
     route.fulfill({ status: 503, json: { error: 'Synthetic read failure' } }), { times: 1 });
-  await openSection(page, 'Уведомления');
+  await openSection(page, 'Совпадения');
   const local = page.locator('.notification-center');
   await local.getByRole('button', { name: 'Открыть публикацию' }).click();
   await expect(page.getByRole('alert')).toBeVisible();
   await expect(local.locator('.notification-card.unread')).toHaveCount(1);
   await local.getByRole('button', { name: 'Открыть публикацию' }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Поиск');
-  await expect(page.getByRole('complementary', { name: 'Детали публикации' })).toContainText(message.text);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Совпадения');
+  await expect(page.getByRole('dialog', { name: 'Детали публикации' })).toContainText(message.text);
 });
 
 test('one inbox includes local matches and verified discussion opens as a saved thread without typed ids', async ({ page }) => {
   const { writes } = await fixture(page);
-  await openSection(page, 'Уведомления');
+  await openSection(page, 'Совпадения');
   const local = page.locator('.notification-center');
   await expect(local.getByText(message.text)).toBeVisible();
   await local.getByRole('button', { name: 'Открыть публикацию' }).click();
-  const detail = page.getByRole('complementary', { name: 'Детали публикации' });
+  const detail = page.getByRole('dialog', { name: 'Детали публикации' });
   await expect(detail).toContainText(source.title);
   await detail.getByRole('button', { name: 'Сохранить доступное обсуждение' }).click();
   await expect(detail).toContainText(thread.title);
@@ -103,10 +103,11 @@ test('one inbox includes local matches and verified discussion opens as a saved 
   expect(writes).toContainEqual(expect.objectContaining({ path: `/api/sources/${source.key}/messages/900/discussion`, body: null, csrf: 'synthetic-csrf' }));
   await read.getByRole('button', { name: 'Детали ↗' }).click();
   await expect(detail.getByRole('button', { name: 'Сохранить доступное обсуждение' })).toHaveCount(0);
+  await page.keyboard.press('Escape');
   await read.getByLabel('Поисковый запрос источников').fill('Java');
   await read.getByRole('button', { name: 'Искать в выбранных источниках' }).click();
   await expect.poll(() => writes.find(w => w.path === '/api/search')?.body.sourceKeys).toEqual([thread.key]);
-  await openSection(page, 'Уведомления');
+  await openSection(page, 'Совпадения');
   await local.getByRole('button', { name: 'Открыть публикацию' }).click();
   await detail.getByRole('button', { name: 'Сохранить доступное обсуждение' }).click();
   await detail.getByRole('button', { name: 'Открыть архив обсуждения' }).click();

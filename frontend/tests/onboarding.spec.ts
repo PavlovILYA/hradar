@@ -8,6 +8,7 @@ test('technical diagnostics copy only approved fields and identifiers', async ({
   let diagnostic: Record<string, unknown> = { telegramCode: 400, identifier: 'PHONE_CODE_INVALID', state: 'WaitCode', retryAfterSeconds: 0 };
   await page.route('**/api/**', route => {
     const path = new URL(route.request().url()).pathname;
+    if (path === '/api/workspace/monitoring') return route.fulfill({ json: [] });
     if (path === '/api/events') return route.abort();
     if (path === '/api/telegram/status') return route.fulfill({ json: { authorizationState: 'WaitCode', authorized: false } });
     if (path === '/api/onboarding') return route.fulfill({ json: { state: 'WaitCode', csrfToken: 'synthetic-session-secret',
@@ -63,6 +64,7 @@ test('local onboarding follows fake TDLib states and clears secret fields', asyn
   await page.route('**/api/**', route => {
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/telegram/status') return route.fulfill({ json: { authorizationState: state, authorized: state === 'Ready', connectionState: 'Ready' } });
+    if (path === '/api/workspace/monitoring') return route.fulfill({ json: [] });
     if (path === '/api/events') return route.abort();
     if (path === '/api/onboarding' && route.request().method() === 'GET') return route.fulfill({ json: { state, csrfToken: 'fake-csrf', link: state === 'WaitOtherDeviceConfirmation' ? 'tg://login?token=fake' : null } });
     if (path.startsWith('/api/onboarding/') && route.request().method() === 'POST') {
@@ -104,6 +106,7 @@ test('delivery countdown resend and phone replacement follow server state', asyn
   let release: (() => void) | undefined;
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
+    if (path === '/api/workspace/monitoring') return route.fulfill({ json: [] });
     if (path === '/api/events') return route.abort();
     if (path === '/api/telegram/status') return route.fulfill({ json: { authorizationState: state, authorized: false, connectionState: 'Ready' } });
     if (path === '/api/onboarding') return route.fulfill({ json: { state, revision: 1, csrfToken: 'fake-csrf', canChangePhone: true,
@@ -159,6 +162,7 @@ test('onboarding keeps failed input supports keyboard and fits both themes on a 
   await page.setViewportSize({ width: 390, height: 680 });
   await page.route('**/api/**', route => {
     const path = new URL(route.request().url()).pathname;
+    if (path === '/api/workspace/monitoring') return route.fulfill({ json: [] });
     if (path === '/api/events') return route.abort();
     if (path === '/api/telegram/status') return route.fulfill({ json: { authorizationState: 'WaitEmailCode', authorized: false } });
     if (path === '/api/onboarding') return route.fulfill({ json: { state: 'WaitEmailCode', csrfToken: 'fake-csrf', delivery: { method: 'email', destination: '•••@example.invalid' }, canChangePhone: true, resendSupported: true, resendAfterSeconds: 0 } });

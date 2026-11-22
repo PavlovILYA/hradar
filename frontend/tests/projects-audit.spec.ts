@@ -16,10 +16,10 @@ async function fixture(page: Page, options: { delayedProject?: boolean; failedCo
     const reply = (json: unknown, status = 200) => route.fulfill({ json, status });
     if (path === '/api/events') return route.abort();
     if (path === '/api/telegram/status') return reply({ authorized: true, authorizationState: 'Ready', connectionState: 'Ready' });
-    if (path === '/api/sources') return reply({ items: [] });
+    if (path === '/api/sources' || path === '/api/source-catalog') return reply({ items: [] });
     if (path === '/api/channels') return reply([{ id: -1001, title: 'Synthetic source', username: 'synthetic_jobs' }]);
     if (path === '/api/templates') return reply(project.criteria.templateIds.length ? [template] : []);
-    if (path === '/api/monitoring') return reply([]);
+    if (path === '/api/monitoring' || path === '/api/workspace/monitoring') return reply([]);
     if (path === '/api/notifications') return reply({ items: [], unread: 0, cursor: null });
     if (path === '/api/projects') {
       if (method === 'POST') { writes.push({ method, body: route.request().postDataJSON() }); if (options.delayedWrite) await writeGate; project = { ...project, id: 'new', criteria: route.request().postDataJSON() }; return reply(project); }
@@ -68,7 +68,7 @@ test('monitoring link survives immediately opening and saving project settings',
   const data = await fixture(page); await page.locator('.project-tile').click();
   await page.getByText('Найти и добавить публикации', { exact: true }).click();
   await page.getByRole('button', { name: 'Включить мониторинг по критериям' }).click();
-  await expect(page.getByText('Мониторинг включён.', { exact: false })).toBeVisible();
+  await expect(page.getByText('Сохранённый поиск связан с проектом', { exact: false })).toBeVisible();
   await page.getByRole('button', { name: 'Настроить критерии' }).click();
   await page.getByLabel('Описание вакансии').fill('Changed description');
   await page.getByRole('button', { name: 'Сохранить проект' }).click();
@@ -96,6 +96,7 @@ test('delayed opening cannot turn a new project form into an edit of an existing
   // Allow the deliberately delayed response to reach the browser before submitting.
   await page.waitForTimeout(150);
   await page.getByLabel('Название проекта').fill('New independent project');
+  await page.locator('.project-legacy-sources > summary').click();
   await page.getByRole('checkbox', { name: 'Synthetic source (@synthetic_jobs)' }).check();
   await page.getByRole('button', { name: 'Сохранить проект' }).click();
   await expect(page.getByRole('heading', { name: 'New independent project', exact: true })).toBeVisible();
@@ -115,6 +116,7 @@ test('saving a project locks its form and navigation until the write finishes', 
   const data = await fixture(page, { delayedWrite: true });
   await page.getByRole('button', { name: 'Создать проект', exact: true }).click();
   await page.getByLabel('Название проекта').fill('Pending save');
+  await page.locator('.project-legacy-sources > summary').click();
   await page.getByRole('checkbox', { name: 'Synthetic source (@synthetic_jobs)' }).check();
   await page.getByRole('button', { name: 'Сохранить проект' }).click();
   try {
