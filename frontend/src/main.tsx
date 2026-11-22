@@ -104,7 +104,13 @@ function App() {
           for (const item of deliveries) {
             try {
               const notice = new Notification(`hradar · ${item.title}`, { body: item.body, tag: item.id });
-              notice.onclick = () => { window.focus(); void request<NotificationRecord>(`/api/workspace/inbox/${item.id}`).then(openNotification).catch(() => {}); notice.close(); };
+              notice.onclick = () => {
+                window.focus(); const epoch = ++selectionEpoch.current; const context = currentScreen.current;
+                void request<NotificationRecord>(`/api/workspace/inbox/${item.id}`).then(record => {
+                  if (epoch === selectionEpoch.current) void openNotification(record);
+                }).catch(e => { if (epoch === selectionEpoch.current) setError((e as Error).message, context); });
+                notice.close();
+              };
             } catch { /* Durable claim owns at-most-once delivery; the inbox survives permission changes. */ }
           }
         }
@@ -144,6 +150,7 @@ function App() {
     return () => { stopped = true; events.close(); };
   }, []);
   async function notificationAction(path: string | string[]) {
+    setError('');
     try { for (const target of typeof path === 'string' ? [path] : path) await mutate(target, 'POST'); await refreshNotifications(); setDashboardRevision(n => n + 1); }
     catch (e) { setError((e as Error).message); }
   }
@@ -159,7 +166,7 @@ function App() {
     else { setSelectedSourceKey(source.key); setSourceReading(true); setChatTemplateId(''); setSearchMode('sources'); navigate('search'); }
   }
   async function openNotification(item: NotificationRecord, related: NotificationRecord[] = [item]) {
-    const epoch = ++selectionEpoch.current; const context = currentScreen.current;
+    const epoch = ++selectionEpoch.current; const context = currentScreen.current; setError('', context);
     if (related.some(i => !i.read)) {
       try { for (const rule of related.filter(i => !i.read)) await mutate(`/api/notifications/${rule.id}/read`, 'POST'); await refreshNotifications(); setDashboardRevision(n => n + 1); }
       catch(e) { setError((e as Error).message, context); return; }

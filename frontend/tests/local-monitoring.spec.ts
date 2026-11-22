@@ -81,6 +81,8 @@ test('failed local read keeps the unread match visible and allows retry before o
   await local.getByRole('button', { name: 'Открыть публикацию' }).click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Совпадения');
   await expect(page.getByRole('dialog', { name: 'Детали публикации' })).toContainText(message.text);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
 test('one inbox includes local matches and verified discussion opens as a saved thread without typed ids', async ({ page }) => {

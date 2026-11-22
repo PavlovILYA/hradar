@@ -162,3 +162,33 @@ test('common details add owner publication to an eligible project and never repo
   expect(bodies).toEqual(Array(2).fill({ sourceKey: source.key, channelId: message.channelId, messageId: message.id }));
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Совпадения');
 });
+
+test('delayed popup lookup cannot replace a newer publication selection', async ({ page }) => {
+  await fixture(page);
+  const second = { ...match, id: 'second', message: { ...message, id: 43, sourceKey: undefined, text: 'Newer selected synthetic publication', link: 'https://t.me/synthetic_group/43' } };
+  let release!: () => void; let entered = false, claimed = false;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/notifications', route => route.fulfill({ json: { items: [second], unread: 0, cursor: null } }));
+  await page.route('**/api/workspace/desktop', route => route.fulfill({ json: { enabled: true, hidePreview: true } }));
+  await page.route('**/api/workspace/deliveries/claim', route => { const deliveries = claimed ? [] : [{ id: match.id, title: 'Synthetic match', body: 'Open hradar' }]; claimed = true; return route.fulfill({ json: deliveries }); });
+  await page.route('**/api/workspace/inbox/n1', async route => { entered = true; await gate; return route.fulfill({ json: match }); });
+  await page.addInitScript(() => {
+    const state = window as any;
+    class FakeEvents { onmessage: any; onerror: any; onopen: any; constructor() { state.syntheticEvents = this; } close() {} }
+    class FakeNotice { static permission = 'granted'; onclick: any; constructor() { state.syntheticNotice = this; } close() {} }
+    Object.defineProperty(window, 'EventSource', { value: FakeEvents });
+    Object.defineProperty(window, 'Notification', { value: FakeNotice });
+  });
+  await page.goto('/?screen=notifications');
+  await expect(page.getByRole('button', { name: 'Открыть публикацию', exact: true })).toBeVisible();
+  await page.evaluate(() => (window as any).syntheticEvents.onmessage(new MessageEvent('message', { data: JSON.stringify({ revision: 1, unread: 0, byChannel: {} }) })));
+  await expect.poll(() => page.evaluate(() => !!(window as any).syntheticNotice)).toBe(true);
+  await page.evaluate(() => (window as any).syntheticNotice.onclick());
+  await expect.poll(() => entered).toBe(true);
+  await page.getByRole('button', { name: 'Открыть публикацию', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Детали публикации' });
+  await expect(dialog).toContainText(second.message.text);
+  const oldResponse = page.waitForResponse('**/api/workspace/inbox/n1'); release(); await oldResponse;
+  await page.evaluate(async () => { await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame); });
+  await expect(dialog).toContainText(second.message.text);
+});
