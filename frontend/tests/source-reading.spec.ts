@@ -34,6 +34,8 @@ async function fixture(page: Page, rateLimited = false) {
     if (path === '/api/notifications/summary') return reply({ unread: 0, revision: 0, byChannel: {} });
     if (path === `/api/sources/${source.key}/messages`) return reply({ messages: [message], nextCursor: url.searchParams.has('before') ? null : 900, state: 'ok' });
     if (path === `/api/sources/${source.key}/messages/900`) return reply(message);
+    if (path === '/api/source-catalog') return reply({ items: rateLimited ? [source, personal] : [source], cursor: null });
+    if (path === '/api/workspace/search') { writes.push({ path, body: req.postDataJSON(), csrf: req.headers()['x-hradar-csrf'] }); return reply({ messages: [message], cursor: 'synthetic-cursor', state: 'rate_limited', notice: 'Telegram ограничил частоту запросов. Повторите позже.', fetchedAt: Date.now(), origin: 'telegram' }); }
     if (path === '/api/search') {
       const body = req.postDataJSON(); writes.push({ path, body, csrf: req.headers()['x-hradar-csrf'] });
       return reply({ messages: [message], cursor: '', state: rateLimited ? 'rate_limited' : 'ok', notice: rateLimited ? 'Сохранён частичный результат.' : null });
@@ -117,14 +119,13 @@ test('multiple selected source search retains partial rate-limit results and nev
   const { writes } = await fixture(page, true);
   await openSection(page, 'Поиск');
   await page.getByLabel('Область поиска').selectOption('sources');
-  const read = page.getByRole('region', { name: 'Чтение сохранённых источников' });
+  const read = page.getByRole('region', { name: 'Поиск в чатах' });
   await read.getByRole('checkbox', { name: /Synthetic local forum/ }).check();
   await read.getByRole('checkbox', { name: /Synthetic cloud chat/ }).check();
-  await expect(read.getByRole('button', { name: 'Получить сообщения источника' })).toBeDisabled();
-  await read.getByLabel('Поисковый запрос источников').fill('Java');
-  await read.getByRole('button', { name: 'Искать в выбранных источниках' }).click();
+  await read.getByLabel('Запрос в чатах').fill('Java');
+  await read.getByRole('button', { name: 'Искать в выбранных чатах' }).click();
   await expect(read.getByText(message.text)).toBeVisible();
   await expect(read.getByText('Telegram ограничил частоту запросов. Повторите позже.')).toBeVisible();
-  expect(writes.find(w => w.path === '/api/search')?.body.sourceKeys).toEqual([source.key, personal.key]);
+  expect(writes.find(w => w.path === '/api/workspace/search')?.body.search.sourceKeys).toEqual([source.key, personal.key]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

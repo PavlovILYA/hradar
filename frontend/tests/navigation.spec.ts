@@ -9,7 +9,10 @@ async function fixture(page: Page) {
     const url = new URL(route.request().url()), path = url.pathname, method = route.request().method();
     if (method !== 'GET') writes.push({ path, method, body: route.request().postData() ? route.request().postDataJSON() : null });
     const reply = (json: unknown) => route.fulfill({ json });
-    if (path === '/api/sources') return route.fulfill({ json: { items: [] } });
+    if (path === '/api/sources') return route.fulfill({ json: method === 'POST' ? { key: 'synthetic-key', chatId: -1001, title: 'Synthetic source', scope: { kind: 'CHAT' }, type: 'CHANNEL', access: 'AVAILABLE' } : { items: [{ key: 'synthetic-key', chatId: -1001, title: 'Synthetic source', scope: { kind: 'CHAT' }, type: 'CHANNEL', access: 'AVAILABLE' }] } });
+    if (path === '/api/source-catalog') return route.fulfill({ json: { items: [{ key: 'synthetic-key', chatId: -1001, title: 'Synthetic source', scope: { kind: 'CHAT' }, type: 'CHANNEL', access: 'AVAILABLE' }], cursor: null } });
+    if (path === '/api/workspace/desktop') return route.fulfill({ json: { enabled: false, hidePreview: true } });
+    if (path === '/api/workspace/saved' || path === '/api/workspace/monitoring') return route.fulfill({ json: path.endsWith('saved') ? { items: [], nextCursor: null } : [] });
     if (path === '/api/events') return route.abort();
     if (path === '/api/telegram/status') return reply({ authorized: true, authorizationState: 'Ready', connectionState: 'Ready' });
     if (path === '/api/onboarding') return reply({ state: 'Ready', csrfToken: 'synthetic-csrf' });
@@ -19,11 +22,11 @@ async function fixture(page: Page) {
       return reply(sources);
     }
     if (path.startsWith('/api/channels/') && method === 'DELETE') { sources = sources.filter(s => s.id !== Number(path.split('/').pop())); return reply({ deleted: true }); }
-    if (path === '/api/templates') {
+    if (path === '/api/templates' || path === '/api/workspace/templates') {
       if (method === 'POST') { const saved = { ...route.request().postDataJSON(), id: 't1' }; templates = [saved]; return reply(saved); }
       return reply(templates);
     }
-    if (path === '/api/templates/t1') {
+    if (path === '/api/templates/t1' || path === '/api/workspace/templates/t1') {
       if (method === 'DELETE') { templates = []; return reply({ deleted: true }); }
       templates = [route.request().postDataJSON()]; return reply(templates[0]);
     }
@@ -43,7 +46,7 @@ async function fixture(page: Page) {
   await page.goto('/');
   return { writes };
 }
-const navigate = (page: Page, name: string) => page.getByRole('navigation', { name: 'Основная навигация' }).getByRole('button', { name, exact: true }).click();
+const navigate = async (page: Page, name: string) => { await page.getByRole('navigation', { name: 'Основная навигация' }).getByRole('button', { name, exact: true }).click(); if (name === 'Поиск') await page.getByLabel('Область поиска', { exact: true }).selectOption('channel'); };
 
 test('all eleven destinations work with a single sidebar and relevant publication context', async ({ page }) => {
   await fixture(page);
@@ -74,7 +77,7 @@ test('source CRUD and recent messages lead to contextual details without losing 
   page.once('dialog', dialog => dialog.accept());
   await added.getByRole('button', { name: 'Удалить источник', exact: true }).click();
   await expect(added).toHaveCount(0);
-  await page.getByRole('button', { name: 'Последние сообщения', exact: true }).click();
+  await page.locator('.source-record').filter({ hasText: '@synthetic_jobs' }).getByRole('button', { name: 'Последние сообщения', exact: true }).click();
   await expect(page.locator('.search-screen .message-card')).toHaveCount(1);
   await page.getByRole('button', { name: 'Детали ↗' }).click();
   await expect(page.getByRole('complementary', { name: 'Детали публикации' })).toBeVisible();
@@ -110,9 +113,10 @@ test('template CRUD subscription and execution remain reachable in the templates
   await page.getByLabel('Название шаблона').fill('Synthetic rule');
   await page.getByLabel('Запрос Telegram', { exact: true }).fill('java');
   await page.getByLabel('Все слова / фразы (AND)').fill('Java\nSpring');
+  await page.getByRole('checkbox', { name: 'Synthetic source', exact: true }).check();
   await page.getByRole('button', { name: 'Сохранить шаблон' }).click();
   const card = page.locator('.template-card');
-  await card.getByRole('button', { name: 'Уведомлять', exact: true }).click();
+  await card.getByRole('button', { name: 'Включить мониторинг', exact: true }).click();
   await expect(card).toContainText('Мониторинг включён');
   await card.getByRole('button', { name: 'Пауза', exact: true }).click();
   await expect(card.getByRole('button', { name: 'Запустить', exact: true })).toBeDisabled();
@@ -122,7 +126,8 @@ test('template CRUD subscription and execution remain reachable in the templates
   await page.getByRole('button', { name: 'Сохранить шаблон' }).click();
   await card.getByRole('button', { name: 'Запустить', exact: true }).click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Поиск');
-  expect(data.writes.find(w => w.path === '/api/search')?.body.templateId).toBe('t1');
+  await expect(page.getByLabel('Запрос в чатах')).toHaveValue('java');
+  await expect(page.getByRole('checkbox', { name: 'Synthetic source', exact: true })).toBeChecked();
   await navigate(page, 'Шаблоны'); await card.getByRole('button', { name: 'Удалить', exact: true }).click();
   await expect(card).toHaveCount(0);
 });

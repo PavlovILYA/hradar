@@ -49,7 +49,7 @@ class SourceReadTest {
 
     @Test fun readsAllCloudChatKindsBySavedChatIdWithoutUsernameAndKeepsCaptions(): Unit = runBlocking {
         Repositories(Files.createTempDirectory("local-read").resolve("db")).use { repo ->
-            val native = Native(); val service = SourceReadService(repo, native::execute)
+            val native = Native(); val service = SourceReadService(repo, execute = native::execute)
             native.history = { chat, cursor, _ -> if (cursor == 0L) arrayOf(message(chat, 3).apply { content = TdApi.MessagePhoto().apply { caption = TdApi.FormattedText("Synthetic caption", emptyArray()) } }) else emptyArray() }
             for (id in 1L..7L) {
                 val source = save(repo, id)
@@ -63,7 +63,7 @@ class SourceReadTest {
     }
     @Test fun topicUsesNativeForumIdsAndWholeForumIncludesBothTopics(): Unit = runBlocking {
         Repositories(Files.createTempDirectory("local-topic").resolve("db")).use { repo ->
-            val native = Native(); val service = SourceReadService(repo, native::execute)
+            val native = Native(); val service = SourceReadService(repo, execute = native::execute)
             native.history = { chat, cursor, topic -> if (cursor == 0L) (listOf(message(chat, 3, 11), message(chat, 2, 22)).filter { topic == null || (it.topicId as TdApi.MessageTopicForum).forumTopicId == topic }.toTypedArray()) else emptyArray() }
             val all = save(repo, 7); val one = save(repo, 7, 11); val two = save(repo, 7, 22)
             assertEquals(listOf(3L, 2L), service.recent(all.key).messages.map { it.id })
@@ -74,7 +74,7 @@ class SourceReadTest {
     }
     @Test fun shortInclusiveHistoryPagesDoNotLoseMessagesOrStopEarly(): Unit = runBlocking {
         Repositories(Files.createTempDirectory("local-page").resolve("db")).use { repo ->
-            val source = save(repo, 1); val native = Native(); val service = SourceReadService(repo, native::execute)
+            val source = save(repo, 1); val native = Native(); val service = SourceReadService(repo, execute = native::execute)
             native.history = { chat, cursor, _ -> when(cursor) { 0L -> arrayOf(message(chat, 5), message(chat, 4)); 4L -> arrayOf(message(chat, 4), message(chat, 3)); 3L -> arrayOf(message(chat, 3), message(chat, 2)); else -> emptyArray() } }
             val first = service.recent(source.key, limit = 3)
             assertEquals(listOf(5L, 4L, 3L), first.messages.map { it.id }); assertEquals(3L, first.nextCursor)
@@ -84,7 +84,7 @@ class SourceReadTest {
     @Test fun selectedSearchDeduplicatesChatTopicOverlapAcrossPagesAndDoesNotResolveUsername(): Unit = runBlocking {
         Repositories(Files.createTempDirectory("local-search").resolve("db")).use { repo ->
             val whole = save(repo, 7); val one = save(repo, 7, 11); val two = save(repo, 7, 22)
-            val native = Native(); val service = SourceReadService(repo, native::execute)
+            val native = Native(); val service = SourceReadService(repo, execute = native::execute)
             native.search = { q -> TdApi.FoundChatMessages().apply {
                 val topic = (q.topicId as? TdApi.MessageTopicForum)?.forumTopicId
                 messages = if (q.fromMessageId == 0L) arrayOf(message(q.chatId, if (topic == 22) 9 else 10, topic ?: 11)) else emptyArray()
@@ -101,18 +101,19 @@ class SourceReadTest {
     }
     @Test fun searchKeepsCompletedSourceOnPartialRateLimitAndRetriesFailedSource(): Unit = runBlocking {
         Repositories(Files.createTempDirectory("local-rate").resolve("db")).use { repo ->
-            val a = save(repo, 1); val b = save(repo, 2); val native = Native(); val service = SourceReadService(repo, native::execute)
+            val a = save(repo, 1); val b = save(repo, 2); val native = Native(); var instant = System.currentTimeMillis(); val service = SourceReadService(repo, now = { instant }, execute = native::execute)
             var limited = true
             native.search = { q -> if (q.chatId == 2L && limited) throw TelegramRequestException(429, "FLOOD_WAIT_20") else TdApi.FoundChatMessages().apply { messages = arrayOf(message(q.chatId, 1)); nextFromMessageId = 0 } }
             val input = SearchRequest(mode = "sources", query = "Java", sourceKeys = listOf(a.key, b.key), withLinks = false)
             val first = service.search(input); assertEquals("rate_limited", first.state); assertEquals(1, first.messages.size)
-            limited = false
+            val waiting = service.search(input.copy(cursor = first.cursor)); assertEquals("rate_limited", waiting.state); assertTrue(waiting.messages.isEmpty())
+            instant += 21_000; limited = false
             val next = service.search(input.copy(cursor = first.cursor)); assertEquals(listOf(2L), next.messages.map { it.channelId }); assertTrue(next.cursor.isEmpty())
         }
     }
     @Test fun detailReflectsEditsAndMissingMessageWithoutInventingPrivateLinks(): Unit = runBlocking {
         Repositories(Files.createTempDirectory("local-detail").resolve("db")).use { repo ->
-            val source = save(repo, 1); val native = Native(); val service = SourceReadService(repo, native::execute)
+            val source = save(repo, 1); val native = Native(); val service = SourceReadService(repo, execute = native::execute)
             native.detail = message(1, 10, text = "Synthetic original")
             assertEquals("Synthetic original", service.detail(source.key, 10).text)
             native.detail = message(1, 10, text = "Synthetic edited")
@@ -125,14 +126,14 @@ class SourceReadTest {
         Repositories(Files.createTempDirectory("local-deleted-user").resolve("db")).use { repo ->
             val source = save(repo, 1); val native = Native().apply { deletedUser = true }
             native.history = { chat, cursor, _ -> if (cursor == 0L) arrayOf(message(chat, 10)) else emptyArray() }
-            assertEquals(listOf(10L), SourceReadService(repo, native::execute).recent(source.key).messages.map { it.id })
+            assertEquals(listOf(10L), SourceReadService(repo, execute = native::execute).recent(source.key).messages.map { it.id })
         }
     }
     @Test fun rejectsWrongTopicAndSecretChatInsteadOfFallingBackToWholeChat(): Unit = runBlocking {
         Repositories(Files.createTempDirectory("local-scope-denied").resolve("db")).use { repo ->
             val source = save(repo, 7, 11); val secret = save(repo, 9); val native = Native()
             native.history = { chat, _, _ -> arrayOf(message(chat, 10, 22)) }
-            val service = SourceReadService(repo, native::execute)
+            val service = SourceReadService(repo, execute = native::execute)
             assertFailsWith<IllegalArgumentException> { service.recent(source.key) }
             assertEquals(403, assertFailsWith<TelegramRequestException> { service.recent(secret.key) }.code)
             assertTrue(native.calls.none { it is TdApi.GetChatHistory && it.chatId == 9L })
@@ -142,7 +143,7 @@ class SourceReadTest {
         Repositories(Files.createTempDirectory("local-revoked").resolve("db")).use { repo ->
             val source = save(repo, 1); val native = Native(); val entered = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
             native.history = { chat, cursor, _ -> if (cursor == 0L) { entered.complete(Unit); release.await(); arrayOf(message(chat, 10)) } else emptyArray() }
-            val pending = async { runCatching { SourceReadService(repo, native::execute).recent(source.key) } }
+            val pending = async { runCatching { SourceReadService(repo, execute = native::execute).recent(source.key) } }
             entered.await(); repo.deleteSource(source.key); release.complete(Unit)
             assertTrue(pending.await().exceptionOrNull() is ResourceNotFound)
         }
@@ -151,7 +152,7 @@ class SourceReadTest {
         Repositories(Files.createTempDirectory("local-stalled").resolve("db")).use { repo ->
             val source = save(repo, 1); val native = Native()
             native.history = { chat, _, _ -> arrayOf(message(chat, 10)) }
-            val page = SourceReadService(repo, native::execute).recent(source.key, before = 10)
+            val page = SourceReadService(repo, execute = native::execute).recent(source.key, before = 10)
             assertEquals("cursor_stalled", page.state); assertEquals(10L, page.nextCursor); assertTrue(page.messages.isEmpty())
         }
     }
@@ -175,7 +176,7 @@ class SourceReadTest {
     }
     @Test fun nativeExclusiveHistoryReachesRealEmptyBottomForChatAndTopic(): Unit = runBlocking {
         Repositories(Files.createTempDirectory("native-exclusive-bottom").resolve("db")).use { repo ->
-            val native = Native(); val service = SourceReadService(repo, native::execute)
+            val native = Native(); val service = SourceReadService(repo, execute = native::execute)
             native.history = { chat, cursor, topic -> (5L downTo 1L).filter { cursor == 0L || it < cursor }.take(2).map { message(chat, it, topic) }.toTypedArray() }
             for (source in listOf(save(repo, 1), save(repo, 7, 11))) {
                 val first = service.recent(source.key, limit = 3)
@@ -187,7 +188,7 @@ class SourceReadTest {
     }
     @Test fun searchNeverAdvancesInvalidNativeCursorAndCapsInspectedIdentitiesPrecisely(): Unit = runBlocking {
         Repositories(Files.createTempDirectory("native-search-bound").resolve("db")).use { repo ->
-            val source = save(repo, 1); val native = Native(); val service = SourceReadService(repo, native::execute)
+            val source = save(repo, 1); val native = Native(); val service = SourceReadService(repo, execute = native::execute)
             var call = 0; var remaining = 20_000L
             native.search = { q ->
                 val count = if (call++ == 0) 99 else q.limit
@@ -209,7 +210,7 @@ class SourceReadTest {
 
     @Test fun unsupportedAndExpiredContentHaveExplicitAvailabilityAndPaidMediaCaptionIsReadable(): Unit = runBlocking {
         Repositories(Files.createTempDirectory("local-unavailable").resolve("db")).use { repo ->
-            val source = save(repo, 1); val native = Native(); val service = SourceReadService(repo, native::execute)
+            val source = save(repo, 1); val native = Native(); val service = SourceReadService(repo, execute = native::execute)
             native.detail = message(1, 10).apply { content = TdApi.MessageUnsupported() }
             assertEquals("unsupported", service.detail(source.key, 10).availability)
             native.detail = message(1, 10).apply { content = TdApi.MessageExpiredPhoto() }
@@ -221,7 +222,7 @@ class SourceReadTest {
 
     @Test fun accessErrorsAndRateLimitsPreserveNativeCodesAndCancellationPropagates(): Unit = runBlocking {
         Repositories(Files.createTempDirectory("local-errors").resolve("db")).use { repo ->
-            val source = save(repo, 1); val native = Native(); val service = SourceReadService(repo, native::execute)
+            val source = save(repo, 1); val native = Native(); val service = SourceReadService(repo, execute = native::execute)
             for (code in listOf(403, 429, 500)) {
                 native.fail = TelegramRequestException(code, "Synthetic sensitive native detail")
                 assertEquals(code, assertFailsWith<TelegramRequestException> { service.recent(source.key) }.code)
@@ -232,4 +233,37 @@ class SourceReadTest {
             assertTrue(pending.isCancelled)
         }
     }
+    @Test fun scopeSearchNeverLosesPageWhileOptionalLinksAreSlow(): Unit = runBlocking {
+        Repositories(Files.createTempDirectory("slow-scope-links").resolve("db")).use { repo ->
+            val source = save(repo, 1); val native = Native(); var links = 0
+            native.search = { TdApi.FoundChatMessages().apply { messages = (1L..30L).map { message(1, it) }.toTypedArray(); nextFromMessageId = 0 } }
+            val reader = SourceReadService(repo) { fn ->
+                if (fn is TdApi.GetMessageLink) { links++; delay(1000); TdApi.MessageLink("https://t.me/synthetic/1", true) }
+                else native.execute(fn)
+            }
+            val page = reader.search(SearchRequest(mode = "sources", query = "java", sourceKeys = listOf(source.key), limit = 30))
+            assertEquals(30, page.messages.size); assertEquals("", page.cursor); assertEquals(0, links)
+        }
+    }
+    @Test fun floodWaitDeadlineSurvivesRestartAndBlocksEarlyRetry(): Unit = runBlocking {
+        val path = Files.createTempDirectory("scope-durable-rate").resolve("db")
+        var instant = System.currentTimeMillis(); var key = ""; var calls = 0
+        Repositories(path).use { repo ->
+            key = save(repo, 1).key; val native = Native()
+            native.search = { calls++; throw TelegramRequestException(429, "FLOOD_WAIT_600") }
+            val reader = SourceReadService(repo, now = { instant }, execute = native::execute)
+            assertEquals("rate_limited", reader.search(SearchRequest(mode = "sources", query = "java", sourceKeys = listOf(key))).state)
+            assertTrue(repo.localMonitoringRetryAt() >= instant + 600_000)
+        }
+        Repositories(path).use { repo ->
+            val native = Native(); native.search = { calls++; TdApi.FoundChatMessages().apply { messages = emptyArray() } }
+            val reader = SourceReadService(repo, now = { instant }, execute = native::execute)
+            assertEquals("rate_limited", reader.search(SearchRequest(mode = "sources", query = "java", sourceKeys = listOf(key))).state)
+            assertEquals(1, calls)
+            instant += 601_000
+            assertEquals("ok", reader.search(SearchRequest(mode = "sources", query = "java", sourceKeys = listOf(key))).state)
+            assertEquals(2, calls)
+        }
+    }
+
 }

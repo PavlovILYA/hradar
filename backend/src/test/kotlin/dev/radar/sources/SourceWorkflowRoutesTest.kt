@@ -46,7 +46,7 @@ class SourceWorkflowRoutesTest {
         } }
         val gateway = TdlibGateway(databaseDirectory = path.parent.resolve("unused-session"))
         val matching = MatchingService()
-        val reader = SourceReadService(repo, native)
+        val reader = SourceReadService(repo, execute = native)
         val search = SearchService(gateway, repo, matching, native)
         val archive = SourceArchiveService(repo, { key, cursor -> reader.recent(key, cursor, 100) }, { true }, 0, 0, 0)
         val publicRecruiter = RecruiterService(repo, RecruiterSearchPort(search::search))

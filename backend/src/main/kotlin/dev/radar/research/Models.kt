@@ -17,6 +17,8 @@ data class SearchTemplate(
     val active: Boolean = true,
     val subscribed: Boolean = false,
     val subscriptionSince: Int = 0,
+    val sourceKeys: List<String> = emptyList(),
+    val notificationsEnabled: Boolean = true,
 )
 @Serializable
 data class MatchExplanation(val matches: Boolean, val foundRequired: List<String>, val foundAny: List<String>, val foundExcluded: List<String>, val missingRequired: List<String>)
@@ -27,6 +29,10 @@ data class SearchRequest(val mode: String = "channel", val query: String = "", v
 @Serializable
 data class SearchPage(val messages: List<ResearchMessage> = emptyList(), val cursor: String = "", val state: String = "ok", val notice: String? = null)
 @Serializable
-data class NotificationRecord(val id: String, val templateId: String, val templateName: String, val message: ResearchMessage, val read: Boolean = false, val sequence: Long = 0)
+data class NotificationRecord(val id: String, val templateId: String, val templateName: String, val message: ResearchMessage, val read: Boolean = false, val sequence: Long = 0, val detectedAt: Long = 0)
 @Serializable
 data class MonitoringState(val channelId: Long, val lastMessageId: Long = 0, val recoveryCursor: Long = 0, val recoveryHead: Long = 0, val error: String? = null, val retryAt: Long = 0)
+
+@Serializable data class DesktopPreferences(val enabled: Boolean = false, val hidePreview: Boolean = true)
+@Serializable data class DesktopDelivery(val id: String, val title: String, val body: String)
+@Serializable data class CachedSearchPage(val page: SearchPage, val fetchedAt: Long, val origin: String = "cache")

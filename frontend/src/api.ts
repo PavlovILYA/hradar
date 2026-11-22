@@ -36,7 +36,7 @@ export function normalizeUsername(value: string): string {
 export interface MonitoredChannel { id: number; username: string; title: string }
 export interface SearchTemplate {
   id: string; name: string; required: string[]; any: string[]; excluded: string[];
-  telegramQuery: string; sourceMode: 'all' | 'selected' | 'global'; sources: number[];
+  telegramQuery: string; sourceMode: 'all' | 'selected' | 'global' | 'chats'; sourceKeys?: string[]; notificationsEnabled?: boolean; sources: number[];
   active: boolean; subscribed: boolean;
 }
 export interface MatchExplanation { matches: boolean; foundRequired: string[]; foundAny: string[]; foundExcluded: string[]; missingRequired: string[] }
@@ -47,7 +47,7 @@ export function mutate<T>(path: string, method: string, body?: unknown, timeoutM
 export interface ResearchMessage extends TelegramMessage { sourceKey?: string | null; forumTopicId?: number | null; scopeTitle?: string | null; availability?: string; canGetMessageThread?: boolean; title?: string; username?: string | null; link?: string | null; explanation?: MatchExplanation | null }
 export interface SearchInput { mode: 'channel' | 'tracked' | 'global' | 'sources'; sourceKeys?: string[]; query: string; usernames: string[]; templateId?: string; limit: number; cursor?: string }
 export interface SearchPage { messages: ResearchMessage[]; cursor: string; state: string; notice?: string | null }
-export interface NotificationRecord { id: string; templateId: string; templateName: string; message: ResearchMessage; read: boolean; sequence: number }
+export interface NotificationRecord { id: string; templateId: string; templateName: string; message: ResearchMessage; read: boolean; sequence: number; detectedAt?: number }
 export interface NotificationPage { items: NotificationRecord[]; unread: number; cursor: number | null }
 export interface NotificationSummary { unread: number; revision: number; byChannel: Record<string, number>; telegram?: TelegramStatus }
 export interface HistorySyncRecord {

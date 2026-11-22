@@ -5,7 +5,7 @@ const source = { key: 'synthetic-cloud', chatId: 3001, type: 'PRIVATE', title: '
 const publicSource = { ...source, key: 'synthetic-public', chatId: -1001, type: 'CHANNEL', title: 'Synthetic public source', username: 'synthetic_jobs', isPublic: true, legacyChannel: true };
 const thread = { ...source, key: 'synthetic-discussion', chatId: -4001, type: 'SUPERGROUP', title: 'Synthetic linked discussion', scope: { kind: 'MESSAGE_THREAD', messageThreadId: 700 }, scopeTitle: 'Synthetic publication discussion' };
 const message = { id: 900, channelId: 3001, date: 1700000000, text: 'Synthetic Java developer looking for work', title: source.title, sourceKey: source.key, availability: 'available', link: null, canGetMessageThread: true };
-const template = { id: 'synthetic-rule', name: 'Synthetic Java rule', required: ['Java'], any: ['developer', 'engineer'], excluded: ['junior'], telegramQuery: 'Java', sourceMode: 'all', sources: [], active: true, subscribed: false };
+const template = { id: 'synthetic-rule', name: 'Synthetic Java rule', required: ['Java'], any: ['developer', 'engineer'], excluded: ['junior'], telegramQuery: 'Java', sourceMode: 'chats', sources: [], sourceKeys: [source.key], active: true, subscribed: false };
 
 async function fixture(page: Page) {
   const writes: { path: string; body: any; csrf?: string }[] = [];
@@ -14,15 +14,20 @@ async function fixture(page: Page) {
   await page.route('**/api/**', async route => {
     const req = route.request(), url = new URL(req.url()), path = url.pathname;
     const reply = (json: unknown) => route.fulfill({ json });
-    if (req.method() === 'POST') writes.push({ path, body: req.postData() ? req.postDataJSON() : null, csrf: req.headers()['x-hradar-csrf'] });
+    if (req.method() !== 'GET') writes.push({ path, body: req.postData() ? req.postDataJSON() : null, csrf: req.headers()['x-hradar-csrf'] });
+    if (path === '/api/source-catalog') return route.fulfill({ json: { items: [], cursor: null } });
+    if (path === '/api/workspace/desktop') return route.fulfill({ json: { enabled: false, hidePreview: true } });
+    if (path === '/api/workspace/saved') return reply({ items: [], nextCursor: null });
+    if (path === '/api/workspace/monitoring') return reply(enabled ? [subscription()] : []);
     if (path === '/api/events') return route.abort();
     if (path === '/api/telegram/status') return reply({ authorized: true, authorizationState: 'Ready', connectionState: 'Ready' });
     if (path === '/api/onboarding') return reply({ state: 'Ready', csrfToken: 'synthetic-csrf' });
     if (path === '/api/channels') return reply([{ id: -1001, title: publicSource.title, username: publicSource.username }]);
     if (path === '/api/sources') return reply({ items: saved });
-    if (path === '/api/templates') return reply([template]);
+    if (path === '/api/templates') return reply([{ ...template, subscribed: enabled }]);
+    if (path === `/api/workspace/templates/${template.id}`) { const body = req.postDataJSON(); enabled = body.subscribed; return reply(body); }
     if (path === '/api/monitoring' || path === '/api/history/syncs') return reply([]);
-    if (path === '/api/notifications') return reply({ items: [], unread: 0, cursor: null });
+    if (path === '/api/notifications') return reply({ items: [{ id: 'synthetic-local-match', templateId: template.id, templateName: template.name, message, read, sequence: 1 }], unread: read ? 0 : 1, cursor: null });
     if (path === '/api/notifications/summary') return reply({ unread: 0, revision: 0, byChannel: {} });
     if (path === '/api/projects') return reply({ items: [], total: 0 });
     if (path === '/api/saved') return reply({ items: [], nextCursor: null });
@@ -32,7 +37,7 @@ async function fixture(page: Page) {
     }
     if (path === `/api/sources/${publicSource.key}/monitoring`) return reply([]);
     if (path === '/api/local-notifications') return reply({ items: [{ id: 'synthetic-local-match', templateId: template.id, templateName: template.name, message, read, sequence: 1 }], unread: read ? 0 : 1, cursor: null });
-    if (path === '/api/local-notifications/synthetic-local-match/read' || path === '/api/local-notifications/read-all') { read = true; return reply({ success: true }); }
+    if (path === '/api/notifications/synthetic-local-match/read' || path === '/api/notifications/read-all') { read = true; return reply({ success: true }); }
     if (path === `/api/sources/${source.key}/messages/900/discussion`) { if (!saved.some(s => s.key === thread.key)) saved = [...saved, thread]; return reply(thread); }
     if (path === `/api/sources/${source.key}/messages/900`) return reply(message);
     if (path === `/api/sources/${source.key}/messages`) return reply({ messages: [message], nextCursor: null, state: 'ok' });
@@ -47,54 +52,43 @@ async function fixture(page: Page) {
   return { writes, status: (value: string) => { status = value; } };
 }
 
-test('local monitoring requires explicit source and template and retains pause rate and access states', async ({ page }) => {
+test('template monitoring configures its chats and exposes rate and access states in one screen', async ({ page }) => {
   const data = await fixture(page);
-  await openSection(page, 'Источники');
-  await page.getByText('Локальный мониторинг выбранного источника', { exact: true }).click();
-  const panel = page.getByRole('region', { name: 'Локальный мониторинг источника' });
-  await panel.getByLabel('Источник локального мониторинга').selectOption(source.key);
-  await panel.getByLabel('Шаблон локального мониторинга').selectOption(template.id);
+  await openSection(page, 'Шаблоны');
+  const card = page.locator('.template-card');
   expect(data.writes).toHaveLength(0);
-  await expect(panel.getByLabel('Источник локального мониторинга').getByRole('option', { name: /Synthetic public source/ })).toHaveCount(1);
-  await panel.getByRole('button', { name: 'Включить локальный мониторинг', exact: true }).click();
-  await expect(panel.getByText('Мониторинг включён', { exact: true })).toBeVisible();
-  expect(data.writes[0]).toMatchObject({ path: `/api/sources/${source.key}/monitoring`, body: { templateId: template.id, enabled: true }, csrf: 'synthetic-csrf' });
-  data.status('rate_limited'); await panel.getByRole('button', { name: 'Обновить состояние мониторинга' }).click();
-  await expect(panel.getByText('Лимит Telegram', { exact: true })).toBeVisible();
-  await expect(panel.getByRole('button', { name: 'Повторить мониторинг' })).toBeDisabled();
-  await panel.getByRole('button', { name: 'Приостановить мониторинг' }).click();
-  await expect(panel.getByText('Мониторинг на паузе', { exact: true })).toBeVisible();
-  await panel.getByRole('button', { name: 'Продолжить мониторинг' }).click();
-  await expect(panel.getByText('Мониторинг включён', { exact: true })).toBeVisible();
-  data.status('unavailable'); await panel.getByRole('button', { name: 'Обновить состояние мониторинга' }).click();
-  await expect(panel.getByText('Нет доступа к источнику', { exact: true })).toBeVisible();
-  await panel.getByRole('button', { name: 'Повторить мониторинг' }).click();
-  await expect(panel.getByText('Мониторинг включён', { exact: true })).toBeVisible();
-  expect(data.writes.every(w => w.path.startsWith(`/api/sources/${source.key}/monitoring`))).toBe(true);
+  await card.getByRole('button', { name: 'Включить мониторинг', exact: true }).click();
+  await expect(card).toContainText('Мониторинг включён');
+  expect(data.writes[0]).toMatchObject({ path: `/api/workspace/templates/${template.id}`, body: { sourceKeys: [source.key], subscribed: true }, csrf: 'synthetic-csrf' });
+  data.status('rate_limited'); await page.getByRole('button', { name: 'Обновить подписки' }).click();
+  await expect(card).toContainText('Лимит Telegram');
+  await expect(card).toContainText('Следующая попытка');
+  data.status('unavailable'); await page.getByRole('button', { name: 'Обновить подписки' }).click();
+  await expect(card).toContainText('Нет доступа к чату');
+  await openSection(page, 'Источники');
+  await expect(page.getByText('Локальный мониторинг выбранного источника', { exact: true })).toHaveCount(0);
 });
 
 test('failed local read keeps the unread match visible and allows retry before opening', async ({ page }) => {
   await fixture(page);
-  await page.route('**/api/local-notifications/synthetic-local-match/read', route =>
+  await page.route('**/api/notifications/synthetic-local-match/read', route =>
     route.fulfill({ status: 503, json: { error: 'Synthetic read failure' } }), { times: 1 });
   await openSection(page, 'Уведомления');
-  const local = page.getByRole('region', { name: 'Локальные совпадения' });
-  await local.getByRole('button', { name: 'Показать локальные совпадения' }).click();
-  await local.getByRole('button', { name: 'Открыть локальную публикацию' }).click();
-  await expect(local.getByRole('alert')).toBeVisible();
-  await expect(local.getByText('Непрочитано локально: 1', { exact: true })).toBeVisible();
-  await local.getByRole('button', { name: 'Открыть локальную публикацию' }).click();
+  const local = page.locator('.notification-center');
+  await local.getByRole('button', { name: 'Открыть публикацию' }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(local.locator('.notification-card.unread')).toHaveCount(1);
+  await local.getByRole('button', { name: 'Открыть публикацию' }).click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Поиск');
   await expect(page.getByRole('complementary', { name: 'Детали публикации' })).toContainText(message.text);
 });
 
-test('local matches stay separate and verified discussion opens as a saved thread without typed ids', async ({ page }) => {
+test('one inbox includes local matches and verified discussion opens as a saved thread without typed ids', async ({ page }) => {
   const { writes } = await fixture(page);
   await openSection(page, 'Уведомления');
-  await page.getByRole('button', { name: 'Показать локальные совпадения' }).click();
-  const local = page.getByRole('region', { name: 'Локальные совпадения' });
+  const local = page.locator('.notification-center');
   await expect(local.getByText(message.text)).toBeVisible();
-  await local.getByRole('button', { name: 'Открыть локальную публикацию' }).click();
+  await local.getByRole('button', { name: 'Открыть публикацию' }).click();
   const detail = page.getByRole('complementary', { name: 'Детали публикации' });
   await expect(detail).toContainText(source.title);
   await detail.getByRole('button', { name: 'Сохранить доступное обсуждение' }).click();
@@ -105,7 +99,7 @@ test('local matches stay separate and verified discussion opens as a saved threa
   await expect(read.getByRole('checkbox', { name: /Synthetic linked discussion/ })).toBeEnabled();
   await read.getByRole('button', { name: 'Получить сообщения источника' }).click();
   await expect(read.getByText(thread.title + ' / ' + thread.scopeTitle, { exact: true })).toBeVisible();
-  expect(writes).toContainEqual(expect.objectContaining({ path: '/api/local-notifications/synthetic-local-match/read', csrf: 'synthetic-csrf' }));
+  expect(writes).toContainEqual(expect.objectContaining({ path: '/api/notifications/synthetic-local-match/read' }));
   expect(writes).toContainEqual(expect.objectContaining({ path: `/api/sources/${source.key}/messages/900/discussion`, body: null, csrf: 'synthetic-csrf' }));
   await read.getByRole('button', { name: 'Детали ↗' }).click();
   await expect(detail.getByRole('button', { name: 'Сохранить доступное обсуждение' })).toHaveCount(0);
@@ -113,10 +107,10 @@ test('local matches stay separate and verified discussion opens as a saved threa
   await read.getByRole('button', { name: 'Искать в выбранных источниках' }).click();
   await expect.poll(() => writes.find(w => w.path === '/api/search')?.body.sourceKeys).toEqual([thread.key]);
   await openSection(page, 'Уведомления');
-  await local.getByRole('button', { name: 'Открыть локальную публикацию' }).click();
+  await local.getByRole('button', { name: 'Открыть публикацию' }).click();
   await detail.getByRole('button', { name: 'Сохранить доступное обсуждение' }).click();
   await detail.getByRole('button', { name: 'Открыть архив обсуждения' }).click();
   await expect(page.getByLabel('Сохранённый источник для архива')).toHaveValue(thread.key);
   await expect(page.getByRole('button', { name: 'Начать импорт источника' })).toBeEnabled();
-  expect(writes.some(w => w.path.startsWith('/api/notifications/'))).toBe(false);
+  expect(writes.some(w => w.path.startsWith('/api/local-notifications/'))).toBe(false);
 });

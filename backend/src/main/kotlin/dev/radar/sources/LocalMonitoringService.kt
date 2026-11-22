@@ -77,6 +77,18 @@ class LocalMonitoringService(
         } else null
         repo.configureLocalSubscription(source, template, old, enabled, head, since).also { refreshKnownIds() }
     }
+    /** Shared activation gate for template saves and compatibility source controls. */
+    suspend fun activationPage(key: String, before: Long, limit: Int): SourceMessagePage {
+        require(before == 0L && limit == 1)
+        check(ready()) { "Telegram пока недоступен" }
+        requestSlot()
+        return try { withTimeout(8_000) { readRecent(key, 0, 1) } }
+        catch (ex: TelegramRequestException) {
+            if (isRate(ex)) persistRateDeadline(ex)
+            throw ex
+        }
+    }
+    fun refreshConfiguration() = refreshKnownIds()
     fun offer(message: TdApi.Message) {
         if (message.chatId in knownChatIds) updates.trySend(message)
         // A full queue drops only the live hint: durable history recovery remains authoritative.

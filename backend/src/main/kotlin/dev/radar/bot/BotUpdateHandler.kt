@@ -59,7 +59,7 @@ class BotUpdateHandler(
                     if (parts[0] in setOf("match", "read", "review")) reply(inbox.details(parts[1], parts[0] == "read", botId, user).copy(editMessageId = callback.messageId.takeUnless { parts[0] == "review" }))
                     else reply(BotPayload(if (repo.confirmBotPublish(botId, user, parts[1], parts[0] == "publish", now())) "Публикация подтверждена и поставлена в очередь" else "Публикация отменена или разрешение истекло"))
                 } else if (parts.size == 2 && parts[0] in setOf("pause", "resume") && parts[1].matches(Regex("[a-f0-9-]{36}"))) {
-                    val template = subscriptions.list().find { it.id == parts[1] && it.subscribed && it.sourceMode != "global" }
+                    val template = subscriptions.list().find { it.id == parts[1] && it.subscribed && it.sourceMode !in setOf("global", "chats") }
                     if (template == null) reply(BotPayload("Подписка больше недоступна"))
                     else {
                         try {
@@ -117,7 +117,7 @@ class BotUpdateHandler(
         return callbackId
     }
     private fun subscriptionMenu(mode: String, offset: Int): BotPayload {
-        val rules = subscriptions.list().filter { it.subscribed && it.sourceMode != "global" && when (mode) { "pause" -> it.active; "resume" -> !it.active; else -> true } }
+        val rules = subscriptions.list().filter { it.subscribed && it.sourceMode !in setOf("global", "chats") && when (mode) { "pause" -> it.active; "resume" -> !it.active; else -> true } }
         val page = rules.drop(offset).take(20)
         val rows = page.map { t -> listOf(BotButton("${if (t.active) "⏸" else "▶"} ${t.name.take(60)}", "${if (mode == "subscriptions") { if (t.active) "pause" else "resume" } else mode}:${t.id}")) }.toMutableList()
         val navigation = buildList {

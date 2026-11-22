@@ -65,6 +65,19 @@ class BotTest {
         }
         override fun close() { bot.close(); repo.close() }
     }
+    @Test fun ownerChatTemplatesDoNotAppearInBotSubscriptionsOrAcceptCallbacks() = runBlocking {
+        Fixture().use { f ->
+            val source = f.repo.saveSource(dev.radar.sources.TelegramSource(chatId = 123, type = dev.radar.sources.SourceType.PRIVATE, title = "Synthetic private"))
+            val rule = f.repo.saveTemplate(SearchTemplate(name = "Synthetic private rule", required = listOf("java"), telegramQuery = "java", sourceMode = "chats", sourceKeys = listOf(source.key), subscribed = true))
+            f.optIn()
+            val handler = BotUpdateHandler(config(), f.repo, f.subscriptions, { "ready" }, { f.time })
+            handler.handle(messageUpdate(2, "/subscriptions"), "synthetic_bot")
+            f.bot.deliverOnce()
+            assertFalse(f.fake.sent.single().second.toString().contains(rule.name))
+            handler.handle(callback(3, "pause:${rule.id}"), "synthetic_bot")
+            assertTrue(f.repo.template(rule.id)!!.active)
+        }
+    }
     @Test fun inboxCommandsNavigationReadAndOriginalUseSavedMatches() = runBlocking {
         Fixture().use { f ->
             f.repo.saveChannel(channel); val rule = f.rule()
@@ -173,7 +186,7 @@ class BotTest {
             f.repo.recordMatch(rule, f.publication())
         }
         DriverManager.getConnection("jdbc:sqlite:$path").use { db -> db.createStatement().use { s ->
-            listOf("local_monitoring_limits", "local_matches", "local_subscriptions", "local_project_publications", "local_source_membership", "local_source_sync", "local_publications").forEach { s.execute("DROP TABLE $it") }; s.execute("DROP TABLE telegram_sources"); s.execute("DROP TABLE bot_access"); s.execute("DROP TABLE bot_invitations"); s.execute("DROP TABLE bot_publish_request"); s.execute("DROP TABLE bot_publish_permission"); s.execute("DROP TABLE bot_workspace"); s.execute("DROP TABLE publication_decisions"); s.execute("DROP INDEX matches_date"); s.execute("ALTER TABLE matched_messages DROP COLUMN message_date"); s.execute("PRAGMA user_version=5")
+            listOf("owner_inbox", "owner_bookmarks", "desktop_preferences", "search_cache", "local_monitoring_limits", "local_matches", "local_subscriptions", "local_project_publications", "local_source_membership", "local_source_sync", "local_publications").forEach { s.execute("DROP TABLE $it") }; s.execute("DROP TABLE telegram_sources"); s.execute("DROP TABLE bot_access"); s.execute("DROP TABLE bot_invitations"); s.execute("DROP TABLE bot_publish_request"); s.execute("DROP TABLE bot_publish_permission"); s.execute("DROP TABLE bot_workspace"); s.execute("DROP TABLE publication_decisions"); s.execute("DROP INDEX matches_date"); s.execute("ALTER TABLE matched_messages DROP COLUMN message_date"); s.execute("PRAGMA user_version=5")
         } }
         Fixture(path).use { f ->
             assertEquals(2L, f.repo.botOffset(123)); assertTrue(f.repo.botRegistered(123, 7))
@@ -327,7 +340,7 @@ class BotTest {
             repo.saveHistoryPage(state, listOf(TelegramMessage(1, 1700000000, "Synthetic Java", channel.id)))
         }
         DriverManager.getConnection("jdbc:sqlite:$path").use { db -> db.createStatement().use { s ->
-            listOf("local_monitoring_limits", "local_matches", "local_subscriptions", "local_project_publications", "local_source_membership", "local_source_sync", "local_publications", "telegram_sources", "bot_access", "bot_invitations", "bot_publish_request", "bot_publish_permission", "bot_outbox", "bot_recipients", "bot_state").forEach { s.execute("DROP TABLE $it") }; s.execute("DROP TABLE bot_workspace"); s.execute("DROP TABLE publication_decisions"); s.execute("DROP INDEX matches_date"); s.execute("ALTER TABLE matched_messages DROP COLUMN message_date"); s.execute("PRAGMA user_version=4")
+            listOf("owner_inbox", "owner_bookmarks", "desktop_preferences", "search_cache", "local_monitoring_limits", "local_matches", "local_subscriptions", "local_project_publications", "local_source_membership", "local_source_sync", "local_publications", "telegram_sources", "bot_access", "bot_invitations", "bot_publish_request", "bot_publish_permission", "bot_outbox", "bot_recipients", "bot_state").forEach { s.execute("DROP TABLE $it") }; s.execute("DROP TABLE bot_workspace"); s.execute("DROP TABLE publication_decisions"); s.execute("DROP INDEX matches_date"); s.execute("ALTER TABLE matched_messages DROP COLUMN message_date"); s.execute("PRAGMA user_version=4")
         } }
         Fixture(path).use { f ->
             assertEquals(channel, f.repo.channels().single()); assertEquals(1, f.repo.unreadCount())

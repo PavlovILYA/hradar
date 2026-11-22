@@ -43,7 +43,7 @@ object SourceBrowserFixture {
         val matching = MatchingService()
         val gateway = TdlibGateway(1, "unused", directory)
         val search = SearchService(gateway, repo, matching, native)
-        val reader = SourceReadService(repo, native)
+        val reader = SourceReadService(repo, execute = native)
         val archive = SourceArchiveService(repo, { key, cursor -> reader.recent(key, cursor, 100) }, { true }, pageDelayMs = 0, requestIntervalMs = 0)
         val projects = RecruitmentProjectService(repo, matching, SubscriptionService(repo, matching), RecruiterService(repo, RecruiterSearchPort(search::search)), localSearch = LocalProjectSearchService(repo, RecruiterSearchPort(search::search)))
         Runtime.getRuntime().addShutdownHook(Thread { archive.close(); repo.close() })

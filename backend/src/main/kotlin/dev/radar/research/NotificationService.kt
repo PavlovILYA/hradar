@@ -16,16 +16,15 @@ import java.util.concurrent.atomic.AtomicLong
 
 class NotificationService(private val repo: Repositories, private val matching: MatchingService) {
     private val revision = AtomicLong()
-    fun summary() = NotificationSummary(repo.unreadCount(), revision.get(), repo.unreadByChannel())
+    fun summary() = NotificationSummary(repo.inboxUnread(), repo.inboxRevision() + revision.get(), repo.inboxByChat())
     fun page(limit: Int, before: Long): NotificationPage {
-        val items = repo.notifications(limit, before)
-        return NotificationPage(items, repo.unreadCount(), items.lastOrNull()?.sequence?.takeIf { items.size == limit })
+        return repo.inboxPage(limit, before)
     }
-    fun read(id: String) { if (!repo.markRead(id)) throw ResourceNotFound(); revision.incrementAndGet() }
-    fun readAll() { repo.markAllRead(); revision.incrementAndGet() }
+    fun read(id: String) { if (!repo.readInbox(id)) throw ResourceNotFound(); revision.incrementAndGet() }
+    fun readAll() { repo.readInbox(); revision.incrementAndGet() }
     fun process(channel: MonitoredChannel, message: ResearchMessage): Int {
         var count = 0
-        repo.templates().filter { it.active && it.subscribed && message.date >= it.subscriptionSince && it.sourceMode != "global" && (it.sourceMode == "all" || channel.id in it.sources) }.forEach { template ->
+        repo.templates().filter { it.active && it.subscribed && message.date >= it.subscriptionSince && it.sourceMode !in setOf("global", "chats") && (it.sourceMode == "all" || channel.id in it.sources) }.forEach { template ->
             // Matching must use the live rule in the write transaction: a rule can
             // change after this snapshot, including making a previous non-match eligible.
             if (repo.recordMatch(template, message, monitoring = matching)) count++
@@ -77,7 +76,7 @@ class MonitoringService(
         cooldownUntil = maxOf(cooldownUntil, repo.channels().maxOfOrNull { repo.state(it.id)?.retryAt ?: 0L } ?: 0L)
         if (System.currentTimeMillis() >= cooldownUntil) serial.withLock {
             knownIds = repo.channels().map { it.id }.toSet()
-            val templates = repo.templates().filter { it.active && it.subscribed && it.sourceMode != "global" }
+            val templates = repo.templates().filter { it.active && it.subscribed && it.sourceMode !in setOf("global", "chats") }
             for (channel in repo.channels().filter { c -> templates.any { it.sourceMode == "all" || c.id in it.sources } }) {
                 if (System.currentTimeMillis() < cooldownUntil) break
                 try { recover(channel) }

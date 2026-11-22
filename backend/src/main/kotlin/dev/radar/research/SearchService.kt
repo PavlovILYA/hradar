@@ -47,7 +47,7 @@ class SearchService(private val telegram: TdlibGateway, private val repo: Reposi
         } else null
         return ResearchMessage(message.id, message.chatId, message.date, messageText(message.content), channel.title, channel.username.takeIf { it.isNotBlank() }, link)
     }
-    private val selectedSources = dev.radar.sources.SourceReadService(repo, execute)
+    private val selectedSources = dev.radar.sources.SourceReadService(repo, execute = execute)
     suspend fun search(input: SearchRequest): SearchPage = withTimeout(90_000) {
         if (input.sourceKeys.isNotEmpty() || input.mode == "sources") return@withTimeout selectedSources.search(input)
         require(input.limit in 1..100) { "Количество результатов: от 1 до 100" }

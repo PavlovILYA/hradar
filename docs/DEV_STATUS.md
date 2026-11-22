@@ -1,5 +1,74 @@
 # hradar — Development status / session handoff
 
+## Unified chat search and template monitoring — 2026-11-17
+
+Feature `feat/unified-search-monitoring`, isolated from fetched master
+`4836d87b94694e9581c5a57f8c5911e6548e4461`. Root checkout/untracked hradar_stop.py
+and all existing worktrees preserved. Compatible MINOR **0.9.0**; version.py sync/check.
+SQLite **12→13**, independent of the application version.
+
+VERIFIED:
+- Account catalog selection without a separate save-source step; metadata-only lazy
+  browse/filter/topic pagination. Up to ten explicit scopes, visible select-all bound,
+  sequential paged search with per-chat partial/access/timeout errors and durable
+  actual FLOOD_WAIT. Optional links resolve on explicit detail open, preserving pages.
+- OwnerWorkflowService snapshots new heads through the existing monitoring ready/
+  request/flood gate, then atomically writes template + selected subscriptions.
+  Pause/resume preserves checkpoints. Existing public flags and old local pairs are
+  retained on legacy edits; new chat rules cannot enter public matching, Bot control
+  menus/callbacks, MCP rule reads or public notification outbox.
+- One owner-local inbox projection with identity template/chat/message, shared read/
+  unread/pagination/SSE. Both workers insert transactionally; raw historical backfill
+  neither rewrites old records nor creates delivery events. Legacy adapters stay isolated.
+- Explicit timestamped cache: returned excerpts only, 50 pages, 100 items/page,
+  4000 chars/item, 24-hour read TTL. Clear affects only cache. Search-result bookmarks
+  are isolated from Bot/MCP and survive cache clear and restart.
+- Global opt-in and per-template delivery opt-out, private previews hidden by default;
+  durable at-most-once browser delivery claim, click-to-match, no historic backfill.
+  Crash after claim may lose the popup; persisted match remains. No native guarantee.
+- Final JDK21 `./gradlew :backend:build --console=plain
+  -Pkotlin.compiler.execution.strategy=in-process`: **248 tests, 0 failures/errors/skips**,
+  exit0. Real Ktor routes + fake TDLib workflow; new/nonmatching AND/OR/NOT messages,
+  subscription atomicity, migration12/13 rollback/overlap/reopen, private isolation,
+  long flood wait/restart, slow-link pagination and existing migration/cursor matrices.
+- `npm run build --prefix frontend`: exit0. `HRADAR_TEST_PORT=5191 npm run test:ci
+  --prefix frontend`: **69 passed**, including source reading/discussions, unified
+  inbox, browser permission/claim flow, template setup, partial search and narrow UI.
+  Python unittest discovery: **32 passed**. version.py check and git diff --check pass.
+- Independent read-only whole-branch review found initial activation gate bypass,
+  legacy public-scope expansion, Bot controls exposure, slow-link page loss,
+  short volatile flood deadline and partial-selection select-all bug. Fixed with
+  corresponding regressions; existing read-state compatibility also synchronized.
+- Bundled source `:backend:stageDesktop -PbundledWeb=true` exit0. Reused exact
+  matching portable Intel JAR/JNI assets, SHA256 verified against their manifest,
+  pinned TDLib bc9c263; no native rebuild or installer publication.
+- Real source launcher started on **127.0.0.1:1709**, PID **65216**;
+  `/health` HTTP200, URL `http://hradar.localhost:1709/`. Established ~/.hradar
+  database upgraded12→13 after consistent owner-only backup
+  `~/.hradar/backups/research.pre-unified-v13-20261117T175346Z.sqlite`, integrity ok.
+  All pre-upgrade table row counts preserved. No test sends, joins or imports.
+  Normal startup uses the owner's existing session/settings; Docker on8080 untouched.
+
+NOT VERIFIED:
+- Fresh live hradar QA post→match, real browser/OS notification display and click,
+  physical macOS permissions/Focus behavior. Fake delivery is not OS delivery proof.
+- Native Notification Center delivery with browser closed is **not implemented**.
+  JDK21 AWT launcher has no reliable native permission/delegate/click lifecycle;
+  chose the task's allowed browser fallback instead of an unverified native subsystem.
+- Select-all is the visible bounded snapshot (up to10), not exhaustive account-wide
+  Telegram search/monitoring. Later chats never silently join a template scope.
+- No new hosted CI/ARM64 or installer test is claimed from local Intel checks.
+
+NEXT ACTION:
+- Push feature branch and create one Draft PR into master; inspect exact-head CI.
+  No merge, tag, Release or installer publication. Manual hradar QA steps and
+  migration recovery: [UNIFIED_SEARCH.md](UNIFIED_SEARCH.md).
+- In the opened source app select hradar QA directly, search Java, save an active
+  template with monitoring, personally publish a fresh synthetic post. Check one
+  inbox match/unread and browser popup only after explicit global/permission opt-in.
+  Pause/resume/restart and denial/privacy toggles need physical user confirmation.
+
+
 ## PR #17 rebased after merged Stage C — 2026-11-08
 
 Existing `feat/macos-app-icon` / PR#17 rebased onto fetched master

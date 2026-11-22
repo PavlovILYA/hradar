@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { request } from './api';
+import { ownerMutation } from './ownerApi';
 import type { ResearchMessage } from './api';
 interface SavedResult { id: string; status: string; message: ResearchMessage; sequence: number; updatedAt: number }
 interface Page { items: SavedResult[]; nextCursor: number | null }
 const labels: Record<string, string> = { SAVED: 'Сохранено', REJECTED: 'Не подходит', REMOVED: 'Убрано из избранного', VIEWED: 'Просмотрено' };
 export function SavedResults() {
+  const [local, setLocal] = useState<Page>({ items: [], nextCursor: null });
   const [status, setStatus] = useState('SAVED');
   const [page, setPage] = useState<Page>({ items: [], nextCursor: null });
   const [error, setError] = useState('');
@@ -17,9 +19,16 @@ export function SavedResults() {
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   }
-  useEffect(() => { void load(); }, [status]);
+  async function loadLocal(more = false) {
+    try { const value = await request<Page>(`/api/workspace/saved${more && local.nextCursor ? `?before=${local.nextCursor}` : ''}`); setLocal(old => ({ ...value, items: more ? [...old.items, ...value.items] : value.items })); }
+    catch(e) { setError((e as Error).message); }
+  }
+  useEffect(() => { void load(); void loadLocal(); }, [status]);
   return <section className="mcp-integration" aria-label="Сохранённые публикации"><h2>Избранное и решения</h2>
-    <p className="helper">Публикации, сохранённые в Telegram-боте. Решения относятся к оператору, который их принял; список объединяет операторов локального workspace.</p>
+    <h3>Сохранено из поиска</h3><button className="text-button" onClick={() => void loadLocal()}>Обновить сохранённые из поиска</button>
+    {local.items.map(item => <article className="message-card" key={item.id}><strong>{item.message.title}</strong><p className="message-text">{item.message.text}</p>{item.message.link && /^https:\/\/t\.me\//.test(item.message.link) && <a href={item.message.link} target="_blank" rel="noreferrer">Открыть оригинал ↗</a>}<button className="text-button" onClick={() => void ownerMutation(`/api/workspace/saved/${item.id}`, 'DELETE').then(() => loadLocal()).catch(e => setError((e as Error).message))}>Убрать из избранного</button></article>)}
+    {local.nextCursor && <button className="text-button" onClick={() => void loadLocal(true)}>Ещё сохранённые из поиска</button>}
+    <h3>Решения Telegram-бота</h3><p className="helper">Публикации, сохранённые в Telegram-боте. Решения относятся к оператору, который их принял; список объединяет операторов локального workspace.</p>
     <label htmlFor="saved-status">Статус публикаций</label><select id="saved-status" value={status} disabled={busy} onChange={e => setStatus(e.target.value)}>{Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
     <button className="secondary-button" disabled={busy} onClick={() => void load()}>Обновить избранное</button>
     {error && <p role="alert" className="error">{error}</p>}
