@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-export type Screen = 'overview' | 'projects' | 'search' | 'saved' | 'notifications' | 'sources' | 'archive' | 'templates' | 'bot' | 'mcp' | 'application';
+export type Screen = 'overview' | 'projects' | 'search' | 'saved' | 'notifications' | 'sources' | 'archive' | 'templates' | 'bot' | 'mcp' | 'application' | 'documents';
 const groups: { title: string; items: { id: Screen; label: string; symbol: string }[] }[] = [
   { title: 'Рабочее пространство', items: [
     { id: 'overview', label: 'Обзор', symbol: '◫' },
@@ -10,7 +10,7 @@ const groups: { title: string; items: { id: Screen; label: string; symbol: strin
     { id: 'saved', label: 'Сохранённые публикации', symbol: '☆' },
     { id: 'projects', label: 'Проекты', symbol: '▤' },
   ] },
-  { title: 'Локальные данные', items: [{ id: 'sources', label: 'Управление чатами', symbol: '▥' }, { id: 'archive', label: 'Локальный архив', symbol: '▣' }] },
+  { title: 'Локальные данные', items: [{ id: 'sources', label: 'Управление чатами', symbol: '▥' }, { id: 'archive', label: 'Локальный архив', symbol: '▣' }, { id: 'documents', label: 'Документы', symbol: '▧' }] },
   { title: 'Настройки', items: [{ id: 'bot', label: 'Telegram Bot', symbol: '↗' }, { id: 'mcp', label: 'MCP', symbol: '◇' }, { id: 'application', label: 'Состояние приложения', symbol: '⚙' }] },
 ];
 export const screenTitles = Object.fromEntries(groups.flatMap(group => group.items.map(item => [item.id, item.label]))) as Record<Screen, string>;

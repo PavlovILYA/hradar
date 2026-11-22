@@ -1,3 +1,5 @@
+import { Documents } from './Documents';
+import { UpdateStatus } from './UpdateStatus';
 import { Onboarding, desktopLaunch, shutdownDesktop, isDesktop } from './Onboarding';
 import { Projects, type ProjectIntent } from './Projects';
 import { Dashboard } from './Dashboard';
@@ -47,7 +49,7 @@ function App() {
   const [notice, setNotice] = useState('');
   const [result, setResult] = useState<{ username: string; messages: ResearchMessage[] } | null>(null);
   const [filter, setFilter] = useState('');
-  const [screen, setScreen] = useState<Screen>(() => (['overview', 'application', 'search', 'notifications', 'templates', 'saved', 'projects', 'archive'].includes(new URLSearchParams(location.search).get('screen') ?? '') ? new URLSearchParams(location.search).get('screen') : 'overview') as Screen);
+  const [screen, setScreen] = useState<Screen>(() => (['overview', 'application', 'search', 'notifications', 'templates', 'saved', 'projects', 'archive', 'documents'].includes(new URLSearchParams(location.search).get('screen') ?? '') ? new URLSearchParams(location.search).get('screen') : 'overview') as Screen);
   const currentScreen = useRef(screen);
   const selectionEpoch = useRef(0);
   function setError(message: string, context: Screen = screen) { if (!message || currentScreen.current === context) setErrorState(message); }
@@ -256,7 +258,7 @@ function App() {
     <main className="workspace-main" inert={navigationOpen || undefined}>
       <header className="workspace-header"><button id="navigation-toggle" className="navigation-toggle icon-button" aria-label="Открыть навигацию" aria-expanded={navigationOpen} aria-controls="workspace-navigation" onClick={() => setNavigationOpen(true)}>☰</button>
         <div><h1 ref={heading} tabIndex={-1}>{screenTitles[screen]}</h1><span role="status" className={`connection-status ${statusFresh && status?.authorized && status.connectionState === 'Ready' ? 'online' : ''}`}>{statusLabel}</span></div>
-        <details className={`update-status ${eventConnected ? 'connected' : 'reconnecting'}`}><summary aria-label={eventConnected ? 'Обновления подключены' : 'Обновления переподключаются'} title={eventConnected ? 'Обновления подключены' : 'Обновления переподключаются'}><span aria-hidden="true">●</span></summary><div role="note">{eventConnected ? 'Новые совпадения обновляются автоматически.' : 'Соединение обновлений восстанавливается. Совпадения сохраняются; можно обновить список вручную.'}<button className="text-button" onClick={() => navigate('application')}>Состояние приложения</button></div></details>
+        <UpdateStatus connected={eventConnected} screen={screen} onApplication={() => navigate('application')} />
         <button className="icon-button" aria-label="Обновить статус" disabled={checking} onClick={() => void checkStatus()}>↻</button>
         {selected && screen === selectionContext && !detailsOpen && <button className="text-button" onClick={() => setDetailsOpen(true)}>Открыть детали</button>}
       </header>
@@ -268,6 +270,7 @@ function App() {
           {view('projects', <Projects active={screen === 'projects'} intent={projectIntent} onSelect={m => void selectMessage(m)} />)}
           {view('sources', <Sources templates={templates} active={screen === 'sources'} sources={sources} unread={byChannel} refresh={refreshResearch} onMessages={source => void loadMessages(undefined, source)} onArchive={openArchive} onSelectedMessages={source => openSelectedSource(source)} onSelectedArchive={source => openSelectedSource(source, true)} />)}
           {view('templates', <div className="data-screen"><Templates templates={templates} channels={sources} refresh={refreshResearch} onRun={t => void runSearch(t)} onError={setError} /></div>)}
+          {view('documents', <Documents active={screen === 'documents'} onSelect={m => void selectMessage(m, 'documents')} />)}
           {view('saved', <SavedResults onSelect={m => void selectMessage(m)} active={screen === 'saved'} />)}
           {view('bot', <BotIntegration />)}
           {view('mcp', <McpIntegration active={screen === 'mcp'} />)}
@@ -275,7 +278,7 @@ function App() {
           {view('notifications', <><details className="delivery-settings"><summary>Всплывающие уведомления</summary><NotificationPreferences /></details><Notifications items={notificationPage.items} unread={notificationPage.unread} cursor={notificationPage.cursor} onRead={ids => void notificationAction(ids.map(id => `/api/notifications/${id}/read`))} onRefresh={() => void refreshNotifications().catch(e => setError((e as Error).message))} onReadAll={() => void notificationAction('/api/notifications/read-all')} onOpen={openNotification} onMore={() => void refreshNotifications(true).catch(e => setError((e as Error).message))} /></>)}
           {view('application', <section className="data-screen application-state"><h2>Подключение и работа приложения</h2><dl><dt>Версия hradar</dt><dd>{appVersion}</dd><dt>Telegram</dt><dd>{statusLabel}</dd><dt>Этап авторизации</dt><dd>{status?.authorizationState ?? 'Нет ответа'}</dd><dt>Соединение</dt><dd>{status?.connectionState ?? 'Нет ответа'}</dd><dt>Обновления уведомлений</dt><dd>{eventConnected ? 'Подключены' : 'Переподключение'}</dd></dl><p className="helper">Настройки и данные сохраняются локально. При завершении hradar мониторинг и доставка сообщений ботом остановятся.</p>{isDesktop() ? <button className="secondary-button" onClick={() => void shutdownDesktop().catch(e => setError((e as Error).message))}>Завершить hradar</button> : <p className="helper">Кнопка завершения доступна при запуске через desktop-приложение.</p>}</section>)}
           {view('search', <>
-            <section className="online-search" aria-label="Онлайн-поиск">{searchMode !== 'sources' && <><h2>Поиск в Telegram</h2><p className="helper compact">Источник результатов: Telegram API. Локальный архив не используется.</p></>}
+            <div className="archive-actions"><span className="helper">Источник результатов: Telegram</span><button className="secondary-button" onClick={() => navigate('documents')}>Искать в локальных документах</button></div><section className="online-search" aria-label="Онлайн-поиск">{searchMode !== 'sources' && <><h2>Поиск в Telegram</h2><p className="helper compact">Источник результатов: Telegram API. Локальный архив не используется.</p></>}
               <label htmlFor="search-mode">Область поиска</label><select id="search-mode" value={searchMode} onChange={e => { setSourceReading(false); setSearchMode(e.target.value as SearchInput['mode']); }}><option value="sources">В чатах Telegram</option><option value="channel">В текущем канале</option><option value="tracked">В выбранных источниках</option><option value="global">Публичные публикации · глобально</option></select>
               {searchMode === 'sources' ? sourceReading ? <SelectedSourceSearch key={`${selectedSourceKey}:${sourceIntentRevision}`} initialKey={selectedSourceKey} templates={templates} onSelect={m => void selectMessage(m)} /> : <ChatSearch key={`${selectedSourceKey}:${sourceIntentRevision}:${chatTemplateId}`} initialKey={selectedSourceKey} templateId={chatTemplateId} templates={templates} refresh={refreshResearch} onSavedSearch={() => { navigate('templates'); setNotice('Поиск сохранён. Его настройки и отслеживание доступны ниже.'); }} onSelect={m => void selectMessage(m)} /> : <>
               {searchMode === 'channel' && <><label htmlFor="search-source">Сохранённый источник</label><select id="search-source" value={sources.some(s => '@' + s.username === username) ? username.replace(/^@/, '') : ''} onChange={e => setUsername('@' + e.target.value)}><option value="" disabled>Или введите username ниже</option>{sources.map(s => <option value={s.username} key={s.id}>{s.title} · @{s.username}</option>)}</select><label htmlFor="username">Username канала</label><input id="username" value={username} onChange={e => setUsername(e.target.value)} placeholder="@telegram" /></>}
