@@ -153,7 +153,8 @@ MCP is **a tool protocol, not an agent runtime**. The bot calls shared services 
 
 ## Local storage and security boundaries
 
-- SQLite: `~/.hradar/data/research.sqlite` (schema tracked via migrations; currently v13, including owner-local scoped subscriptions, a unified local inbox, bounded search cache and local bookmarks).
+- SQLite: `~/.hradar/data/research.sqlite` (schema tracked via migrations; currently v14, including owner-local scoped subscriptions, a unified local inbox, bounded search cache, local bookmarks and explicit document metadata/FTS5).
+- Managed document originals: `~/.hradar/documents/<sha256>`; bounded extracted text stays separately in SQLite and never enters Bot/MCP.
 - TDLib account session: `~/.hradar/tdlib/`. It is sensitive and never belongs in Git, logs, or MCP results.
 - Credentials: desktop owner-only `~/.hradar/config/telegram-api.json` for API ID/hash and `~/.hradar/config/telegram-bot.json` for the Bot API token. Development `.env`/environment may provide legacy `TG_BOT_TOKEN` and `TG_BOT_ALLOWED_USER_IDS`; saved bot settings take precedence. Tokens are never returned to UI or status endpoints.
 - `RuntimePaths` owns the paths. Startup checks the fixed port and migrates old files, including saved bot configuration, before opening SQLite or TDLib. Migration retains originals and verified private backups; see [`STORAGE_MIGRATION.md`](docs/STORAGE_MIGRATION.md).
@@ -293,3 +294,13 @@ Owner-only project additions may reuse trusted inbox/bookmark/fresh bounded-cach
 evidence after current source/topic and expected-project checks. Another project's
 local search evidence remains isolated. This adds no schema, worker, client or
 Bot/MCP capability. See [UX workflow and limits](docs/UX_WORKFLOW_0_10.md).
+
+### 0.11 owner-local documents
+
+DocumentService extends existing scoped source reads and the single TDLib gateway
+with explicit bounded file downloads. Schema14 adds documents and owner-only FTS5;
+original SHA256 blobs under RuntimePaths.documents stay separate from indexed text.
+A memory/time-limited child JVM extracts PDFBox PDF, hardened ZIP/XML DOCX and TXT.
+No document service is wired to Bot/MCP, archive import or automatic monitoring.
+Protected file routes preserve desktop/Host/Origin/CSRF guards. See
+[Telegram document workflow and recovery](docs/TELEGRAM_DOCUMENTS.md).

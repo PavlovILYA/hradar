@@ -1,5 +1,66 @@
 # hradar — Development status / session handoff
 
+## Telegram documents 0.11.0 — 2026-11-23
+
+Branch `feat/telegram-files-0.11`, isolated worktree `hradar-files`, based on fetched
+master with merged PR19 `f6ed9af`. Application code/package SHA **9c93fc4**;
+subsequent commits change test tooling/documentation only. Version **0.11.0** once,
+canonical gradle.properties + version.py sync/check. SQLite **13→14**.
+
+VERIFIED:
+- Explicit scoped PDF/DOCX/TXT metadata discovery, one bounded download queue,
+  existing gateway DownloadFile/GetFile/CancelDownloadFile, private SHA256 originals,
+  separate bounded SQLite text/FTS5 and original-publication links. No automatic
+  archive import/download or Bot/MCP document exposure. See TELEGRAM_DOCUMENTS.md.
+- JDK21 `:backend:build :backend:stageDesktop :backend:desktopMenuSmoke
+  -PbundledWeb=true`: exit0, **275 tests, zero failures/errors/skips**. Synthetic
+  formats, parser subprocess limits, fake RPC lifecycle/cancel/network retry/flood,
+  path/protected-source denial, quotas, dedup/reindex/restart, atomic migration14
+  rollback/retry/preservation and Ktor HTTP content search/file/CSRF guards.
+- `npm run build --prefix frontend`: exit0; full offline Playwright **85/85**,
+  then latest document-control changes **4/4**. SSE outside-click bug reproduced
+  before fix; controlled popover tested for toggle/outside/Escape/focus/navigation.
+  Documents, separate text dialog, progress/cancel/errors and390px themes verified.
+- Python unittest **32/32**, version check, diff whitespace and tracked-secret scan.
+- Actual Intel SystemTray and stalled-health/browser quit cleanup passed. Portable
+  TDLib bc9c263 JAR/JNI pair reused with matching SHA256 manifest, no native rebuild.
+  Local0.11 Intel DMG/ZIP smoke **exit0** at app code9c93fc4:185 identical files,
+  ICNS, Mach-O/JNI/bundled PDF/DOCX/TXT child runtime, production UI, Host/Origin/
+  cookie/CSRF, duplicate-instance/legacy-port refusal, synthetic restart/recovery,
+  newer-schema refusal preserving FTS shadow tables and graceful shutdown.
+- Independent review identified and fixed missing document CSRF classification and
+  incomplete native-cache disk accounting. Regression found silent omission of
+  later query words; fixed and red/green verified. Legacy profile validator supports14;
+  established private profile paths resolve macOS /var alias before strict file checks.
+- Authorized real source update: installed PID55507 stopped cleanly; consistent0600
+  SQLite backup `/Users/pavlov/.hradar/backups/research.pre-documents-v14-20261123T000639.sqlite` retained. Source PID **83349**, URL
+  **http://hradar.localhost:1709/**, health200, schema14/integrity ok; row counts for
+  ten durable tables are nondecreasing versus backup (not proof of every workflow).
+  Existing Telegram session is **authorized / Ready**, no login codes inspected.
+  Backup/probe connections closed before migration; launcher log outside profile.
+  No real document discovery/download, sends, joins or test imports were performed.
+- Original root untracked hradar_stop.py and existing worktrees preserved. No merge,
+  Release, tag or installer publication. The source backend is intentionally running.
+
+NOT VERIFIED:
+- Final-head hosted Fast CI/Intel/ARM64 success. Inspect once after Draft PR creation;
+  per user instruction do not wait or poll. Local Intel is not ARM64 evidence.
+- Real Telegram file transfer/progress/cancel/permission failure, remote identity
+  reuse and original link, physical macOS file opening, actual monitoring document
+  arrival and real-session restart of interrupted downloads. Tests are synthetic;
+  authorization/health and schema integrity alone do not prove these scenarios.
+- OCR, Whisper, embeddings/AI, cloud processing and automatic downloads are absent.
+  Discovery is one explicit page up to50 messages; MVP downloads are individually
+  confirmed. Legacy/old snapshots need a selected-source refresh for file controls.
+  PDF200 pages/text200k chars, local query256 chars/AND tokens, 25MiB/file,
+  500MiB combined managed/native documents budget, 20m total text,10k metadata.
+  Old0.10 refuses schema14; never downgrade user_version or overwrite current data.
+
+NEXT ACTION:
+- One Draft PR to master with acceptance checklist, test evidence and one CI snapshot.
+  Manual real-account steps, storage boundaries and backup/recovery:
+  [TELEGRAM_DOCUMENTS.md](TELEGRAM_DOCUMENTS.md). No merge/Release/tag/publication.
+
 ## Recruiter UX 0.10.0 — 2026-11-22
 
 Branch `feat/ux-workflow-0.10`, isolated worktree `hradar-ux`, based on merged
