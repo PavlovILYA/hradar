@@ -147,8 +147,8 @@ function App() {
     try { for (const target of typeof path === 'string' ? [path] : path) await mutate(target, 'POST'); await refreshNotifications(); setDashboardRevision(n => n + 1); }
     catch (e) { setError((e as Error).message); }
   }
-  async function selectMessage(message: ResearchMessage, context: 'search' | 'archive' = 'search') {
-    selectionEpoch.current++; setSelected(message); setSelectionContext(context); setDetailsOpen(true);
+  async function selectMessage(message: ResearchMessage, context?: Screen) {
+    selectionEpoch.current++; setSelected(message); setSelectionContext(context ?? currentScreen.current); setDetailsOpen(true);
   }
 
   function openSelectedSource(source: TelegramSource, archive = false) {
@@ -206,7 +206,7 @@ function App() {
   const [selected, setSelected] = useState<ResearchMessage | null>(null);
   const [theme, setTheme] = useState(() => localStorage.getItem('hradar-theme') || 'light');
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [selectionContext, setSelectionContext] = useState<'search' | 'archive'>('search');
+  const [selectionContext, setSelectionContext] = useState<Screen>('search');
   const [chatTemplateId, setChatTemplateId] = useState('');
   const [chosenTemplate, setChosenTemplate] = useState('');
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('hradar-theme', theme); }, [theme]);
@@ -249,7 +249,7 @@ function App() {
         <div><h1 ref={heading} tabIndex={-1}>{screenTitles[screen]}</h1><span role="status" className={`connection-status ${statusFresh && status?.authorized && status.connectionState === 'Ready' ? 'online' : ''}`}>{statusLabel}</span></div>
         <details className={`update-status ${eventConnected ? 'connected' : 'reconnecting'}`}><summary aria-label={eventConnected ? 'Обновления подключены' : 'Обновления переподключаются'} title={eventConnected ? 'Обновления подключены' : 'Обновления переподключаются'}><span aria-hidden="true">●</span></summary><div role="note">{eventConnected ? 'Новые совпадения обновляются автоматически.' : 'Соединение обновлений восстанавливается. Совпадения сохраняются; можно обновить список вручную.'}<button className="text-button" onClick={() => navigate('application')}>Состояние приложения</button></div></details>
         <button className="icon-button" aria-label="Обновить статус" disabled={checking} onClick={() => void checkStatus()}>↻</button>
-        {selected && !detailsOpen && <button className="text-button" onClick={() => setDetailsOpen(true)}>Открыть детали</button>}
+        {selected && screen === selectionContext && !detailsOpen && <button className="text-button" onClick={() => setDetailsOpen(true)}>Открыть детали</button>}
       </header>
       {error && <div className="error dismissible" role="alert"><span>{error}</span><button className="icon-button" aria-label="Закрыть ошибку" onClick={() => setError('')}>×</button></div>}
       {notice && <p className="workspace-notice" role="status">{notice}</p>}

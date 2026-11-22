@@ -69,6 +69,7 @@ export function PublicationDetails({ message, onClose, onMessages, onArchive }: 
       <button className="secondary-button" disabled={busy} onClick={() => void action(() => navigator.clipboard.writeText(detail.text || ''), 'Текст скопирован.')}>Копировать текст</button>
       <button className="secondary-button" disabled={busy} onClick={() => void action(() => loadProjects(), '')}>Добавить в проект</button>
     </div>
+    {projects && !detail.sourceKey && <p className="helper">Добавление использует уже сохранённые в hradar данные. Если публикация впервые найдена в прежнем публичном режиме, сначала найдите её через поиск внутри проекта.</p>}
     {projects && <form onSubmit={e => { e.preventDefault(); void action(() => mutate(`/api/projects/${projectId}/cards`, 'POST', { channelId: detail.channelId, messageId: detail.id, ...(detail.sourceKey ? { sourceKey: detail.sourceKey } : {}) }), 'Публикация добавлена на доску проекта.'); }}>
 <label>Найти проект<input value={projectQuery} disabled={busy} onChange={e => setProjectQuery(e.target.value)} /></label><button type="button" className="secondary-button" disabled={busy} onClick={() => void action(() => loadProjects(), '')}>Найти проекты</button>
       <label>Проект найма<select value={projectId} disabled={busy} onChange={e => setProjectId(e.target.value)}><option value="">Выберите проект</option>{eligible.map(p => <option key={p.id} value={p.id}>{p.criteria.name}</option>)}</select></label>
