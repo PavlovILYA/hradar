@@ -28,7 +28,8 @@ def wait_ready(process, marker):
 
 def user_database_snapshot(db):
     tables = [row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")]
-    return {table: db.execute(f'SELECT * FROM "{table}" ORDER BY rowid').fetchall() for table in tables}
+    # FTS5 shadow tables can be WITHOUT ROWID; compare every row without assuming rowid.
+    return {table: sorted(db.execute(f'SELECT * FROM "{table}"').fetchall(), key=repr) for table in tables}
 
 with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
     home = pathlib.Path(temporary)
