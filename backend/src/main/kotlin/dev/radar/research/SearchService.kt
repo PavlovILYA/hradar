@@ -22,6 +22,22 @@ internal fun messageText(content: TdApi.MessageContent?): String? = when (conten
     else -> null
 }
 
+/** Metadata only: no file paths, file IDs, downloads, thumbnails or additional RPC. */
+internal fun messageAttachments(content: TdApi.MessageContent?): List<PublicationAttachment>? {
+    fun item(kind: String, file: TdApi.File?, name: String? = null, mime: String? = null) = listOf(
+        PublicationAttachment(kind, name?.takeIf(String::isNotBlank)?.take(512), mime?.takeIf(String::isNotBlank)?.take(128), file?.size?.takeIf { it > 0 }))
+    return when (content) {
+        is TdApi.MessageText -> emptyList()
+        is TdApi.MessageDocument -> item("document", content.document?.document, content.document?.fileName, content.document?.mimeType)
+        is TdApi.MessageVideo -> item("video", content.video?.video, content.video?.fileName, content.video?.mimeType)
+        is TdApi.MessageAnimation -> item("animation", content.animation?.animation, content.animation?.fileName, content.animation?.mimeType)
+        is TdApi.MessageAudio -> item("audio", content.audio?.audio, content.audio?.fileName, content.audio?.mimeType)
+        is TdApi.MessageVoiceNote -> item("voice", content.voiceNote?.voice, mime = content.voiceNote?.mimeType)
+        is TdApi.MessagePhoto -> item("photo", content.photo?.sizes?.maxByOrNull { it.width.toLong() * it.height }?.photo)
+        else -> null
+    }
+}
+
 @Serializable private data class SearchCursor(val context: String, val positions: Map<String, Long> = emptyMap(), val done: Set<String> = emptySet(), val globalOffset: String = "")
 
 class SearchService(private val telegram: TdlibGateway, private val repo: Repositories, private val matching: MatchingService, private val execute: suspend (TdApi.Function<*>) -> TdApi.Object = telegram::executeRead) {
@@ -45,23 +61,25 @@ class SearchService(private val telegram: TdlibGateway, private val repo: Reposi
             if (ex.code == 429 || ex.reason.startsWith("FLOOD_WAIT")) onLinkRateLimit?.invoke()
             null
         } else null
-        return ResearchMessage(message.id, message.chatId, message.date, messageText(message.content), channel.title, channel.username.takeIf { it.isNotBlank() }, link)
+        return ResearchMessage(message.id, message.chatId, message.date, messageText(message.content), channel.title, channel.username.takeIf { it.isNotBlank() }, link, attachments = messageAttachments(message.content))
     }
     private val selectedSources = dev.radar.sources.SourceReadService(repo, execute = execute)
     suspend fun search(input: SearchRequest): SearchPage = withTimeout(90_000) {
-        if (input.sourceKeys.isNotEmpty() || input.mode == "sources") return@withTimeout selectedSources.search(input)
+        val savedTemplate = input.templateId?.let { id -> withContext(Dispatchers.IO) { repo.template(id) } ?: throw ResourceNotFound() }
+        if (savedTemplate?.sourceMode == "chats" || (savedTemplate?.sourceMode != "global" && savedTemplate?.sourceKeys?.isNotEmpty() == true))
+            return@withTimeout selectedSources.search(input.copy(mode = "sources", sourceKeys = savedTemplate.sourceKeys))
+        if (savedTemplate == null && (input.sourceKeys.isNotEmpty() || input.mode == "sources")) return@withTimeout selectedSources.search(input)
         require(input.limit in 1..100) { "Количество результатов: от 1 до 100" }
-        require(input.mode in setOf("channel", "tracked", "global")) { "Неизвестный режим поиска" }
-        val template = input.templateId?.let { id -> withContext(Dispatchers.IO) { repo.template(id) } ?: throw ResourceNotFound() }
-        require(template == null || template.active) { "Шаблон приостановлен" }
+        require(savedTemplate != null || input.mode in setOf("channel", "tracked", "global")) { "Неизвестный режим поиска" }
+        val template = savedTemplate ?: input.conditions?.rule(input.query.trim())
         val query = (template?.telegramQuery ?: input.query).trim()
         require(query.length in 1..256) { "Укажите запрос Telegram (до 256 символов)" }
         val saved = withContext(Dispatchers.IO) { repo.channels() }
-        val mode = when (template?.sourceMode) { "global" -> "global"; "all", "selected" -> "tracked"; else -> input.mode }
+        val mode = when (savedTemplate?.sourceMode) { "global" -> "global"; "all", "selected" -> "tracked"; else -> input.mode }
         val usernames = when {
             mode == "global" -> emptyList()
-            template?.sourceMode == "all" -> saved.map { it.username }
-            template?.sourceMode == "selected" -> saved.filter { it.id in template.sources }.map { it.username }
+            savedTemplate?.sourceMode == "all" -> saved.map { it.username }
+            savedTemplate?.sourceMode == "selected" -> saved.filter { it.id in savedTemplate.sources }.map { it.username }
             mode == "tracked" -> saved.filter { it.username in input.usernames.map { n -> n.removePrefix("@").lowercase() } }.map { it.username }
             else -> input.usernames.map { it.removePrefix("@").lowercase() }
         }.distinct().sorted()

@@ -76,7 +76,7 @@ class SourceReadService(
             null
         } else null
         return ResearchMessage(message.id, source.chatId, message.date, messageText(message.content), source.title,
-            source.username, link, sourceKey = source.key,
+            source.username, link, sourceKey = source.key, attachments = messageAttachments(message.content),
             forumTopicId = (message.topicId as? TdApi.MessageTopicForum)?.forumTopicId, scopeTitle = source.scopeTitle,
             messageThreadId = (message.topicId as? TdApi.MessageTopicThread)?.messageThreadId,
             availability = when (message.content) {
@@ -172,15 +172,16 @@ class SourceReadService(
     private fun rateLimited(ex: TelegramRequestException) = ex.code == 429 || ex.reason.startsWith("FLOOD_WAIT")
 
     suspend fun search(input: SearchRequest): SearchPage = withTimeout(90_000) {
-        require(input.limit in 1..100 && input.sourceKeys.distinct().size in 1..10) { "Выберите от 1 до 10 источников" }
+        val savedTemplate = input.templateId?.let { repo.template(it) ?: throw ResourceNotFound() }
+        val sourceKeys = if (savedTemplate?.sourceMode == "chats" || savedTemplate?.sourceKeys?.isNotEmpty() == true) savedTemplate.sourceKeys else input.sourceKeys
+        require(input.limit in 1..100 && sourceKeys.distinct().size in 1..10) { "Выберите от 1 до 10 источников" }
         require(input.cursor.length <= 36) { "Некорректный курсор поиска" }
         val deadline = repo.localMonitoringRetryAt()
         if (now() < deadline) return@withTimeout SearchPage(cursor = input.cursor, state = "rate_limited", notice = "Telegram ограничил частоту запросов до ${java.time.Instant.ofEpochMilli(deadline)}. Курсор сохранён.")
-        val template = input.templateId?.let { repo.template(it) ?: throw ResourceNotFound() }
-        require(template == null || template.active) { "Шаблон приостановлен" }
+        val template = savedTemplate ?: input.conditions?.rule(input.query.trim())
         val query = (template?.telegramQuery ?: input.query).trim()
         require(query.length in 1..256) { "Укажите запрос Telegram (до 256 символов)" }
-        val keys = input.sourceKeys.distinct().sortedBy { key -> saved(key).let { "${it.chatId}:${it.scope.kind}:${it.scope.nativeId()}" } }
+        val keys = sourceKeys.distinct().sortedBy { key -> saved(key).let { "${it.chatId}:${it.scope.kind}:${it.scope.nativeId()}" } }
         val selected = keys.map(::saved)
         val initial = lock.withLock {
             val now = System.currentTimeMillis()
