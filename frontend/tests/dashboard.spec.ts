@@ -125,6 +125,7 @@ test('theme persists and publication details show actual message IDs', async ({ 
   await expect(page.locator('.message-card')).toHaveCount(10);
   await page.getByRole('button', { name: 'Детали ↗' }).first().click();
   await expect(page.getByRole('heading', { name: 'Детали публикации' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Детали публикации' }).getByRole('heading', { name: '@telegram', exact: true })).toBeVisible();
   await page.getByText('Дополнительно', { exact: true }).click();
   await expect(page.locator('dd').last()).toContainText('-100');
   await page.screenshot({ path: '/tmp/hradar-research-dark.png', fullPage: true });
@@ -354,7 +355,10 @@ test('SSE updates and reconnect deduplicate desktop notices and click opens the 
   await page.locator('.delivery-settings > summary').click();
   await page.getByRole('button', { name: 'Разрешить уведомления браузера' }).click();
   await expect(page.getByRole('button', { name: 'Разрешение браузера получено' })).toBeDisabled();
+  const preferenceSaved = page.waitForResponse(response => response.url().endsWith('/api/workspace/desktop') && response.request().method() === 'PUT');
   await page.getByLabel('Включить всплывающие уведомления для hradar').check();
+  await preferenceSaved;
+  await expect(page.getByLabel('Включить всплывающие уведомления для hradar')).toBeEnabled();
   async function emit(revision: number, unread: number) {
     await page.evaluate(async ({ revision, unread }) => {
       const events = (window as unknown as { testEvents: { onmessage: (event: MessageEvent) => void } }).testEvents;

@@ -148,7 +148,9 @@ function App() {
     catch (e) { setError((e as Error).message); }
   }
   async function selectMessage(message: ResearchMessage, context?: Screen) {
-    selectionEpoch.current++; setSelected(message); setSelectionContext(context ?? currentScreen.current); setDetailsOpen(true);
+    const known = sources.find(source => source.id === message.channelId);
+    const resultUsername = result?.messages.includes(message) ? result.username : undefined;
+    selectionEpoch.current++; setSelected({ ...message, title: message.title || known?.title, username: message.username || known?.username || resultUsername }); setSelectionContext(context ?? currentScreen.current); setDetailsOpen(true);
   }
 
   function openSelectedSource(source: TelegramSource, archive = false) {
