@@ -10,7 +10,7 @@ import { Notifications } from './Notifications';
 import { ChatSearch } from './ChatSearch';
 import { NotificationPreferences } from './NotificationPreferences';
 import { ownerMutation } from './ownerApi';
-import { DiscussionSource } from './DiscussionSource';
+import { PublicationDetails } from './PublicationDetails';
 import type { TelegramSource } from './SourceCatalog';
 import { HistoryArchive } from './HistoryArchive';
 import { McpIntegration } from './McpIntegration';
@@ -24,6 +24,7 @@ import { Sources } from './Sources';
 import { SelectedSourceSearch, SelectedSourceArchive } from './SelectedSources';
 import './styles.css';
 import './navigation.css';
+import './design-system.css';
 import { version as appVersion } from '../package.json';
 
 const dateFormat = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -42,10 +43,14 @@ function App() {
   const [username, setUsername] = useState('@telegram');
   const [limit, setLimit] = useState('10');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setErrorState] = useState('');
+  const [notice, setNotice] = useState('');
   const [result, setResult] = useState<{ username: string; messages: ResearchMessage[] } | null>(null);
   const [filter, setFilter] = useState('');
-  const [screen, setScreen] = useState<Screen>(() => (['application', 'search', 'notifications'].includes(new URLSearchParams(location.search).get('screen') ?? '') ? new URLSearchParams(location.search).get('screen') : 'overview') as Screen);
+  const [screen, setScreen] = useState<Screen>(() => (['overview', 'application', 'search', 'notifications', 'templates', 'saved', 'projects', 'archive'].includes(new URLSearchParams(location.search).get('screen') ?? '') ? new URLSearchParams(location.search).get('screen') : 'overview') as Screen);
+  const currentScreen = useRef(screen);
+  const selectionEpoch = useRef(0);
+  function setError(message: string, context: Screen = screen) { if (!message || currentScreen.current === context) setErrorState(message); }
   const [visited, setVisited] = useState<Set<Screen>>(() => new Set([screen]));
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [archiveUsername, setArchiveUsername] = useState('telegram');
@@ -55,7 +60,7 @@ function App() {
   const [archiveSourceKey, setArchiveSourceKey] = useState<string | null>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   function navigate(next: Screen) {
-    setScreen(next); setVisited(old => old.has(next) ? old : new Set([...old, next])); setNavigationOpen(false);
+    setError(''); setNotice(''); setDetailsOpen(false); selectionEpoch.current++; currentScreen.current = next; setScreen(next); setVisited(old => old.has(next) ? old : new Set([...old, next])); setNavigationOpen(false);
     if (next === 'notifications') void refreshNotifications().catch(e => setError((e as Error).message));
     if (next === 'templates') void refreshResearch().catch(e => setError((e as Error).message));
     requestAnimationFrame(() => heading.current?.focus());
@@ -74,15 +79,52 @@ function App() {
   const [eventAt, setEventAt] = useState(0);
   const [dashboardRevision, setDashboardRevision] = useState(0);
   const [projectIntent, setProjectIntent] = useState<ProjectIntent | null>(null);
-  const [desktopPermission, setDesktopPermission] = useState(() => 'Notification' in window ? Notification.permission : 'unsupported');
+  const notificationRequest = useRef(0);
   async function refreshNotifications(more = false) {
+    const revision = ++notificationRequest.current;
     const page = await request<NotificationPage>(`/api/notifications${more && notificationPage.cursor ? `?before=${notificationPage.cursor}` : ''}`);
-    setNotificationPage(old => ({ ...page, items: more ? [...old.items, ...page.items] : page.items }));
+    if (revision === notificationRequest.current) setNotificationPage(old => ({ ...page, items: more ? [...new Map([...old.items, ...page.items].map(item => [item.id, item])).values()] : page.items }));
   }
+  useEffect(() => { void refreshNotifications().catch(e => { if (currentScreen.current === 'notifications') setError((e as Error).message, 'notifications'); }); }, []);
   useEffect(() => {
     const events = new EventSource('/api/events');
     let lastRevision: string | null = null;
     let claiming = false;
+    let claimPending = false;
+    let refreshPending = false;
+    let latestRevision = '';
+    async function claimDeliveries() {
+      if (claiming) return;
+      claiming = true;
+      try {
+        while (claimPending && !stopped) {
+          claimPending = false;
+          const deliveries = await ownerMutation<{ id: string; title: string; body: string }[]>('/api/workspace/deliveries/claim', 'POST');
+          if (stopped) return;
+          for (const item of deliveries) {
+            try {
+              const notice = new Notification(`hradar · ${item.title}`, { body: item.body, tag: item.id });
+              notice.onclick = () => { window.focus(); void request<NotificationRecord>(`/api/workspace/inbox/${item.id}`).then(openNotification).catch(() => {}); notice.close(); };
+            } catch { /* Durable claim owns at-most-once delivery; the inbox survives permission changes. */ }
+          }
+        }
+      } catch { /* A later summary retries. No delivery is claimed locally. */ }
+      finally { claiming = false; }
+    }
+    async function refreshInbox() {
+      if (fetching) return;
+      fetching = true;
+      try {
+        while (refreshPending && !stopped) {
+          refreshPending = false; const revision = latestRevision;
+          const requestRevision = ++notificationRequest.current;
+          const page = await request<NotificationPage>('/api/notifications');
+          if (stopped) return;
+          if (requestRevision === notificationRequest.current) { setNotificationPage(page); setDashboardRevision(n => n + 1); lastRevision = revision; } else lastRevision = null;
+        }
+      } catch { lastRevision = null; }
+      finally { fetching = false; }
+    }
     let stopped = false;
     let fetching = false;
     events.onopen = () => { if (!stopped) setEventConnected(true); };
@@ -92,62 +134,35 @@ function App() {
       if (stopped) return;
       setEventConnected(true); setEventAt(Date.now()); setByChannel(summary.byChannel);
       if (summary.telegram) { setStatus(summary.telegram); setStatusAt(Date.now()); }
-      if (!claiming && 'Notification' in window && Notification.permission === 'granted') {
-        claiming = true;
-        void ownerMutation<{ id: string; title: string; body: string }[]>('/api/workspace/deliveries/claim', 'POST').then(deliveries => {
-          if (stopped) return;
-          for (const item of deliveries) {
-            try {
-              const notice = new Notification(`hradar · ${item.title}`, { body: item.body, tag: item.id });
-              notice.onclick = () => { window.focus(); void request<NotificationRecord>(`/api/workspace/inbox/${item.id}`).then(openNotification).catch(e => setError((e as Error).message)); notice.close(); };
-            } catch { /* One durable attempt; inbox remains available even if permission changes. */ }
-          }
-        }).catch(() => {}).finally(() => { claiming = false; });
+      if ('Notification' in window && Notification.permission === 'granted') {
+        claimPending = true; void claimDeliveries();
       }
-      const revision = `${summary.revision}:${summary.unread}`;
-      if (revision === lastRevision || fetching) return;
-      lastRevision = revision; fetching = true;
-      try {
-        const page = await request<NotificationPage>('/api/notifications');
-        if (stopped) return;
-        setNotificationPage(page); setDashboardRevision(n => n + 1);
-      } catch (e) { if (!stopped) setError((e as Error).message); lastRevision = null; }
-      finally { fetching = false; }
+      latestRevision = `${summary.revision}:${summary.unread}`;
+      if (latestRevision !== lastRevision) { refreshPending = true; void refreshInbox(); }
     };
     events.onerror = () => setEventConnected(false);
     return () => { stopped = true; events.close(); };
   }, []);
-  async function notificationAction(path: string) {
-    try { await mutate(path, 'POST'); await refreshNotifications(); setDashboardRevision(n => n + 1); }
+  async function notificationAction(path: string | string[]) {
+    try { for (const target of typeof path === 'string' ? [path] : path) await mutate(target, 'POST'); await refreshNotifications(); setDashboardRevision(n => n + 1); }
     catch (e) { setError((e as Error).message); }
   }
   async function selectMessage(message: ResearchMessage, context: 'search' | 'archive' = 'search') {
-    setSelected(message); setSelectionContext(context); setDetailsOpen(true);
-    if (message.sourceKey) {
-      try {
-        const data = await request<ResearchMessage>(`/api/sources/${encodeURIComponent(message.sourceKey)}/messages/${message.id}`);
-        setSelected(old => old?.id === message.id && old.channelId === message.channelId ? data : old);
-      } catch { setSelected(old => old?.id === message.id && old.channelId === message.channelId ? { ...old, availability: 'unavailable' } : old); }
-    } else if (!message.link) {
-      try {
-        const data = await request<{ link: string }>(`/api/messages/${message.channelId}/${message.id}/link`);
-        setSelected(old => old?.id === message.id && old.channelId === message.channelId ? { ...old, link: data.link } : old);
-      } catch { /* Original link is optional; reading and details remain available. */ }
-    }
+    selectionEpoch.current++; setSelected(message); setSelectionContext(context); setDetailsOpen(true);
   }
+
   function openSelectedSource(source: TelegramSource, archive = false) {
     setSourceIntentRevision(n => n + 1); setSelected(null); setDetailsOpen(false);
     if (archive) { setArchiveSourceKey(source.key); navigate('archive'); }
     else { setSelectedSourceKey(source.key); setSourceReading(true); setChatTemplateId(''); setSearchMode('sources'); navigate('search'); }
   }
-  async function openNotification(item: NotificationRecord) {
-    if (!item.read) {
-      try { await mutate(`/api/notifications/${item.id}/read`, 'POST'); await refreshNotifications(); }
-      catch(e) { setError((e as Error).message); return; }
+  async function openNotification(item: NotificationRecord, related: NotificationRecord[] = [item]) {
+    const epoch = ++selectionEpoch.current; const context = currentScreen.current;
+    if (related.some(i => !i.read)) {
+      try { for (const rule of related.filter(i => !i.read)) await mutate(`/api/notifications/${rule.id}/read`, 'POST'); await refreshNotifications(); setDashboardRevision(n => n + 1); }
+      catch(e) { setError((e as Error).message, context); return; }
     }
-    if (!item.message.sourceKey) { setSearchMode('channel'); setSourceReading(false); }
-    navigate('search'); setResult({ username: item.message.username ?? '', messages: [item.message] });
-    setApplied(null); setSearchPage(null); setLastSearch(null); setFilter('');
+    if (epoch !== selectionEpoch.current) return;
     void selectMessage(item.message);
   }
   const [sources, setSources] = useState<MonitoredChannel[]>([]);
@@ -170,13 +185,14 @@ function App() {
   const [searchPage, setSearchPage] = useState<SearchPage | null>(null);
   const [lastSearch, setLastSearch] = useState<SearchInput | null>(null);
   async function runSearch(template?: SearchTemplate, next = false) {
-    if (template?.sourceMode === 'chats') { setSourceReading(false); setChatTemplateId(template.id); setSearchMode('sources'); setSourceIntentRevision(n => n + 1); navigate('search'); return; }
+    if (template?.sourceMode === 'chats' || (template?.sourceMode !== 'global' && template?.sourceKeys?.length)) { setSourceReading(false); setChatTemplateId(template.id); setSearchMode('sources'); setSourceIntentRevision(n => n + 1); navigate('search'); return; }
     if (loading) return;
     navigate('search');
     const input: SearchInput = next && lastSearch ? { ...lastSearch, cursor: searchPage?.cursor } : {
-      mode: searchMode, query, usernames: searchMode === 'channel' ? [username] : chosenSources,
-      templateId: template?.id, limit: Number(limit),
+      mode: template ? (template.sourceMode === 'global' ? 'global' : 'tracked') : searchMode, query: template?.telegramQuery ?? query, usernames: template ? [] : searchMode === 'channel' ? [username] : chosenSources,
+      templateId: template?.id, withLinks: false, limit: Number(limit),
     };
+    if (template) { setChatTemplateId(''); setQuery(template.telegramQuery); setChosenSources(sources.filter(s => template.sourceMode === 'all' || template.sources.includes(s.id)).map(s => s.username)); setSourceReading(false); setSearchMode(template.sourceMode === 'global' ? 'global' : template.sourceKeys?.length ? 'sources' : 'tracked'); }
     setLoading(true); setError(''); setSelected(null);
     if (!next) { setResult(null); setFilter(''); setApplied(template ?? null); setExplanations({}); setSearchPage(null); }
     try {
@@ -184,7 +200,7 @@ function App() {
       setSearchPage(page); setLastSearch(input);
       setResult(old => ({ username: input.mode === 'channel' && !template ? username.replace(/^@/, '') : '', messages: next ? [...new Map([...(old?.messages ?? []), ...page.messages].map(m => [`${m.channelId}:${m.id}`, m])).values()] : page.messages }));
       setExplanations(old => ({ ...(next ? old : {}), ...Object.fromEntries(page.messages.filter(m => m.explanation).map(m => [m.id, m.explanation!])) }));
-    } catch (e) { setError((e as Error).message); }
+    } catch (e) { setError((e as Error).message, 'search'); }
     finally { setLoading(false); }
   }
   const [selected, setSelected] = useState<ResearchMessage | null>(null);
@@ -196,7 +212,7 @@ function App() {
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem('hradar-theme', theme); }, [theme]);
   async function checkStatus(signal?: AbortSignal) {
     setChecking(true);
-    try { setStatus(await request<TelegramStatus>('/api/telegram/status', signal)); setStatusAt(Date.now()); setError(''); }
+    try { setStatus(await request<TelegramStatus>('/api/telegram/status', signal)); setStatusAt(Date.now()); }
     catch (error) { if (!signal?.aborted) { setStatus(null); setError((error as Error).message); } }
     finally { if (!signal?.aborted) setChecking(false); }
   }
@@ -208,21 +224,21 @@ function App() {
     setError('');
     let channel: string;
     try { channel = normalizeUsername(source); }
-    catch (error) { setError((error as Error).message); return; }
+    catch (error) { setError((error as Error).message, 'search'); return; }
     const count = Number(limit);
     if (!Number.isInteger(count) || count < 1 || count > 100) { setError('Количество сообщений должно быть целым числом от 1 до 100.'); return; }
     setLoading(true); setResult(null); setSearchPage(null); setLastSearch(null); setApplied(null); setExplanations({}); setSelected(null); setFilter(''); setUsername('@' + channel);
     try {
       const messages = await request<TelegramMessage[]>(`/api/telegram/chats/${encodeURIComponent(channel)}/messages?limit=${count}`);
       setResult({ username: channel, messages });
-    } catch (error) { setError((error as Error).message); }
+    } catch (error) { setError((error as Error).message, 'search'); }
     finally { setLoading(false); }
   }
   const visible = result?.messages.filter(m => (m.text ?? '').toLocaleLowerCase('ru').includes(filter.toLocaleLowerCase('ru')) && (!applied || (m.explanation ?? explanations[m.id])?.matches)) ?? [];
   const statusFresh = !!statusAt && statusClock - statusAt < 60_000;
-  const statusLabel = checking ? 'Проверяем соединение' : status && !statusFresh ? 'Нет актуальных данных о Telegram' : status?.authorized ? (status.connectionState === 'Ready' ? 'Telegram подключён' : status.connectionState ? 'Telegram переподключается' : 'Состояние Telegram неизвестно') : status ? 'Требуется вход в Telegram' : 'Backend недоступен';
+  const statusLabel = checking ? 'Проверяем соединение' : status && !statusFresh ? 'Нет актуальных данных о Telegram' : status?.authorized ? (status.connectionState === 'Ready' ? 'Telegram подключён' : status.connectionState ? 'Telegram переподключается' : 'Состояние Telegram неизвестно') : status ? 'Требуется вход в Telegram' : 'Нет связи с hradar';
   if (status && !status.authorized) return <Onboarding onReady={() => void checkStatus()} />;
-  const showDetails = detailsOpen && selected && screen === selectionContext;
+  const showDetails = detailsOpen && selected;
   function view(id: Screen, children: ReactNode) {
     return visited.has(id) ? <section key={id} id={`screen-${id}`} className={`workspace-screen ${id === 'search' ? 'search-screen' : ''}`} aria-label={screenTitles[id]} hidden={screen !== id}>{children}</section> : null;
   }
@@ -231,26 +247,28 @@ function App() {
     <main className="workspace-main" inert={navigationOpen || undefined}>
       <header className="workspace-header"><button id="navigation-toggle" className="navigation-toggle icon-button" aria-label="Открыть навигацию" aria-expanded={navigationOpen} aria-controls="workspace-navigation" onClick={() => setNavigationOpen(true)}>☰</button>
         <div><h1 ref={heading} tabIndex={-1}>{screenTitles[screen]}</h1><span role="status" className={`connection-status ${statusFresh && status?.authorized && status.connectionState === 'Ready' ? 'online' : ''}`}>{statusLabel}</span></div>
+        <details className={`update-status ${eventConnected ? 'connected' : 'reconnecting'}`}><summary aria-label={eventConnected ? 'Обновления подключены' : 'Обновления переподключаются'} title={eventConnected ? 'Обновления подключены' : 'Обновления переподключаются'}><span aria-hidden="true">●</span></summary><div role="note">{eventConnected ? 'Новые совпадения обновляются автоматически.' : 'Соединение обновлений восстанавливается. Совпадения сохраняются; можно обновить список вручную.'}<button className="text-button" onClick={() => navigate('application')}>Состояние приложения</button></div></details>
         <button className="icon-button" aria-label="Обновить статус" disabled={checking} onClick={() => void checkStatus()}>↻</button>
-        {selected && screen === selectionContext && !detailsOpen && <button className="text-button" onClick={() => setDetailsOpen(true)}>Открыть детали</button>}
+        {selected && !detailsOpen && <button className="text-button" onClick={() => setDetailsOpen(true)}>Открыть детали</button>}
       </header>
-      {error && <p className="error" role="alert">{error}</p>}
-      <div className={`workspace-layout ${showDetails ? 'with-details' : ''}`}>
+      {error && <div className="error dismissible" role="alert"><span>{error}</span><button className="icon-button" aria-label="Закрыть ошибку" onClick={() => setError('')}>×</button></div>}
+      {notice && <p className="workspace-notice" role="status">{notice}</p>}
+      <div className="workspace-layout">
         <div className="workspace-content">
           {view('overview', <Dashboard active={screen === 'overview' && !checking} revision={dashboardRevision} eventConnected={eventConnected} eventAt={eventAt} navigate={navigate} openNotification={openNotification} openProject={(id, edit) => { setProjectIntent({ id, edit }); navigate('projects'); }} />)}
-          {view('projects', <Projects active={screen === 'projects'} intent={projectIntent} />)}
+          {view('projects', <Projects active={screen === 'projects'} intent={projectIntent} onSelect={m => void selectMessage(m)} />)}
           {view('sources', <Sources templates={templates} active={screen === 'sources'} sources={sources} unread={byChannel} refresh={refreshResearch} onMessages={source => void loadMessages(undefined, source)} onArchive={openArchive} onSelectedMessages={source => openSelectedSource(source)} onSelectedArchive={source => openSelectedSource(source, true)} />)}
           {view('templates', <div className="data-screen"><Templates templates={templates} channels={sources} refresh={refreshResearch} onRun={t => void runSearch(t)} onError={setError} /></div>)}
-          {view('saved', <SavedResults />)}
+          {view('saved', <SavedResults onSelect={m => void selectMessage(m)} active={screen === 'saved'} />)}
           {view('bot', <BotIntegration />)}
           {view('mcp', <McpIntegration active={screen === 'mcp'} />)}
           {view('archive', <><div className="archive-actions"><button className="secondary-button" onClick={() => { setArchiveSourceKey(''); setSelected(null); }}>Выбрать сохранённый источник</button><button className="text-button" onClick={() => { setArchiveSourceKey(null); setSelected(null); }}>Архив публичного канала по username</button></div>{archiveSourceKey !== null ? <SelectedSourceArchive key={`${archiveSourceKey}:${sourceIntentRevision}`} initialKey={archiveSourceKey} authorized={!!status?.authorized} onSelect={m => void selectMessage(m, 'archive')} /> : <HistoryArchive key={archiveUsername} username={archiveUsername} autoStart={false} onSourceChange={name => { setUsername('@' + name); setArchiveUsername(name); if (selectionContext === 'archive') setSelected(null); }} authorized={!!status?.authorized} onSelect={m => void selectMessage(m, 'archive')} />}</>)}
-          {view('notifications', <><NotificationPreferences /><p className="helper">{eventConnected ? 'Обновления подключены (SSE)' : 'SSE переподключается; обновите статус при длительном сбое.'}</p><Notifications items={notificationPage.items} unread={notificationPage.unread} cursor={notificationPage.cursor} onRead={id => void notificationAction(`/api/notifications/${id}/read`)} onReadAll={() => void notificationAction('/api/notifications/read-all')} onOpen={openNotification} onMore={() => void refreshNotifications(true).catch(e => setError((e as Error).message))} /></>)}
+          {view('notifications', <><details className="delivery-settings"><summary>Всплывающие уведомления</summary><NotificationPreferences /></details><Notifications items={notificationPage.items} unread={notificationPage.unread} cursor={notificationPage.cursor} onRead={ids => void notificationAction(ids.map(id => `/api/notifications/${id}/read`))} onRefresh={() => void refreshNotifications().catch(e => setError((e as Error).message))} onReadAll={() => void notificationAction('/api/notifications/read-all')} onOpen={openNotification} onMore={() => void refreshNotifications(true).catch(e => setError((e as Error).message))} /></>)}
           {view('application', <section className="data-screen application-state"><h2>Подключение и работа приложения</h2><dl><dt>Версия hradar</dt><dd>{appVersion}</dd><dt>Telegram</dt><dd>{statusLabel}</dd><dt>Этап авторизации</dt><dd>{status?.authorizationState ?? 'Нет ответа'}</dd><dt>Соединение</dt><dd>{status?.connectionState ?? 'Нет ответа'}</dd><dt>Обновления уведомлений</dt><dd>{eventConnected ? 'Подключены' : 'Переподключение'}</dd></dl><p className="helper">Настройки и данные сохраняются локально. При завершении hradar мониторинг и доставка сообщений ботом остановятся.</p>{isDesktop() ? <button className="secondary-button" onClick={() => void shutdownDesktop().catch(e => setError((e as Error).message))}>Завершить hradar</button> : <p className="helper">Кнопка завершения доступна при запуске через desktop-приложение.</p>}</section>)}
           {view('search', <>
             <section className="online-search" aria-label="Онлайн-поиск">{searchMode !== 'sources' && <><h2>Поиск в Telegram</h2><p className="helper compact">Источник результатов: Telegram API. Локальный архив не используется.</p></>}
               <label htmlFor="search-mode">Область поиска</label><select id="search-mode" value={searchMode} onChange={e => { setSourceReading(false); setSearchMode(e.target.value as SearchInput['mode']); }}><option value="sources">В чатах Telegram</option><option value="channel">В текущем канале</option><option value="tracked">В выбранных источниках</option><option value="global">Публичные публикации · глобально</option></select>
-              {searchMode === 'sources' ? sourceReading ? <SelectedSourceSearch key={`${selectedSourceKey}:${sourceIntentRevision}`} initialKey={selectedSourceKey} templates={templates} onSelect={m => void selectMessage(m)} /> : <ChatSearch key={`${selectedSourceKey}:${sourceIntentRevision}:${chatTemplateId}`} initialKey={selectedSourceKey} templateId={chatTemplateId} templates={templates} refresh={refreshResearch} onSelect={m => void selectMessage(m)} /> : <>
+              {searchMode === 'sources' ? sourceReading ? <SelectedSourceSearch key={`${selectedSourceKey}:${sourceIntentRevision}`} initialKey={selectedSourceKey} templates={templates} onSelect={m => void selectMessage(m)} /> : <ChatSearch key={`${selectedSourceKey}:${sourceIntentRevision}:${chatTemplateId}`} initialKey={selectedSourceKey} templateId={chatTemplateId} templates={templates} refresh={refreshResearch} onSavedSearch={() => { navigate('templates'); setNotice('Поиск сохранён. Его настройки и отслеживание доступны ниже.'); }} onSelect={m => void selectMessage(m)} /> : <>
               {searchMode === 'channel' && <><label htmlFor="search-source">Сохранённый источник</label><select id="search-source" value={sources.some(s => '@' + s.username === username) ? username.replace(/^@/, '') : ''} onChange={e => setUsername('@' + e.target.value)}><option value="" disabled>Или введите username ниже</option>{sources.map(s => <option value={s.username} key={s.id}>{s.title} · @{s.username}</option>)}</select><label htmlFor="username">Username канала</label><input id="username" value={username} onChange={e => setUsername(e.target.value)} placeholder="@telegram" /></>}
               <label htmlFor="search-query">Поисковый запрос</label><input id="search-query" value={query} onChange={e => setQuery(e.target.value)} placeholder="Java developer" maxLength={256} />
               <label htmlFor="limit">Сообщений</label><input id="limit" type="number" min="1" max="100" value={limit} onChange={e => setLimit(e.target.value)} disabled={loading} />
@@ -269,9 +287,10 @@ function App() {
             <footer className="conversation-footer">{applied ? `Локальные условия: ${applied.name}` : 'Источник результатов: Telegram API · Фильтр только текущей выборки'}</footer></>}
           </>)}
         </div>
-        {showDetails && <aside className="publication-details" aria-label="Детали публикации"><div className="publication-details-heading"><h2>Детали публикации</h2><button className="icon-button" aria-label="Закрыть детали" onClick={() => setDetailsOpen(false)}>×</button></div><dl><dt>Источник</dt><dd>{selected.title || `@${selected.username || result?.username}`}</dd><dt>Дата</dt><dd>{dateFormat.format(selected.date * 1000)}</dd><dt>ID сообщения</dt><dd>{selected.id}</dd><dt>ID канала</dt><dd>{selected.channelId}</dd>{(selected.scopeTitle || selected.forumTopicId) && <><dt>Тема</dt><dd>{selected.scopeTitle || `#${selected.forumTopicId}`}</dd></>}{selected.availability && selected.availability !== 'available' && <><dt>Доступность</dt><dd>{selected.availability === 'deleted' ? 'Сообщение удалено' : 'Сообщение недоступно'}</dd></>}</dl><p className="message-text">{selected.availability === 'deleted' ? 'Сообщение удалено' : selected.availability === 'unavailable' ? 'Сообщение недоступно' : selected.text || 'Медиа или служебное сообщение без текста'}</p>{selected.link && /^https:\/\/t\.me\//.test(selected.link) && <a className="original-link" href={selected.link} target="_blank" rel="noreferrer">Открыть в Telegram ↗</a>}<DiscussionSource key={`${selected.sourceKey}:${selected.id}`} message={selected} onMessages={source => openSelectedSource(source)} onArchive={source => openSelectedSource(source, true)} /><button className="secondary-button" onClick={async () => { try { await navigator.clipboard.writeText(selected.text || ''); } catch { setError('Не удалось скопировать текст. Выделите его вручную.'); } }}>Копировать текст</button></aside>}
+
       </div>
     </main>
+    {showDetails && <PublicationDetails key={`${selected.channelId}:${selected.id}:${selected.sourceKey ?? ''}`} message={selected} onClose={() => setDetailsOpen(false)} onMessages={source => openSelectedSource(source)} onArchive={source => openSelectedSource(source, true)} />}
   </div>;
 }
 function Empty({ title, text, children }: { title: string; text: string; children?: ReactNode }) { return <div className="empty-state"><span className="empty-symbol" aria-hidden="true">⌕</span><h3>{title}</h3><p>{text}</p>{children}</div>; }
