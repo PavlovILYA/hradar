@@ -28,7 +28,7 @@ class SourceArchiveMigrationTest {
         return path
     }
     private fun snapshot(path: Path) = DriverManager.getConnection("jdbc:sqlite:$path").use { db ->
-        val tables = db.createStatement().use { s -> s.executeQuery("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'local_%' AND name NOT IN ('owner_inbox','owner_bookmarks','desktop_preferences','search_cache')").use { r -> buildList { while (r.next()) add(r.getString(1)) } } }
+        val tables = db.createStatement().use { s -> s.executeQuery("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'document%' AND name NOT LIKE 'local_%' AND name NOT IN ('owner_inbox','owner_bookmarks','desktop_preferences','search_cache')").use { r -> buildList { while (r.next()) add(r.getString(1)) } } }
         tables.associateWith { name -> db.createStatement().use { s -> s.executeQuery("SELECT * FROM $name ORDER BY rowid").use { r -> buildList { while (r.next()) add((1..r.metaData.columnCount).map(r::getString)) } } } }
     }
     @Test fun forwardMigrationPreservesEveryV10RowAndLegacyArchiveRemainsVisibleBySourceKey() {
@@ -41,7 +41,7 @@ class SourceArchiveMigrationTest {
         } }
         assertEquals(before, snapshot(path))
         DriverManager.getConnection("jdbc:sqlite:$path").use { db -> db.createStatement().use { s ->
-            assertEquals(13, s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) })
+            assertEquals(14, s.executeQuery("PRAGMA user_version").use { it.next(); it.getInt(1) })
         } }
     }
     @Test fun migrationDdlFailureRollsBackAllNewTablesVersionAndAllowsRetry() {

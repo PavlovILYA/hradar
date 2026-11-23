@@ -18,6 +18,7 @@ class RuntimePaths(val home: Path = Path.of(System.getProperty("user.home"))) {
     val credentials = data.resolve("config/telegram-api.json")
     val botConfiguration = credentials.parent.resolve("telegram-bot.json")
     val backups = data.resolve("backups")
+    val documents = data.resolve("documents")
     val logs = data.resolve("logs")
     fun prepare() {
         privateDirectory(data)

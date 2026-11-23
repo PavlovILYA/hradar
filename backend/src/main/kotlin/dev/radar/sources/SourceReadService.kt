@@ -144,6 +144,18 @@ class SourceReadService(
         result.copy(canGetMessageThread = canGetThread)
     }
 
+    /** Internal exact scoped file proof; never exposed as a generic Telegram executor. */
+    internal suspend fun documentMessage(key: String, id: Long): Pair<ResearchMessage, TdApi.Message> = withTimeout(25_000) {
+        require(id > 0)
+        val source = saved(key); accessible(source)
+        val raw = execute(TdApi.GetMessage(source.chatId, id)) as TdApi.Message
+        require(raw.id == id && accepts(source, raw)) { "Сообщение вне выбранной области" }
+        require(raw.canBeSaved && !(execute(TdApi.GetChat(source.chatId)) as TdApi.Chat).hasProtectedContent) { "Telegram запретил сохранение вложения" }
+        val snapshot = convert(source, raw)
+        selectedStillExists(source)
+        snapshot to raw
+    }
+
     /** The user explicitly chooses a discussion from an accessible selected-source message. */
     suspend fun discussion(key: String, messageId: Long): TelegramSource = withTimeout(25_000) {
         require(messageId > 0) { "Некорректное сообщение" }

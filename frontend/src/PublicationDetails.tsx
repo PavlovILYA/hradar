@@ -1,3 +1,4 @@
+import { PublicationDocuments } from './Documents';
 import { useEffect, useRef, useState } from 'react';
 import { request, mutate, type ResearchMessage } from './api';
 import { ownerMutation } from './ownerApi';
@@ -17,6 +18,7 @@ export function PublicationDetails({ message, onClose, onMessages, onArchive }: 
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [projects, setProjects] = useState<ProjectChoice[] | null>(null);
+  const [projectOpen, setProjectOpen] = useState(false);
   const [projectId, setProjectId] = useState('');
   const [projectQuery, setProjectQuery] = useState('');
   const [projectOffset, setProjectOffset] = useState(0);
@@ -61,16 +63,17 @@ export function PublicationDetails({ message, onClose, onMessages, onArchive }: 
     {detail.availability && detail.availability !== 'available' && <p role="status">{detail.availability === 'deleted' ? 'Сообщение удалено. Ниже показана сохранённая копия.' : 'Оригинал сейчас недоступен. Ниже показана сохранённая копия.'}</p>}
     <p className="message-text">{detail.text || 'Медиа или служебное сообщение без текста'}</p>
     <section aria-label="Вложения"><h4>Вложения</h4>{detail.attachments ? detail.attachments.length ? <ul>{detail.attachments.map((file, i) => <li key={i}>{file.fileName || (attachmentKinds[file.kind] ?? 'Вложение')}{file.size ? ` · ${new Intl.NumberFormat('ru-RU').format(file.size)} байт` : ''}{file.mimeType ? ` · ${file.mimeType}` : ''}</li>)}</ul> : <p className="helper">Вложений нет.</p> : <p className="helper">Сведения о файлах в этой сохранённой публикации недоступны. Просмотреть доступные вложения можно в Telegram.</p>}</section>
-    {link ? <a className="original-link" href={link} target="_blank" rel="noreferrer">Открыть в Telegram ↗</a> : <div><p role="status">{linkState || 'Telegram не предоставил ссылку на эту публикацию.'}</p>{!linkState.startsWith('Получаем') && <button className="text-button" onClick={() => setRetry(n => n + 1)}>Повторить получение ссылки</button>}</div>}
+    <PublicationDocuments message={detail} />
+    {link ? <a className="original-link" href={link} target="_blank" rel="noreferrer">Открыть в Telegram ↗</a> : <div className="link-hint"><p role="status">{linkState || 'Telegram не предоставил ссылку на эту публикацию.'}</p>{!linkState.startsWith('Получаем') && <button className="text-button" onClick={() => setRetry(n => n + 1)}>Повторить получение ссылки</button>}</div>}
     {error && <div role="alert" className="error dismissible"><span>{error}</span><button className="icon-button" aria-label="Закрыть ошибку публикации" onClick={() => setError('')}>×</button></div>}
     {notice && <p role="status">{notice}</p>}
     <div className="action-row">
       {detail.sourceKey && <button className="secondary-button" disabled={busy} onClick={() => void action(() => ownerMutation('/api/workspace/saved', 'POST', { sourceKey: detail.sourceKey, messageId: detail.id }), 'Публикация сохранена.')}>Сохранить публикацию</button>}
       <button className="secondary-button" disabled={busy} onClick={() => void action(() => navigator.clipboard.writeText(detail.text || ''), 'Текст скопирован.')}>Копировать текст</button>
-      <button className="secondary-button" disabled={busy} onClick={() => void action(() => loadProjects(), '')}>Добавить в проект</button>
+      <button className="secondary-button" disabled={busy} aria-expanded={projectOpen} onClick={() => { setProjectOpen(value => !value); if (!projects) void action(() => loadProjects(), ''); }}>Добавить в проект</button>
     </div>
-    {projects && !detail.sourceKey && <p className="helper">Добавление использует уже сохранённые в hradar данные. Если публикация впервые найдена в прежнем публичном режиме, сначала найдите её через поиск внутри проекта.</p>}
-    {projects && <form onSubmit={e => { e.preventDefault(); void action(() => mutate(`/api/projects/${projectId}/cards`, 'POST', { channelId: detail.channelId, messageId: detail.id, ...(detail.sourceKey ? { sourceKey: detail.sourceKey } : {}) }), 'Публикация добавлена на доску проекта.'); }}>
+    {projectOpen && projects && !detail.sourceKey && <p className="helper">Добавление использует уже сохранённые в hradar данные. Если публикация впервые найдена в прежнем публичном режиме, сначала найдите её через поиск внутри проекта.</p>}
+    {projectOpen && projects && <form onSubmit={e => { e.preventDefault(); void action(() => mutate(`/api/projects/${projectId}/cards`, 'POST', { channelId: detail.channelId, messageId: detail.id, ...(detail.sourceKey ? { sourceKey: detail.sourceKey } : {}) }), 'Публикация добавлена на доску проекта.'); }}>
 <label>Найти проект<input value={projectQuery} disabled={busy} onChange={e => setProjectQuery(e.target.value)} /></label><button type="button" className="secondary-button" disabled={busy} onClick={() => void action(() => loadProjects(), '')}>Найти проекты</button>
       <label>Проект найма<select value={projectId} disabled={busy} onChange={e => setProjectId(e.target.value)}><option value="">Выберите проект</option>{eligible.map(p => <option key={p.id} value={p.id}>{p.criteria.name}</option>)}</select></label>
       {!eligible.length && <p className="helper">На этой странице нет подходящих активных проектов. Измените запрос или выберите другую страницу. Для добавления включите этот чат в область поиска проекта.</p>}

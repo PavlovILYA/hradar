@@ -6,6 +6,13 @@
 
 Build a local-first recruiting workspace centered on **explicitly permitted Telegram sources**, with searchable publications, deterministic monitoring, actionable saved results and, later, a bot/mobile control surface and carefully permissioned AI tools. The primary value is **relevant, reviewable recruitment leads**, not the volume of scraped messages.
 
+## 0.11 — explicit local Telegram documents
+
+PDF/DOCX/TXT discovery, explicit bounded download/extraction and local FTS search
+with source publication links; SSE popover closure regression. No automatic history
+download, OCR, Whisper, embeddings or external AI. Verification and remaining real
+account checks: docs/TELEGRAM_DOCUMENTS.md and DEV_STATUS.
+
 ## 0.10 — recruiter workflow UX follow-up
 
 The agreed scope is a compact three-step chat search, saved-search/tracking model,
