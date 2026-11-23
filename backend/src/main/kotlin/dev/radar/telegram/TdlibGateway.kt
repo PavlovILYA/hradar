@@ -17,7 +17,7 @@ import kotlin.coroutines.resumeWithException
 data class TelegramStatus(val authorizationState: String, val authorized: Boolean, val connectionState: String = "Initializing")
 
 @Serializable
-data class TelegramUser(val id: Long, val firstName: String, val lastName: String, val username: String? = null)
+data class TelegramUser(val id: Long, val firstName: String, val lastName: String, val username: String? = null, val avatarAvailable: Boolean = false)
 
 @Serializable
 data class TelegramMessage(val id: Long, val date: Int, val text: String?, val channelId: Long)
@@ -70,6 +70,15 @@ internal suspend fun readPublicUser(username: String, request: suspend (TdApi.Fu
     require(user.type is TdApi.UserTypeRegular && user.id > 0) { "Найден не пользователь. Отправьте приглашение по ссылке" }
     BotAccessUser(user.id, listOf(user.firstName, user.lastName).filter { !it.isNullOrBlank() }.joinToString(" ").take(100),
         user.usernames?.activeUsernames?.firstOrNull(), "guest")
+}
+
+internal fun awaitTdlibClosed(closed: java.util.concurrent.CountDownLatch, timeoutMillis: Long = 10_000) {
+    check(closed.await(timeoutMillis, java.util.concurrent.TimeUnit.MILLISECONDS)) { "TDLib did not confirm shutdown; profile remains locked" }
+}
+
+internal suspend fun logOutTdlib(request: suspend (TdApi.Function<*>) -> TdApi.Object, awaitClosed: suspend () -> Unit) {
+    check(request(TdApi.LogOut()) is TdApi.Ok) { "TDLib logout was not acknowledged" }
+    awaitClosed()
 }
 
 class TdlibGateway(
@@ -131,7 +140,7 @@ class TdlibGateway(
     suspend fun getMe(): TelegramUser {
         ensureAuthorized()
         val user = request(TdApi.GetMe()) as TdApi.User
-        return TelegramUser(user.id, user.firstName, user.lastName, user.usernames?.activeUsernames?.firstOrNull())
+        return TelegramUser(user.id, user.firstName, user.lastName, user.usernames?.activeUsernames?.firstOrNull(), user.profilePhoto?.small != null)
     }
     suspend fun resolvePublicUser(username: String): BotAccessUser {
         ensureAuthorized()
@@ -210,10 +219,20 @@ class TdlibGateway(
 
     private val closed = java.util.concurrent.CountDownLatch(1)
 
+    suspend fun logOut() {
+        if (!::client.isInitialized) return
+        logOutTdlib(::request) { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { awaitClosed() } }
+        authExecutor.shutdown()
+    }
+
+    private fun awaitClosed() {
+        awaitTdlibClosed(closed)
+    }
+
     fun close() {
         if (::client.isInitialized) {
-            client.send(TdApi.Close(), null)
-            closed.await(10, java.util.concurrent.TimeUnit.SECONDS)
+            if (closed.count != 0L) client.send(TdApi.Close(), null)
+            awaitClosed()
         }
         authExecutor.shutdown()
     }
