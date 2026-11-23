@@ -69,7 +69,7 @@ internal fun runApplication(
             val again = try { runProfileApplication(openBrowser,probeReady,store,paths) }
             catch (_:Exception) {
                 DesktopRuntime.conflict("Не удалось открыть выбранный профиль. Другой аккаунт не запущен; данные сохранены. Проверьте профиль и резервную копию.")
-                false
+                throw IllegalStateException("Не удалось запустить выбранный профиль; другой аккаунт не запущен")
             }
         } while (again) } finally { retainedLease?.close() }
     } finally { applicationLease.close() }
