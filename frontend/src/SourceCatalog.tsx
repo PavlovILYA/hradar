@@ -1,9 +1,10 @@
+import { workspaceFetch } from './workspace';
 import { useEffect, useRef, useState } from 'react';
 import './sourceCatalog.css';
 
 export interface SourceScope { kind: 'CHAT' | 'FORUM_TOPIC' | 'MESSAGE_THREAD'; forumTopicId?: number | null; messageThreadId?: number | null }
 export interface TelegramSource {
-  key: string; chatId: number; type: 'PRIVATE' | 'BASIC_GROUP' | 'SUPERGROUP' | 'CHANNEL'; title: string;
+  key: string; avatarAvailable?: boolean; chatId: number; type: 'PRIVATE' | 'BASIC_GROUP' | 'SUPERGROUP' | 'CHANNEL'; title: string;
   username?: string | null; scope: SourceScope; scopeTitle?: string | null; isPublic: boolean;
   access: 'AVAILABLE' | 'UNKNOWN' | 'UNAVAILABLE'; isForum: boolean; protectedContent: boolean;
   legacyChannel: boolean; monitoringEnabled: boolean; threadAnchorChatId?: number | null; threadAnchorMessageId?: number | null;
@@ -21,7 +22,7 @@ const sourceId = (source: TelegramSource) => `${source.chatId}:${source.scope.ki
 const types = { PRIVATE: 'Личный чат', BASIC_GROUP: 'Группа', SUPERGROUP: 'Супергруппа', CHANNEL: 'Канал' };
 const accesses = { AVAILABLE: 'Доступен', UNKNOWN: 'Доступ не подтверждён', UNAVAILABLE: 'Недоступен' };
 export async function sourceRequest<T>(path: string, signal?: AbortSignal, init: RequestInit = {}, timeoutMs = 25_000): Promise<T> {
-  const response = await fetch(path, { ...init, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs) });
+  const response = await workspaceFetch(path, { ...init, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs) });
   if (!response.ok) throw new Error(response.status === 429 ? 'Telegram ограничил частоту запросов. Повторите позже.' :
     response.status === 403 ? 'Доступ запрещён. Обновите страницу и проверьте доступ к источнику.' :
       response.status === 503 ? 'Telegram недоступен. Проверьте подключение и авторизацию.' : 'Не удалось выполнить запрос. Повторите попытку.');

@@ -1,3 +1,4 @@
+import { Avatar } from './Profiles';
 import { useEffect, useRef, useState } from 'react';
 import { sameSource, sourceMutation, sourceRequest } from './SourceCatalog';
 import type { SourcePage, TelegramSource } from './SourceCatalog';
@@ -49,7 +50,7 @@ export function ChatPicker({ keys, onChange, disabled = false, maxScopes = 10, o
   function row(source: TelegramSource) {
     const existing = saved.find(s => sameSource(s, source)); const checked = (!!existing && keys.includes(existing.key)) || pending.some(s => sameSource(s, source));
     const name = source.scopeTitle ? `${source.title} / ${source.scopeTitle}` : source.title;
-    return <div className="source-record" key={`${source.chatId}:${source.scope.kind}:${source.scope.forumTopicId ?? source.scope.messageThreadId ?? 0}`}><label><input type="checkbox" checked={checked} disabled={disabled || busy || source.access === 'UNAVAILABLE' || (!checked && keys.length >= maxScopes)} onChange={e => e.target.checked ? void select([source]) : onChange(keys.filter(k => k !== existing?.key))} />{name}</label>{source.isForum && source.scope.kind === 'CHAT' && <button type="button" className="text-button" disabled={busy || disabled} onClick={() => void showTopics(source.chatId)}>Выбрать тему</button>}</div>;
+    return <div className="source-record" key={`${source.chatId}:${source.scope.kind}:${source.scope.forumTopicId ?? source.scope.messageThreadId ?? 0}`}><label><input type="checkbox" checked={checked} disabled={disabled || busy || source.access === 'UNAVAILABLE' || (!checked && keys.length >= maxScopes)} onChange={e => e.target.checked ? void select([source]) : onChange(keys.filter(k => k !== existing?.key))} /><Avatar name={source.title} src={source.avatarAvailable ? `/api/avatars/chats/${source.chatId}` : undefined} />{name}</label>{source.isForum && source.scope.kind === 'CHAT' && <button type="button" className="text-button" disabled={busy || disabled} onClick={() => void showTopics(source.chatId)}>Выбрать тему</button>}</div>;
   }
   return <fieldset disabled={disabled} className="chat-picker"><legend>Чаты и темы · выбрано {keys.length} из {maxScopes}</legend>
     <label>Найти чат<input type="search" disabled={busy} value={query} onChange={e => setQuery(e.target.value)} /></label><button type="button" disabled={busy} className="secondary-button" onClick={() => void load()}>Найти чаты</button>

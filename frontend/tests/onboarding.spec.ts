@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 test('technical diagnostics copy only approved fields and identifiers', async ({ page }) => {
   await page.clock.install();

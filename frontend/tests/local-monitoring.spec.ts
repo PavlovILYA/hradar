@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures';
 import { openSection } from './navigation-helpers';
 
 const source = { key: 'synthetic-cloud', chatId: 3001, type: 'PRIVATE', title: 'Synthetic cloud source', username: null, scope: { kind: 'CHAT' }, isPublic: false, access: 'AVAILABLE', isForum: false, protectedContent: false, legacyChannel: false, monitoringEnabled: false };

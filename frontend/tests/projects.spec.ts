@@ -1,5 +1,5 @@
 import { openSection } from './navigation-helpers';
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 test('recruiter creates a project, searches, reviews Kanban and restores notes after reload', async ({ page }, testInfo) => {
   let project: any = null;

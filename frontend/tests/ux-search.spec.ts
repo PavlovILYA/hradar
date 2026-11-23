@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 const source = { key: 'qa', chatId: 123, type: 'BASIC_GROUP', title: 'Synthetic hiring', scope: { kind: 'CHAT' }, access: 'AVAILABLE' };
 const template = { id: 'saved', name: 'Java hiring', telegramQuery: 'java', required: ['java'], any: [], excluded: [], sourceMode: 'chats', sourceKeys: ['qa'], sources: [], active: true, subscribed: false, notificationsEnabled: false };

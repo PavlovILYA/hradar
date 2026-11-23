@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures';
 import { openSection } from './navigation-helpers';
 
 const candidate = (chatId: number, title: string, extra: Record<string, unknown> = {}) => ({

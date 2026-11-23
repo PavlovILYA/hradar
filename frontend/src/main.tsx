@@ -1,3 +1,5 @@
+import { ProfileGate, AccountMenu, Accounts, type ProfileStatus } from './Profiles';
+import { workspaceUrl } from './workspace';
 import { Documents } from './Documents';
 import { UpdateStatus } from './UpdateStatus';
 import { Onboarding, desktopLaunch, shutdownDesktop, isDesktop } from './Onboarding';
@@ -36,7 +38,7 @@ function Highlight({ text, terms }: { text: string; terms: string[] }) {
   const regex = new RegExp(`(${words.map(word => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'giu');
   return text.split(regex).map((part, i) => i % 2 ? <mark key={i}>{part}</mark> : part);
 }
-function App() {
+function App({ profile }: { profile: ProfileStatus }) {
   const [status, setStatus] = useState<TelegramStatus | null>(null);
   const [statusAt, setStatusAt] = useState(0);
   const [statusClock, setStatusClock] = useState(Date.now());
@@ -49,7 +51,7 @@ function App() {
   const [notice, setNotice] = useState('');
   const [result, setResult] = useState<{ username: string; messages: ResearchMessage[] } | null>(null);
   const [filter, setFilter] = useState('');
-  const [screen, setScreen] = useState<Screen>(() => (['overview', 'application', 'search', 'notifications', 'templates', 'saved', 'projects', 'archive', 'documents'].includes(new URLSearchParams(location.search).get('screen') ?? '') ? new URLSearchParams(location.search).get('screen') : 'overview') as Screen);
+  const [screen, setScreen] = useState<Screen>(() => (['overview', 'application', 'search', 'notifications', 'templates', 'saved', 'projects', 'archive', 'documents', 'accounts'].includes(new URLSearchParams(location.search).get('screen') ?? '') ? new URLSearchParams(location.search).get('screen') : 'overview') as Screen);
   const currentScreen = useRef(screen);
   const selectionEpoch = useRef(0);
   function setError(message: string, context: Screen = screen) { if (!message || currentScreen.current === context) setErrorState(message); }
@@ -89,7 +91,8 @@ function App() {
   }
   useEffect(() => { void refreshNotifications().catch(e => { if (currentScreen.current === 'notifications') setError((e as Error).message, 'notifications'); }); }, []);
   useEffect(() => {
-    const events = new EventSource('/api/events');
+    const events = new EventSource(workspaceUrl('/api/events'));
+    const notices = new Set<Notification>();
     let lastRevision: string | null = null;
     let claiming = false;
     let claimPending = false;
@@ -106,12 +109,15 @@ function App() {
           for (const item of deliveries) {
             try {
               const notice = new Notification(`hradar · ${item.title}`, { body: item.body, tag: item.id });
+              notices.add(notice);
+              notice.onclose = () => { notices.delete(notice); };
               notice.onclick = () => {
+                if (stopped) return;
                 window.focus(); const epoch = ++selectionEpoch.current; const context = currentScreen.current;
                 void request<NotificationRecord>(`/api/workspace/inbox/${item.id}`).then(record => {
                   if (epoch === selectionEpoch.current) void openNotification(record);
                 }).catch(e => { if (epoch === selectionEpoch.current) setError((e as Error).message, context); });
-                notice.close();
+                notices.delete(notice); notice.close();
               };
             } catch { /* Durable claim owns at-most-once delivery; the inbox survives permission changes. */ }
           }
@@ -149,7 +155,7 @@ function App() {
       if (latestRevision !== lastRevision) { refreshPending = true; void refreshInbox(); }
     };
     events.onerror = () => setEventConnected(false);
-    return () => { stopped = true; events.close(); };
+    return () => { stopped = true; events.close(); for (const notice of notices) notice.close(); notices.clear(); };
   }, []);
   async function notificationAction(path: string | string[]) {
     setError('');
@@ -258,6 +264,7 @@ function App() {
     <main className="workspace-main" inert={navigationOpen || undefined}>
       <header className="workspace-header"><button id="navigation-toggle" className="navigation-toggle icon-button" aria-label="Открыть навигацию" aria-expanded={navigationOpen} aria-controls="workspace-navigation" onClick={() => setNavigationOpen(true)}>☰</button>
         <div><h1 ref={heading} tabIndex={-1}>{screenTitles[screen]}</h1><span role="status" className={`connection-status ${statusFresh && status?.authorized && status.connectionState === 'Ready' ? 'online' : ''}`}>{statusLabel}</span></div>
+        <AccountMenu profile={profile} onAccounts={() => navigate('accounts')} />
         <UpdateStatus connected={eventConnected} screen={screen} onApplication={() => navigate('application')} />
         <button className="icon-button" aria-label="Обновить статус" disabled={checking} onClick={() => void checkStatus()}>↻</button>
         {selected && screen === selectionContext && !detailsOpen && <button className="text-button" onClick={() => setDetailsOpen(true)}>Открыть детали</button>}
@@ -276,6 +283,7 @@ function App() {
           {view('mcp', <McpIntegration active={screen === 'mcp'} />)}
           {view('archive', <><div className="archive-actions"><button className="secondary-button" onClick={() => { setArchiveSourceKey(''); setSelected(null); }}>Выбрать сохранённый источник</button><button className="text-button" onClick={() => { setArchiveSourceKey(null); setSelected(null); }}>Архив публичного канала по username</button></div>{archiveSourceKey !== null ? <SelectedSourceArchive key={`${archiveSourceKey}:${sourceIntentRevision}`} initialKey={archiveSourceKey} authorized={!!status?.authorized} onSelect={m => void selectMessage(m, 'archive')} /> : <HistoryArchive key={archiveUsername} username={archiveUsername} autoStart={false} onSourceChange={name => { setUsername('@' + name); setArchiveUsername(name); if (selectionContext === 'archive') setSelected(null); }} authorized={!!status?.authorized} onSelect={m => void selectMessage(m, 'archive')} />}</>)}
           {view('notifications', <><details className="delivery-settings"><summary>Всплывающие уведомления</summary><NotificationPreferences /></details><Notifications items={notificationPage.items} unread={notificationPage.unread} cursor={notificationPage.cursor} onRead={ids => void notificationAction(ids.map(id => `/api/notifications/${id}/read`))} onRefresh={() => void refreshNotifications().catch(e => setError((e as Error).message))} onReadAll={() => void notificationAction('/api/notifications/read-all')} onOpen={openNotification} onMore={() => void refreshNotifications(true).catch(e => setError((e as Error).message))} /></>)}
+          {view('accounts', <Accounts profile={profile} />)}
           {view('application', <section className="data-screen application-state"><h2>Подключение и работа приложения</h2><dl><dt>Версия hradar</dt><dd>{appVersion}</dd><dt>Telegram</dt><dd>{statusLabel}</dd><dt>Этап авторизации</dt><dd>{status?.authorizationState ?? 'Нет ответа'}</dd><dt>Соединение</dt><dd>{status?.connectionState ?? 'Нет ответа'}</dd><dt>Обновления уведомлений</dt><dd>{eventConnected ? 'Подключены' : 'Переподключение'}</dd></dl><p className="helper">Настройки и данные сохраняются локально. При завершении hradar мониторинг и доставка сообщений ботом остановятся.</p>{isDesktop() ? <button className="secondary-button" onClick={() => void shutdownDesktop().catch(e => setError((e as Error).message))}>Завершить hradar</button> : <p className="helper">Кнопка завершения доступна при запуске через desktop-приложение.</p>}</section>)}
           {view('search', <>
             <div className="archive-actions"><span className="helper">Источник результатов: Telegram</span><button className="secondary-button" onClick={() => navigate('documents')}>Искать в локальных документах</button></div><section className="online-search" aria-label="Онлайн-поиск">{searchMode !== 'sources' && <><h2>Поиск в Telegram</h2><p className="helper compact">Источник результатов: Telegram API. Локальный архив не используется.</p></>}
@@ -306,7 +314,7 @@ function App() {
   </div>;
 }
 function Empty({ title, text, children }: { title: string; text: string; children?: ReactNode }) { return <div className="empty-state"><span className="empty-symbol" aria-hidden="true">⌕</span><h3>{title}</h3><p>{text}</p>{children}</div>; }
-void desktopLaunch().then(() => createRoot(document.getElementById('root')!).render(<App />)).catch(e => {
+void desktopLaunch().then(() => createRoot(document.getElementById('root')!).render(<ProfileGate>{profile => <App profile={profile} />}</ProfileGate>)).catch(e => {
   const root = document.getElementById('root')!;
   root.textContent = (e as Error).message;
   const retry = document.createElement('button');

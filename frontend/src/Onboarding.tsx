@@ -1,3 +1,4 @@
+import { workspaceFetch } from './workspace';
 import { useEffect, useState, useRef } from 'react';
 import './Onboarding.css';
 import { OnboardingDiagnostics, readDiagnostic } from './OnboardingDiagnostics';
@@ -61,7 +62,7 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
       polling = true;
       const version = generation.current;
       try {
-        const r = await fetch('/api/onboarding', { cache: 'no-store' });
+        const r = await workspaceFetch('/api/onboarding', { cache: 'no-store' });
         if (!r.ok) { if (mounted.current) setConnectionError('Откройте hradar через установленное приложение.'); return; }
         const s = await r.json() as Status;
         if (!mounted.current || version !== generation.current) return;
@@ -89,7 +90,7 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
     if (pending.current || locked || (retrySeconds > 0 && path !== '/api/desktop/shutdown')) return;
     pending.current = true; generation.current++; setBusy(true); setError(''); setMessage(''); setDiagnostic(null);
     try {
-      const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Hradar-CSRF': statusRef.current?.csrfToken ?? '' }, body: JSON.stringify(body ?? {}) });
+      const r = await workspaceFetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Hradar-CSRF': statusRef.current?.csrfToken ?? '' }, body: JSON.stringify(body ?? {}) });
       if (!mounted.current) return;
       if (!r.ok) {
         const data = await r.json() as { error?: string; kind?: string; retryAfterSeconds?: number; diagnostics?: unknown };
@@ -117,7 +118,7 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
   const step = !status || credentials ? 0 : status.state === 'WaitPhoneNumber' || editingPhone ? 1 : 2;
   const title = editingPhone ? 'Изменить номер телефона' : titles[status?.state ?? ''] ?? (status && !waiting[status.state] ? 'Дополнительный этап входа' : 'Подключаем Telegram');
   const description = editingPhone ? 'Введите другой номер. Telegram начнёт вход для него, сохранив локальные данные hradar.'
-    : credentials ? 'Один раз настройте доступ для своего аккаунта. Это данные приложения, полученные у Telegram.'
+    : credentials ? 'Настройте API приложения Telegram один раз для всех аккаунтов. Это отдельные данные приложения, а не вход в аккаунт.'
     : status?.state === 'WaitPhoneNumber' ? 'Укажите номер существующего аккаунта в международном формате. Способ подтверждения выберет Telegram.'
     : status?.state === 'WaitPassword' ? 'Введите пароль двухэтапной проверки, который вы задали в Telegram. Это не код из сообщения.'
     : status?.state === 'WaitEmailAddress' ? 'Telegram запросил адрес электронной почты для подтверждения входа.'
@@ -139,7 +140,7 @@ export function Onboarding({ onReady }: { onReady: () => void }) {
           <button className="login-primary" disabled={locked || retrySeconds > 0}>{locked ? 'Отправляем…' : 'Получить код'}</button>
           <button type="button" className="login-back" aria-label={code ? 'Назад к коду' : 'Назад к подтверждению'} disabled={locked} onClick={() => setEditingPhone(false)}>← {code ? 'Назад к коду' : 'Назад к подтверждению'}</button>
         </form> : credentials ? <form aria-busy={locked} onSubmit={e => { e.preventDefault(); void submit('/api/onboarding/credentials', { apiId: Number(apiId), apiHash }); }}>
-          <p className="login-field-hint">Получите данные на <a href="https://my.telegram.org/apps" target="_blank" rel="noreferrer">my.telegram.org/apps ↗</a>. Они сохраняются в приватном профиле macOS. Не передавайте их другим людям.</p>
+          <p className="login-field-hint">Получите данные на <a href="https://my.telegram.org/apps" target="_blank" rel="noreferrer">my.telegram.org/apps ↗</a>. Они сохраняются локально и используются всеми аккаунтами hradar. Не передавайте их другим людям.</p>
           <label htmlFor="auth-api-id">API ID</label><input ref={input} id="auth-api-id" required inputMode="numeric" value={apiId} onChange={e => setApiId(e.target.value)} disabled={locked} aria-describedby="login-feedback" />
           <label htmlFor="auth-api-hash">API hash</label><input id="auth-api-hash" required type="password" autoComplete="off" value={apiHash} onChange={e => setApiHash(e.target.value)} disabled={locked} aria-describedby="login-feedback" />
           <button className="login-primary" disabled={locked}>{locked ? 'Сохраняем…' : 'Сохранить и продолжить'}</button>
@@ -176,9 +177,9 @@ export async function desktopLaunch() {
 }
 export function isDesktop() { return sessionStorage.getItem('hradar-desktop') === 'true'; }
 export async function shutdownDesktop() {
-  const response = await fetch('/api/onboarding', { cache: 'no-store' });
+  const response = await workspaceFetch('/api/onboarding', { cache: 'no-store' });
   const status = await response.json() as Status;
-  const stopped = await fetch('/api/desktop/shutdown', { method: 'POST', headers: { 'X-Hradar-CSRF': status.csrfToken } });
+  const stopped = await workspaceFetch('/api/desktop/shutdown', { method: 'POST', headers: { 'X-Hradar-CSRF': status.csrfToken } });
   if (!stopped.ok) throw new Error('Не удалось завершить hradar.');
   document.getElementById('root')!.textContent = 'hradar завершён. Теперь можно закрыть вкладку.';
 }
