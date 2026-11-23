@@ -30,7 +30,10 @@ try {
   page.on('pageerror', e => failures.push(e.message));
   // The live SSE also carries real (unauthorized) Telegram status. Keep that
   // channel out of the fake-auth CRM scenario; all CRM HTTP requests stay real.
-  await page.route('**/api/events', route => route.abort());
+  await page.route(url => url.pathname === '/api/events', route => {
+    if (!new URL(route.request().url()).searchParams.get('workspace')) throw new Error('EventSource lacks workspace generation');
+    return route.abort();
+  });
   await page.route('**/api/telegram/status', route => route.fulfill({ json: { authorized: true, authorizationState: 'Ready', connectionState: 'Ready' } }));
   await page.goto(await launchUrl());
   // Hydrate the real Dashboard before leaving it: cached hidden views may contain

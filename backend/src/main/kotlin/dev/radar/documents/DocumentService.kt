@@ -272,9 +272,12 @@ class DocumentService(
         if (!value.record.hasText) throw ResourceNotFound()
         return DocumentText(value.text,value.record.truncated)
     }
+    fun hasActiveJobs(): Boolean = synchronized(gate) { jobs.values.any { !it.isCompleted } }
     override fun close() {
         synchronized(gate) { closed = true; jobs.values.toList().forEach { it.cancel() }; queue.close(); scope.cancel() }
-        runBlocking { withTimeoutOrNull(3_000) { scope.coroutineContext[Job]?.join() } }
+        check(runBlocking { withTimeoutOrNull(3_000) { scope.coroutineContext[Job]?.join(); true } } == true) {
+            "Не удалось подтвердить остановку обработки документов"
+        }
         synchronized(gate) {
             jobs.clear()
             repo.documentIds().forEach { id -> val value = get(id)

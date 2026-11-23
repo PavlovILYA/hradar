@@ -1,5 +1,7 @@
 package dev.radar.desktop
 
+import io.ktor.utils.io.readAvailable
+
 import dev.radar.telegram.*
 import io.ktor.server.application.*
 import io.ktor.server.routing.*
@@ -34,7 +36,7 @@ fun Application.configureDesktopSecurity(access: DesktopAccess?, csrf: String) {
             val validOrigin = DesktopRuntime.validOrigin(origin)
             // MCP retains its separate explicit enable/source grants and exact Host/Origin guard.
             val api = path.startsWith("/api/")
-            val login = path.startsWith("/api/onboarding") || path == "/api/desktop/shutdown"
+            val login = path.startsWith("/api/profiles/") || path.startsWith("/api/onboarding") || path == "/api/desktop/shutdown"
             val botSettings = path.startsWith("/api/integrations/bot")
             val sourceSettings = path == "/api/documents" || path.startsWith("/api/documents/") || path.startsWith("/api/workspace") || path == "/api/sources" || path.startsWith("/api/sources/") || path.startsWith("/api/source-catalog") || path.startsWith("/api/local-notifications")
             val mutation = call.request.httpMethod !in setOf(HttpMethod.Get, HttpMethod.Head)
@@ -88,11 +90,16 @@ fun Application.configureDesktopSecurity(access: DesktopAccess?, csrf: String) {
     }
 }
 
-private suspend inline fun <reified T> bounded(call: ApplicationCall): T {
-    val length = call.request.headers["Content-Length"]?.toLongOrNull()
-    require(length != null && length in 1..4096) { "Недопустимый размер запроса" }
-    val text = call.receiveText(); require(text.length <= 4096) { "Недопустимый размер запроса" }
-    return try { Json.decodeFromString<T>(text) } catch (_: Exception) { throw IllegalArgumentException("Некорректный формат запроса") }
+internal suspend inline fun <reified T> bounded(call: ApplicationCall): T {
+    val channel=call.receiveChannel();val bytes=ByteArray(4097);var size=0
+    while(size<bytes.size) {
+        val count=channel.readAvailable(bytes,size,bytes.size-size)
+        if(count<0) break
+        size+=count
+    }
+    require(size<=4096) { "Недопустимый размер запроса" }
+    return try { Json.decodeFromString<T>(bytes.copyOf(size).decodeToString(throwOnInvalidSequence=true)) }
+    catch (_:Exception) { throw IllegalArgumentException("Некорректный формат запроса") }
 }
 fun Application.configureOnboarding(telegram: TdlibGateway, paths: RuntimePaths, csrf: String, shutdown: () -> Unit) {
     routing {

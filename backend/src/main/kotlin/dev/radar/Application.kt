@@ -1,6 +1,7 @@
 package dev.radar
 
 import dev.radar.sources.*
+import dev.radar.profiles.*
 import dev.radar.documents.configureDocuments
 
 import dev.radar.desktop.*
@@ -44,31 +45,66 @@ internal fun runApplication(
     probeReady: () -> Boolean = DesktopRuntime::probeReady,
 ) {
     if (System.getProperty("hradar.jniSmoke") == "true") { jniSmoke(); return }
-    val paths = RuntimePaths()
+    val base = RuntimePaths()
+    if (DesktopRuntime.portOccupied()) {
+        if (!DesktopRuntime.reopen(base)) DesktopRuntime.conflict("Порт hradar занят. Завершите работающий экземпляр.")
+        return
+    }
+    Files.createDirectories(base.data)
+    check(!Files.isSymbolicLink(base.data)) { "Профиль приложения недоступен" }
+    Files.setPosixFilePermissions(base.data, java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"))
+    val applicationLease = SessionLease.acquire(base.data)
+        ?: throw IllegalStateException("Другой экземпляр hradar уже использует профили")
+    try {
+        val store = ProfileStore(base.home)
+        try { store.prepare() } catch (_:Exception) {
+            DesktopRuntime.conflict("Не удалось безопасно подготовить профили. Исходные данные сохранены. Закройте другие версии, проверьте место и реестр профилей; восстановление описано в TELEGRAM_PROFILES.md.")
+            return
+        }
+        // Retained 0.11 session copies must not be reopened by an older binary concurrently.
+        val retainedLease = if (Files.isDirectory(base.session, java.nio.file.LinkOption.NOFOLLOW_LINKS))
+            SessionLease.acquire(base.session) ?: error("Прежний экземпляр hradar использует сохранённую сессию") else null
+        try { do {
+            val paths = RuntimePaths(base.home, store.active().id)
+            val again = try { runProfileApplication(openBrowser,probeReady,store,paths) }
+            catch (_:Exception) {
+                DesktopRuntime.conflict("Не удалось открыть выбранный профиль. Другой аккаунт не запущен; данные сохранены. Проверьте профиль и резервную копию.")
+                false
+            }
+        } while (again) } finally { retainedLease?.close() }
+    } finally { applicationLease.close() }
+}
+
+private fun runProfileApplication(
+    openBrowser: (DesktopAccess) -> Unit,
+    probeReady: () -> Boolean,
+    profileStore: ProfileStore,
+    paths: RuntimePaths,
+): Boolean {
     // Older builds may have no session lock. Check their fixed port before any migration.
     if (DesktopRuntime.portOccupied()) {
         if (DesktopRuntime.reopen(paths)) {
             if (DesktopRuntime.enabled && !DesktopRuntime.smoke) kotlin.system.exitProcess(0)
-            return
+            return false
         }
         DesktopRuntime.conflict("Порт ${DesktopRuntime.port} занят. Закройте работающий hradar перед запуском новой версии.")
-        return
+        return false
     }
     try { paths.prepare() } catch (_: Exception) {
         DesktopRuntime.conflict("Не удалось безопасно перенести локальные данные hradar. Оригиналы сохранены; проверьте права, место и занятые файлы.")
-        return
+        return false
     }
     val lease = SessionLease.acquire(paths.session)
     if (lease == null) {
         if (!DesktopRuntime.reopen(paths)) DesktopRuntime.conflict("hradar уже использует эту Telegram-сессию. Закройте работающий экземпляр.")
         if (DesktopRuntime.enabled && !DesktopRuntime.smoke) kotlin.system.exitProcess(0)
-        return
+        return false
     }
     // Older development installs don't take our lock: reject occupied port before TDLib starts.
     if (DesktopRuntime.portOccupied()) {
         lease.close()
         DesktopRuntime.conflict("Порт ${DesktopRuntime.port} занят. Закройте старый backend hradar или другое приложение и повторите запуск.")
-        return
+        return false
     }
     val desktopAccess = if (DesktopRuntime.enabled) DesktopAccess(DesktopRuntime.token()) else null
     val credentials = if (DesktopRuntime.smoke) null else paths.loadCredentials()
@@ -78,7 +114,7 @@ internal fun runApplication(
         DesktopRuntime.conflict(if (ex is IllegalStateException && ex.message == "Database schema is newer than this application")
             "База данных создана более новой версией hradar. Используйте совместимую новую сборку; данные не удалены."
         else "Не удалось открыть пользовательскую базу hradar. Проверьте доступ к профилю и завершите старый экземпляр.")
-        return
+        return false
     }
     val csrf = DesktopRuntime.token()
     val matching = MatchingService()
@@ -92,20 +128,58 @@ internal fun runApplication(
         lookup = telegram::resolvePublicUser, statusText = {
         val status = telegram.getStatus()
         "hradar\nTDLib: ${status.authorizationState} · ${status.connectionState}\nМониторинг: ${repositories.channels().size} источников\nАктивные подписки: ${subscriptions.list().count { it.active && it.subscribed && it.sourceMode != "global" }}"
-    }, workspace = workspace, link = { chatId, messageId ->
+    }, workspace = workspace, legacyConfig = BotConfig.managed(null, emptySet(), false), link = { chatId, messageId ->
         (telegram.executeRead(TdApi.GetMessageLink().apply { this.chatId = chatId; this.messageId = messageId }) as TdApi.MessageLink).link
     })
     val monitoring = MonitoringService(telegram, repositories, search, notifications)
     val sourceReader = dev.radar.sources.SourceReadService(repositories, execute = telegram::executeRead)
     // Resolve the established private profile: macOS temporary homes may use the /var alias.
     val documents = dev.radar.documents.DocumentService(repositories, sourceReader,
-        paths.data.toRealPath().resolve("documents"), paths.session.toRealPath().resolve("documents"), telegram::executeRead)
+        paths.documents.toRealPath(), paths.session.toRealPath().resolve("documents"), telegram::executeRead)
     val localMonitoring = dev.radar.sources.LocalMonitoringService(repositories, sourceReader, { telegram.getStatus().let { it.authorized && it.connectionState == "Ready" } })
     val sourceArchive = dev.radar.sources.SourceArchiveService(repositories, { key, cursor -> sourceReader.recent(key, cursor, 100) }, { telegram.getStatus().let { it.authorized && it.connectionState == "Ready" } })
     val historySync = HistorySyncService(repositories, telegram::getHistoryPage, { telegram.getStatus().let { it.authorized && it.connectionState == "Ready" } })
     val readPort = TdlibReadPort(telegram, search)
     val capabilities = CapabilityService(readPort, repositories)
     (org.slf4j.LoggerFactory.getLogger("io.modelcontextprotocol") as ch.qos.logback.classic.Logger).level = ch.qos.logback.classic.Level.OFF
+    val workerGate = Any()
+    var workersStopped = false
+    var workerFailure: Throwable? = null
+    fun stopWorkers() = synchronized(workerGate) {
+        if (!workersStopped) {
+            workersStopped = true
+            telegram.localMessageListener = null
+            val closes = listOf<()->Unit>({ localMonitoring.close() },{ documents.close() },{ sourceArchive.close() },{ historySync.close() },{ monitoring.close() },{ bot.close() })
+            for(close in closes) try { close() } catch(problem:Throwable) { if(workerFailure==null) workerFailure=problem }
+        }
+        workerFailure?.let { throw it }
+    }
+    val profileSession = ProfileSession(profileStore, paths.profileId!!,
+        authorized = { if (DesktopRuntime.smoke) !profileStore.active().loggedOut else telegram.getStatus().authorized },
+        getMe = {
+            if (DesktopRuntime.smoke) ProfileIdentity((java.util.UUID.fromString(paths.profileId).mostSignificantBits ushr 1) % 1_000_000_000L + 1,"Synthetic account",null)
+            else telegram.getMe().let { ProfileIdentity(it.id,listOf(it.firstName,it.lastName).filter(String::isNotBlank).joinToString(" "),it.username,it.avatarAvailable) }
+        },
+        credentialsSource = { when {
+            System.getenv("TG_API_ID")?.toIntOrNull() != null && System.getenv("TG_API_HASH") != null -> "environment"
+            Files.exists(paths.credentials) -> "saved"
+            else -> "missing"
+        } },
+        startWorkers = { synchronized(workerGate) {
+            check(!workersStopped) { "Перезапустите профиль после завершения сеанса" }
+            if (!DesktopRuntime.smoke) {
+                telegram.localMessageListener = localMonitoring::offer
+                bot.start(); monitoring.start(); localMonitoring.start(); historySync.resumePending(); sourceArchive.resumePending()
+            }
+        } },
+        stopWorkers = ::stopWorkers,
+        operationBusy = { telegram.onboarding.status().busy || documents.hasActiveJobs() },
+        botOwner = { bot.status().owner?.id },
+    )
+    val avatars = AvatarService(paths.avatars,paths.session.toRealPath(),telegram::executeRead)
+    var restartProfile: (ProfileChange)->Unit = {}
+    val pendingChange = java.util.concurrent.atomic.AtomicReference<ProfileChange?>(null)
+    val cleanupFailed = java.util.concurrent.atomic.AtomicBoolean(false)
     var menu: DesktopMenu? = null
     val shutdownRequested = java.util.concurrent.atomic.AtomicBoolean(false)
     fun requestShutdown() {
@@ -116,7 +190,10 @@ internal fun runApplication(
     }
     val server = embeddedServer(Netty, host = "127.0.0.1", port = DesktopRuntime.port) {
         configureDesktopSecurity(desktopAccess, csrf)
+        configureProfileAccess(profileSession)
         configureOnboarding(telegram, paths, csrf, ::requestShutdown)
+        configureProfileRoutes(profileStore,profileSession,paths::saveCredentials) { restartProfile(it) }
+        configureAvatarRoutes(avatars)
         routing { staticResources("/", "web", index = "index.html") }
         // Root route installation permits the MCP child route to use its SDK serializer.
         routing { install(ContentNegotiation) {
@@ -188,18 +265,29 @@ internal fun runApplication(
             // Each owner must close even if another service fails. Never log profile data.
             val steps: List<() -> Unit> = listOf(
                 { server.stop(500, 3000) },
-                { telegram.localMessageListener = null }, { localMonitoring.close() },
-                { documents.close() }, { sourceArchive.close() }, { historySync.close() }, { monitoring.close() },
-                { bot.close() }, { telegram.close() }, { repositories.close() },
+                { profileSession.close() }, { stopWorkers() },
+                { if (pendingChange.get()?.logout == true) { kotlinx.coroutines.runBlocking { telegram.logOut() }; profileStore.markLoggedOut(paths.profileId!!) } },
+                { telegram.close() }, { repositories.close() },
                 { if (desktopAccess != null) Files.deleteIfExists(marker); Unit },
-                { menu?.close(); Unit }, { lease.close() },
+                { menu?.close(); Unit },
             )
-            steps.forEach { close ->
-                try { close() } catch (_: Exception) { System.err.println("hradar: ошибка завершения ресурса") }
+            closeProfileResources(steps, { lease.close() }) {
+                cleanupFailed.set(true)
+                System.err.println("hradar: завершение сеанса не подтверждено; процесс остановлен без запуска другого профиля")
+                // Keep leases until the OS terminates every native/polling thread.
+                Runtime.getRuntime().halt(1)
+                throw IllegalStateException("Process termination failed")
             }
         } finally { stopped.countDown() }
     }
-    Runtime.getRuntime().addShutdownHook(Thread { cleanup() })
+    restartProfile = { change ->
+        if (shutdownRequested.compareAndSet(false,true)) {
+            pendingChange.set(change)
+            Thread({ cleanup() },"profile-restart").start()
+        }
+    }
+    val shutdownHook = Thread { cleanup() }
+    Runtime.getRuntime().addShutdownHook(shutdownHook)
     try {
         synchronized(lifecycleLock) {
             menu = DesktopMenu.install({ destination ->
@@ -207,7 +295,8 @@ internal fun runApplication(
             }, ::requestShutdown)
             // Bind first. A competing unrelated listener must never cause a second account client.
             server.start(wait = false)
-            if (!DesktopRuntime.smoke) { telegram.localMessageListener = localMonitoring::offer; telegram.start(); bot.start(); monitoring.start(); localMonitoring.start(); historySync.resumePending(); sourceArchive.resumePending() }
+            if (!DesktopRuntime.smoke) telegram.start()
+            profileSession.start()
             if (desktopAccess != null) {
                 val temporaryMarker = Files.createTempFile(paths.data, "desktop-", ".tmp", java.nio.file.attribute.PosixFilePermissions.asFileAttribute(java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")))
                 try {
@@ -241,5 +330,12 @@ internal fun runApplication(
             finally { kotlin.system.exitProcess(1) }
         }
         throw IllegalStateException("Не удалось запустить hradar; ресурсы освобождены")
-    } finally { cleanup() }
+    } finally {
+        cleanup()
+        try { Runtime.getRuntime().removeShutdownHook(shutdownHook) } catch (_:IllegalStateException) { }
+    }
+    val change = pendingChange.get() ?: return false
+    check(!cleanupFailed.get()) { "Сеанс не завершился безопасно. Завершите hradar перед повторным запуском." }
+    profileStore.select(change.target)
+    return true
 }

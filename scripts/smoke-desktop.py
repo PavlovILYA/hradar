@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Isolated packaged lifecycle smoke. No Telegram client, credentials or user directories."""
-import json, os, pathlib, subprocess, sys, tempfile, time, urllib.request, urllib.error, sqlite3, socket, shutil
+import json, os, pathlib, subprocess, sys, tempfile, time, urllib.request, urllib.error, sqlite3, socket, shutil, fcntl, hashlib
 app = pathlib.Path(sys.argv[1]).resolve()
 launcher = app / 'Contents/MacOS/hradar'
 port = int(sys.argv[2]) if len(sys.argv) > 2 else 1709
@@ -17,6 +17,14 @@ def http(path, body=None, headers=None, expected=200):
     except urllib.error.HTTPError as e:
         assert e.code == expected, (path, e.code, expected)
 
+def document_bytes(document_id, headers):
+    request = urllib.request.Request(f'http://127.0.0.1:{port}/api/documents/{document_id}/file', headers=headers)
+    with urllib.request.urlopen(request, timeout=3) as response:
+        assert response.status == 200
+        assert response.headers['X-Hradar-Workspace'] == headers['X-Hradar-Workspace']
+        assert response.headers['X-Content-Type-Options'] == 'nosniff'
+        return response.read()
+
 def wait_ready(process, marker):
     # Bounded cold start: heavily loaded developer Macs can exceed ten seconds.
     for _ in range(300):
@@ -25,6 +33,50 @@ def wait_ready(process, marker):
             http('/health'); return json.loads(marker.read_text())['token']
         time.sleep(.1)
     raise RuntimeError('Packaged server never became ready\n' + '\n'.join((marker.parent.parent/'runtime.log').read_text().splitlines()[-20:]))
+
+def selected_workspace(home):
+    registry = json.loads((home / '.hradar/profiles.json').read_text())
+    profile_id = registry['activeId']
+    import uuid
+    assert str(uuid.UUID(profile_id)) == profile_id
+    assert sum(profile['id'] == profile_id for profile in registry['profiles']) == 1
+    return home / '.hradar/profiles' / profile_id
+
+def wait_profile(headers):
+    for _ in range(100):
+        state = http('/api/profiles/status', headers=headers)
+        if state['phase'] == 'READY':
+            assert state['identity']['userId'] > 0 and state['active']['confirmed']
+            return state
+        time.sleep(.1)
+    raise RuntimeError('Synthetic profile identity never became READY')
+
+def wait_graph_change(process, marker, previous_token):
+    for _ in range(300):
+        if process.poll() is not None:
+            raise RuntimeError('Profile switch exited the packaged process')
+        try:
+            value = json.loads(marker.read_text())
+            assert value['pid'] == process.pid, 'Profile switch must retain the same JVM'
+            if value['token'] != previous_token:
+                candidate = {'Cookie':'hradar-desktop='+value['token'], 'Origin':f'http://127.0.0.1:{port}', 'Content-Type':'application/json'}
+                http('/health')
+                profile = wait_profile(candidate)
+                candidate['X-Hradar-Workspace'] = profile['generation']
+                onboarding = http('/api/onboarding', headers=candidate)
+                candidate['X-Hradar-CSRF'] = onboarding['csrfToken']
+                return value['token'], candidate, profile, onboarding
+        except (OSError, ValueError):
+            # Marker removal/atomic replacement and listener closure occur between graphs.
+            pass
+        time.sleep(.1)
+    raise RuntimeError('Profile service graph did not restart with fresh authority')
+
+def assert_leases_released(home):
+    for lock in [home / '.hradar/hradar.lock', selected_workspace(home) / 'tdlib/hradar.lock']:
+        with lock.open('r+') as handle:
+            fcntl.lockf(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.lockf(handle, fcntl.LOCK_UN)
 
 def user_database_snapshot(db):
     tables = [row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")]
@@ -60,6 +112,13 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
                 http('/mcp', {}, expected=403)
                 http('/desktop/recover', {}, {'Origin':f'http://hradar.localhost:{port}','X-Hradar-Recovery':'1'}, expected=403)
                 http('/api/onboarding', headers={'Cookie':cookie,'Origin':'https://evil.example'}, expected=403)
+                profile = wait_profile(headers)
+                generation = profile['generation']
+                assert profile['legacyAvailable'], 'External legacy session must remain available for explicit import'
+                http('/api/onboarding', headers=headers, expected=409)
+                headers['X-Hradar-Workspace'] = generation
+                stale_headers = dict(headers, **{'X-Hradar-Workspace':'stale-generation'})
+                http('/api/projects', headers=stale_headers, expected=409)
                 state = http('/api/onboarding', headers=headers)
                 assert state['state'] == 'Credentials'
                 # Stage C routes use the same packaged hostname/cookie/CSRF policy.
@@ -77,7 +136,9 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
                 http('/api/%6fnboarding/credentials', {'apiId':1,'apiHash':'0'*32}, headers, expected=403)
                 http('/api/projects', expected=403)
                 http('/api/projects', headers={'Cookie':cookie,'Origin':'https://evil.example'}, expected=403)
-                database = home/'.hradar/data/research.sqlite'
+                workspace = selected_workspace(home)
+                assert workspace.name == profile['active']['id']
+                database = workspace / 'data/research.sqlite'
                 if attempt == 0:
                     with sqlite3.connect(database) as db:
                         assert db.execute('PRAGMA user_version').fetchone() == (14,)
@@ -93,6 +154,91 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
                     card = http(f'/api/projects/{project_id}/cards', {'channelId':-1001,'messageId':1}, headers, expected=201)
                     req = urllib.request.Request(f'http://127.0.0.1:{port}/api/projects/{project_id}/cards/{card["id"]}', data=json.dumps({'stage':'CONTACTED','notes':'Synthetic preserved note','interest':5}).encode(), headers=headers, method='PUT')
                     with urllib.request.urlopen(req, timeout=3) as response: assert response.status == 200
+                    # Actual service-graph A → B → A, using synthetic smoke identities only.
+                    document_id = 'smoke-profile-a-document'
+                    document_content = b'Synthetic Kotlin engineer profile A document.'
+                    document_hash = hashlib.sha256(document_content).hexdigest()
+                    document_sentinel = workspace / 'documents' / document_hash
+                    document_sentinel.write_bytes(document_content)
+                    document_sentinel.chmod(0o600)
+                    document = {'id':document_id,
+                                'message':{'id':9,'channelId':-1001,'date':1700000000,'text':'Synthetic Kotlin document publication',
+                                           'title':'Synthetic source','username':'synthetic_jobs','sourceKey':'smoke-document-source'},
+                                'fileName':'profile-a-kotlin.txt','mimeType':'text/plain','size':len(document_content),
+                                'format':'txt','state':'READY','downloadedBytes':len(document_content),'hasFile':True,'hasText':True}
+                    bot_identity = {'id':123,'username':'synthetic_bot','name':'Synthetic disabled bot'}
+                    a_uid = profile['identity']['userId']
+                    with sqlite3.connect(database) as db:
+                        db.execute('INSERT INTO documents(id,source_key,message_id,file_id,remote_id,hash,data,text) VALUES(?,?,?,?,?,?,?,?)',
+                                   (document_id,'smoke-document-source',9,99,'synthetic-profile-a-remote',document_hash,json.dumps(document),document_content.decode()))
+                        db.execute('INSERT INTO document_fts(id,file_name,text) VALUES(?,?,?)',
+                                   (document_id,document['fileName'],document_content.decode()))
+                        db.execute('INSERT INTO bot_access(bot_id,user_id,role,name,username) VALUES(?,?,?,?,?)',
+                                   (123,a_uid,'owner','Synthetic profile A owner',None))
+                    bot_configuration = workspace / 'config/telegram-bot.json'
+                    bot_configuration.write_text(json.dumps({'token':'123:synthetic','identity':bot_identity,'enabled':False}))
+                    bot_configuration.chmod(0o600)
+                    assert http('/api/documents/search?q=Kotlin', headers=headers)['items'][0]['document']['id'] == document_id
+                    assert document_bytes(document_id, headers) == document_content
+                    # Reload A once so the disabled saved bot is loaded through the real
+                    # constructor. Smoke mode never starts a Telegram client or bot poller.
+                    http(f"/api/profiles/{profile['active']['id']}/switch", {'confirm':True}, dict(headers, **{'X-Hradar-CSRF':state['csrfToken']}))
+                    token, headers, profile, state = wait_graph_change(process, marker, token)
+                    generation, cookie = profile['generation'], headers['Cookie']
+                    bot_a = http('/api/integrations/bot/settings', headers=headers)
+                    assert bot_a['configured'] and not bot_a['enabled']
+                    assert bot_a['identity'] == bot_identity and bot_a['owner']['id'] == a_uid
+                    a_id, a_generation, a_token = profile['active']['id'], generation, token
+                    a_state, a_headers = state, dict(headers)
+                    change_headers = dict(headers, **{'X-Hradar-CSRF':state['csrfToken']})
+                    http('/api/profiles/add', {'confirm':True}, change_headers)
+                    token, headers, profile, state = wait_graph_change(process, marker, a_token)
+                    b_id, b_generation = profile['active']['id'], profile['generation']
+                    assert b_id != a_id and b_generation != a_generation
+                    assert state['csrfToken'] != a_state['csrfToken']
+                    assert token != a_token and profile['identity']['userId'] > 0
+                    assert profile['identity']['userId'] != a_uid
+                    with (workspace / 'tdlib/hradar.lock').open('r+') as released_a:
+                        fcntl.lockf(released_a, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        fcntl.lockf(released_a, fcntl.LOCK_UN)
+                    b_workspace = selected_workspace(home)
+                    assert b_workspace.name == b_id
+                    assert http('/api/projects', headers=headers)['items'] == []
+                    http(f'/api/projects/{project_id}', headers=headers, expected=404)
+                    assert not (b_workspace / 'documents' / document_hash).exists()
+                    assert http('/api/documents/search?q=Kotlin', headers=headers)['items'] == []
+                    http(f'/api/documents/{document_id}/file', headers=headers, expected=404)
+                    bot_b = http('/api/integrations/bot/settings', headers=headers)
+                    assert not bot_b['configured'] and not bot_b['enabled'] and bot_b.get('owner') is None
+                    # A's generation cannot read through B's fresh owner cookie, including SSE.
+                    stale_a = dict(a_headers, Cookie=headers['Cookie'])
+                    http('/api/projects', headers=stale_a, expected=409)
+                    http(f'/api/events?workspace={a_generation}', headers={'Cookie':headers['Cookie']}, expected=409)
+                    b_token, b_csrf = token, state['csrfToken']
+                    http(f'/api/profiles/{a_id}/switch', {'confirm':True}, headers)
+                    token, headers, profile, state = wait_graph_change(process, marker, b_token)
+                    generation, cookie = profile['generation'], headers['Cookie']
+                    assert profile['active']['id'] == a_id and profile['identity']['userId'] == a_uid
+                    with (b_workspace / 'tdlib/hradar.lock').open('r+') as released_b:
+                        fcntl.lockf(released_b, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        fcntl.lockf(released_b, fcntl.LOCK_UN)
+                    assert generation not in (a_generation, b_generation)
+                    assert state['csrfToken'] not in (a_state['csrfToken'], b_csrf)
+                    assert token not in (a_token, b_token)
+                    assert selected_workspace(home) == workspace
+                    assert document_sentinel.read_bytes() == document_content
+                    assert http('/api/documents/search?q=Kotlin', headers=headers)['items'][0]['document']['id'] == document_id
+                    assert document_bytes(document_id, headers) == document_content
+                    bot_restored = http('/api/integrations/bot/settings', headers=headers)
+                    assert bot_restored['configured'] and not bot_restored['enabled']
+                    assert bot_restored['identity'] == bot_identity and bot_restored['owner']['id'] == a_uid
+                    assert http(f'/api/projects/{project_id}', headers=headers)['criteria']['name'] == 'Installer CRM sentinel'
+                    restored_card = http(f'/api/projects/{project_id}/cards', headers=headers)['items'][0]
+                    assert (restored_card['stage'], restored_card['notes'], restored_card['interest']) == ('CONTACTED','Synthetic preserved note',5)
+                    stale_b = dict(headers, **{'X-Hradar-Workspace':b_generation})
+                    http('/api/projects', headers=stale_b, expected=409)
+                    http(f'/api/events?workspace={b_generation}', headers={'Cookie':cookie}, expected=409)
+                    local_headers = dict(headers, Host=f'hradar.localhost:{port}', Origin=f'http://hradar.localhost:{port}')
                 else:
                     assert http(f'/api/projects/{project_id}', headers=headers)['criteria']['name'] == 'Installer CRM sentinel'
                     results = http(f'/api/projects/{project_id}/search', {'mode':'archive','query':'java'}, headers)
@@ -134,7 +280,7 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
                 # A duplicate must exit without replacing marker, DB or session.
                 subprocess.run([str(launcher)],env=env,stdout=log,stderr=log,check=True,timeout=20)
                 assert json.loads(marker.read_text())['token'] == token
-                with sqlite3.connect(home/'.hradar/data/research.sqlite') as db:
+                with sqlite3.connect(selected_workspace(home) / 'data/research.sqlite') as db:
                     if attempt == 0:
                         db.execute('CREATE TABLE distribution_smoke (value TEXT)')
                         db.execute("INSERT INTO distribution_smoke VALUES ('preserved')")
@@ -151,7 +297,9 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
                     released.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                     released.bind(('127.0.0.1', port))
                 assert (session/'preserved-sentinel').read_text() == 'preserved'
-                assert (home/'.hradar/tdlib/preserved-sentinel').read_text() == 'preserved'
+                assert not (workspace / 'tdlib/preserved-sentinel').exists()
+                assert not (home / '.hradar/tdlib').exists(), 'External legacy session was imported automatically'
+                assert_leases_released(home)
             finally:
                 if process.poll() is None:
                     process.terminate(); process.wait(timeout=20)
@@ -159,6 +307,7 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
         headless_env = dict(env, JAVA_TOOL_OPTIONS=env['JAVA_TOOL_OPTIONS']+' -Djava.awt.headless=true')
         failed = subprocess.run([str(launcher)], env=headless_env, stdout=log, stderr=log, timeout=20)
         assert failed.returncode != 0
+        assert_leases_released(home)
         assert not marker.exists()
         with socket.socket() as released:
             released.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -190,23 +339,24 @@ with tempfile.TemporaryDirectory(prefix='hradar-smoke-') as temporary:
             subprocess.run([str(launcher)],env=env,stdout=log,stderr=log,check=True,timeout=20)
             assert captured and fake_secret.encode() not in captured[0]
             log.flush()
-            assert f'Порт {port} занят'.encode() in (home/'runtime.log').read_bytes()[offset:]
+            assert 'Порт'.encode() in (home/'runtime.log').read_bytes()[offset:] and 'занят'.encode() in (home/'runtime.log').read_bytes()[offset:]
         finally:
             server.shutdown(); server.server_close(); thread.join(); marker.unlink()
         # No downgrade of a database created by a newer local feature build.
-        with sqlite3.connect(home/'.hradar/data/research.sqlite') as db:
+        with sqlite3.connect(selected_workspace(home) / 'data/research.sqlite') as db:
             tables_snapshot = user_database_snapshot(db)
             db.execute('PRAGMA user_version=15')
         refused = subprocess.run([str(launcher)],env=env,stdout=log,stderr=log,timeout=20)
         assert refused.returncode == 0, f'Newer-schema refusal did not exit cleanly: {refused.returncode}'
         assert not marker.exists()
+        assert_leases_released(home)
         log.flush()
         assert 'База данных создана более новой версией hradar' in (home/'runtime.log').read_text(), 'Application did not report refusing the newer schema'
-        with sqlite3.connect(home/'.hradar/data/research.sqlite') as db:
+        with sqlite3.connect(selected_workspace(home) / 'data/research.sqlite') as db:
             assert db.execute('PRAGMA user_version').fetchone() == (15,)
             assert db.execute('PRAGMA integrity_check').fetchone() == ('ok',)
             assert db.execute('PRAGMA foreign_key_check').fetchall() == []
             assert user_database_snapshot(db) == tables_snapshot
             assert db.execute('SELECT value FROM distribution_smoke').fetchone() == ('preserved',)
             assert crm_snapshot == {table:db.execute(f'SELECT * FROM {table} ORDER BY 1,2').fetchall() for table in crm_snapshot}
-print('Production UI, origin/cookie/CSRF denial, duplicate/legacy-port refusal, restart persistence, newer-schema refusal and graceful shutdown passed')
+print('Production UI, origin/cookie/CSRF denial, A-B-A graph isolation, duplicate/legacy-port refusal, restart persistence, newer-schema refusal and graceful shutdown passed')
