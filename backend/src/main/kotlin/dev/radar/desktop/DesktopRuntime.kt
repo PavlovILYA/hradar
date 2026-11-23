@@ -11,25 +11,37 @@ import java.net.URI
 import java.security.SecureRandom
 import java.util.Base64
 
-class RuntimePaths(val home: Path = Path.of(System.getProperty("user.home"))) {
-    val data = home.resolve(".hradar")
-    val session = data.resolve("tdlib")
-    val database = data.resolve("data/research.sqlite")
+class RuntimePaths(home: Path = Path.of(System.getProperty("user.home")), val profileId: String? = null) {
+    val home: Path = if (Files.exists(home)) home.toRealPath() else home.toAbsolutePath().normalize()
+    init { require(profileId == null || java.util.UUID.fromString(profileId).toString() == profileId) { "Invalid profile ID" } }
+    val data = this.home.resolve(".hradar")
+    val workspace = if (profileId == null) data else data.resolve("profiles").resolve(profileId)
+    val session = workspace.resolve("tdlib")
+    val database = workspace.resolve("data/research.sqlite")
     val credentials = data.resolve("config/telegram-api.json")
-    val botConfiguration = credentials.parent.resolve("telegram-bot.json")
+    val botConfiguration = workspace.resolve("config/telegram-bot.json")
     val backups = data.resolve("backups")
-    val documents = data.resolve("documents")
+    val documents = workspace.resolve("documents")
+    val avatars = workspace.resolve("cache/avatars")
     val logs = data.resolve("logs")
     fun prepare() {
         privateDirectory(data)
-        StorageMigration(this).run()
+        if (profileId == null) StorageMigration(this).run()
+        else privateDirectory(workspace)
         listOf(database.parent, credentials.parent, session).forEach(::privateDirectory)
+        if (profileId != null) {
+            listOf(botConfiguration.parent, documents, avatars).forEach(::privateDirectory)
+            listOf(database, Path.of("$database-wal"), Path.of("$database-shm"), botConfiguration).forEach {
+                check(!Files.exists(it,LinkOption.NOFOLLOW_LINKS) || Files.isRegularFile(it,LinkOption.NOFOLLOW_LINKS)) { "Файлы профиля недоступны" }
+            }
+        }
     }
     fun loadCredentials(): ApiCredentials? {
         val id = System.getenv("TG_API_ID")?.toIntOrNull()
         val hash = System.getenv("TG_API_HASH")
         if (id != null && hash != null) return ApiCredentials(id, hash).also { it.validate() }
-        if (!Files.exists(credentials)) return null
+        if (!Files.exists(credentials, LinkOption.NOFOLLOW_LINKS)) return null
+        check(Files.isRegularFile(credentials,LinkOption.NOFOLLOW_LINKS) && !Files.isSymbolicLink(credentials) && Files.size(credentials)<=4096) { "Конфигурация Telegram недоступна" }
         Files.setPosixFilePermissions(credentials, PosixFilePermissions.fromString("rw-------"))
         return try { Json.decodeFromString<ApiCredentials>(Files.readString(credentials)).also { it.validate() } }
         catch (_: Exception) { throw IllegalStateException("Конфигурация Telegram повреждена") }
@@ -44,9 +56,16 @@ class RuntimePaths(val home: Path = Path.of(System.getProperty("user.home"))) {
         } finally { Files.deleteIfExists(temp) }
     }
     private fun privateDirectory(path: Path) {
-        Files.createDirectories(path)
-        check(!Files.isSymbolicLink(path)) { "Каталог hradar не может быть симлинком" }
-        Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rwx------"))
+        var ancestor: Path? = path.toAbsolutePath()
+        while (ancestor != null) {
+            check(!Files.isSymbolicLink(ancestor)) { "Каталог hradar не может быть симлинком" }
+            ancestor = ancestor.parent
+        }
+        val mode = PosixFilePermissions.fromString("rwx------")
+        val missing = generateSequence(path) { it.parent }.takeWhile { !Files.exists(it, LinkOption.NOFOLLOW_LINKS) }.toList().reversed()
+        missing.forEach { Files.createDirectory(it, PosixFilePermissions.asFileAttribute(mode)) }
+        check(Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS))
+        Files.setPosixFilePermissions(path, mode)
     }
 }
 class SessionLease private constructor(private val channel: FileChannel, private val lock: FileLock): AutoCloseable {
