@@ -1,3 +1,9 @@
+> **0.12 profiles:** settings, grants, invitations and outbox belong to the active
+> UUID profile. Polling starts only after verified GetMe ownership and stops before
+> switching/logout. Global Bot Token environment values are not inherited by new
+> profiles; explicitly configure each profile. Shared Telegram API credentials are
+> separate. See [Telegram profiles](TELEGRAM_PROFILES.md).
+
 # Telegram Inbox, notifications and subscription controls
 
 The optional Bot API adapter uses HTTPS long polling and the existing application

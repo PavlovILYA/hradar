@@ -1,5 +1,58 @@
 # hradar — Development status / session handoff
 
+## Telegram profiles 0.12.0 — 2026-11-23
+
+Branch `feat/telegram-profiles-0.12`, isolated worktree `hradar-profiles`, from
+master `8583075` with PR20 verified merged. Application/package source SHA
+**a2c9323**; subsequent changes are documentation only. Version **0.12.0** once,
+canonical gradle.properties + version.py sync/check; SQLite stays **14**.
+
+VERIFIED:
+- Private UUID registry and per-profile TDLib/SQLite/documents/FTS/Bot/avatar paths;
+  shared API credentials/source indicator. GetMe/owner gate, duplicate/wrong identity
+  refusal, no automatic external legacy session resurrection. See TELEGRAM_PROFILES.md.
+- Sequential complete graph restart, official Close vs explicit confirmed LogOut,
+  Closed acknowledgement, worker/Bot teardown and lease failure safety. Rotating
+  workspace generation/cookie/CSRF, REST/SSE/file/React isolation, closed old popups.
+- JDK21 `:backend:build :backend:stageDesktop :backend:desktopMenuSmoke
+  -PbundledWeb=true`: exit0, **307 tests, zero failures/errors/skips**. Fake TDLib,
+  temporary SQLite14/FTS, migration WAL/backup/interruption/receipt/identity/path
+  checks, avatars/limits, logout, lifecycle/order/error gates. Actual macOS SystemTray
+  and stalled-health/browser Quit cleanup release application/profile leases.
+- Frontend build exit0; complete offline Playwright **93/93** on final UI, including
+  profiles/onboarding, stale async responses/events/notices and390px layouts. Python
+  unittest **32/32**; version, whitespace and tracked-secret checks.
+- Local Intel x86_64 DMG/ZIP at application SHA a2c9323: exit0, 185 byte-identical
+  files, strict ad-hoc seal/icon/checksum/Mach-O and packaged JVM/JNI/parser checks.
+  Mounted-image production UI/Host/Origin/cookie/CSRF, synthetic A→B→A graph isolation
+  (separate identities, SQLite/FTS/documents/Bot configs, old REST/SSE/file refusal),
+  same-tab restart/recovery, duplicate/legacy-port refusal, future-schema/FTS
+  preservation and graceful shutdown all passed. No Telegram client/session created.
+- Authorized real source launch: installed PID90970 stopped cleanly, private consistent
+  SQLite backup `~/.hradar/backups/research.pre-profiles-20261123-180821.sqlite` created
+  before startup. Source PID97981 at http://127.0.0.1:1709, health200, retained session
+  GetMe verified, **CONFIRM_OWNER** awaiting the human's explicit identity confirmation.
+  Automatic full migration backup and originals retained; schema14 integrity/FK and
+  row counts of all **43 tables** match the pre-migration backup. No messages or
+  document contents inspected, no real logout/phone request/switch performed.
+- Root cause of package headless-failure regression: outer graph exception handler
+  returned success. It now throws a sanitized startup error; existing failing smoke
+  is retained. No timeout increase or disabled check.
+
+NOT VERIFIED:
+- Two real Telegram accounts, phone/code/2FA/FLOOD_WAIT delivery, native session reuse
+  A→B→A, real LogOut/reauthentication, actual avatars and live Bot polling/delivery.
+  Synthetic identity/lifecycle tests are not proof of those external behaviors.
+- Hosted Fast CI, Intel CI and ARM64 installer. Per latest owner instruction **do not
+  inspect or wait pipelines after PR creation**; owner checks them. No ARM64 claim.
+
+NEXT ACTION:
+- Open the single Draft PR; no merge/release/tag/installer publication. Owner checks
+  pipelines and follows TELEGRAM_PROFILES.md two-account guide. Confirm the displayed
+  migrated identity only if correct; do not bypass the owner gate. Profile deletion
+  remains unavailable; unknown old data stay quarantined. Recovery uses complete
+  backups without lowering SQLite user_version or removing receipts.
+
 ## Telegram documents 0.11.0 — 2026-11-23
 
 Branch `feat/telegram-files-0.11`, isolated worktree `hradar-files`, based on fetched
