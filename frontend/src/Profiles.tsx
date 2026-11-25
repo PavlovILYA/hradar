@@ -10,9 +10,14 @@ export function Avatar({ name, src }: { name: string; src?: string }) {
   const [failed, setFailed] = useState(false);
   return <span className="account-avatar" aria-hidden="true">{src && !failed ? <img loading="lazy" src={workspaceUrl(src)} alt="" onError={() => setFailed(true)} /> : name.trim().split(/\s+/).slice(0, 2).map(s => s[0]).join('').toLocaleUpperCase() || '?'}</span>;
 }
+class ProfileStatusError extends Error {
+  constructor(readonly temporary: boolean) { super('Не удалось проверить аккаунт. Откройте hradar и повторите подключение.'); }
+}
 async function status(): Promise<ProfileStatus> {
-  const response = await fetch('/api/profiles/status', { cache: 'no-store', signal: AbortSignal.timeout(10_000) });
-  if (!response.ok) throw new Error('Не удалось проверить аккаунт. Откройте hradar и повторите подключение.');
+  let response: Response;
+  try { response = await fetch('/api/profiles/status', { cache: 'no-store', signal: AbortSignal.timeout(10_000) }); }
+  catch { throw new ProfileStatusError(true); }
+  if (!response.ok) throw new ProfileStatusError(response.status >= 500 || response.status === 429);
   const value = await response.json() as ProfileStatus;
   if (!value.generation || !value.active || !Array.isArray(value.profiles)) throw new Error('Сервер вернул некорректное состояние аккаунтов.');
   return value;
@@ -42,9 +47,16 @@ export function ProfileGate({ children }: { children: (profile: ProfileStatus) =
       try {
         const value = await status();
         if (stopped) return;
-        if (workspaceGeneration() && value.generation !== workspaceGeneration()) { reloading.current = true; location.replace('/'); return; }
+        if (workspaceGeneration() && value.generation !== workspaceGeneration()) { reloading.current = true; freezeWorkspace(); location.replace('/'); return; }
         initializeWorkspace(value.generation); setProfile(value); setError('');
-      } catch (e) { if (!stopped) setError((e as Error).message); }
+      } catch (e) {
+        if (!stopped) {
+          setError((e as Error).message);
+          // Only a transient transport failure may retain this page's verified identity.
+          // A denied/invalid status or a confirmed transition must discard the workspace.
+          if (!(e instanceof ProfileStatusError && e.temporary)) setProfile(null);
+        }
+      }
       finally { pending = false; }
     }
     function changingAccount() { setChanging(true); setProfile(null); }
@@ -57,8 +69,9 @@ export function ProfileGate({ children }: { children: (profile: ProfileStatus) =
     return () => { stopped = true; clearInterval(timer); window.removeEventListener('hradar-workspace-changing', changingAccount); window.removeEventListener('hradar-workspace-reload', reloadAccount); changeChannel?.removeEventListener('message', otherTab); };
   }, []);
   if (changing) return <main className="profile-gate"><h1>Переключаем аккаунт</h1><p role="status">Останавливаем прежнее рабочее пространство и проверяем выбранный аккаунт…</p>{(transitionError || error) && <p role="alert">{transitionError || error}</p>}<button onClick={() => location.replace('/')}>Повторить подключение</button></main>;
-  if (!profile || error) return <main className="profile-gate"><h1>Проверяем аккаунт</h1><p role={error ? 'alert' : 'status'}>{error || 'Подключаем локальное рабочее пространство…'}</p>{error && <button onClick={() => location.reload()}>Повторить подключение</button>}</main>;
-  if (profile.phase === 'READY' && profile.identity && profile.active.confirmed) return <>{transitionError && <div className="error dismissible" role="alert"><span>{transitionError}</span><button aria-label="Закрыть ошибку аккаунта" onClick={() => setTransitionError('')}>×</button></div>}{children(profile)}</>;
+  const verified = profile?.phase === 'READY' && profile.identity && profile.active.confirmed;
+  if (!profile || (error && !verified)) return <main className="profile-gate"><h1>Проверяем аккаунт</h1><p role={error ? 'alert' : 'status'}>{error || 'Подключаем локальное рабочее пространство…'}</p>{error && <button onClick={() => location.reload()}>Повторить подключение</button>}</main>;
+  if (verified) return <>{error && <div className="error" role="alert">{error} Показано последнее подтверждённое рабочее пространство. Проверка повторится автоматически.</div>}{transitionError && <div className="error dismissible" role="alert"><span>{transitionError}</span><button aria-label="Закрыть ошибку аккаунта" onClick={() => setTransitionError('')}>×</button></div>}{children(profile)}</>;
   if (profile.phase === 'AUTHORIZING') return <><div className="profile-login-actions"><AccountMenu profile={profile} onAccounts={() => location.assign('/?screen=accounts')} /><AccountActions profile={profile} /></div><Onboarding onReady={() => { /* GetMe and owner confirmation, not TDLib Ready, open the workspace. */ }} /></>;
   return <main className="profile-gate"><h1>{profile.phase === 'CONFIRM_OWNER' ? 'Подтвердите владельца данных' : profile.phase === 'MISMATCH' ? 'Аккаунт не совпадает' : profile.phase === 'ERROR' ? 'Не удалось открыть аккаунт' : 'Проверяем владельца аккаунта'}</h1>
     {profile.identity && <p><Avatar name={profile.identity.name} src={profile.identity.avatarAvailable ? '/api/profiles/avatar' : undefined} /> {profile.identity.name}{profile.identity.username && ` · @${profile.identity.username}`}</p>}

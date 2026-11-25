@@ -2,12 +2,12 @@ import { test, expect, type Page } from '@playwright/test';
 import type { ProfileStatus } from '../src/Profiles';
 const a = { id: 'a', identity: { userId: 101, name: 'Synthetic Alpha', username: 'alpha' }, legacy: false, confirmed: true, loggedOut: false };
 const b = { id: 'b', identity: { userId: 202, name: 'Synthetic Beta', username: 'beta' }, legacy: false, confirmed: true, loggedOut: false };
-async function fixture(page: Page, phase: ProfileStatus['phase'] = 'READY') {
+async function fixture(page: Page, phase: ProfileStatus['phase'] = 'READY', credentialsSource: ProfileStatus['credentialsSource'] = 'environment') {
   let active = a, generation = 1, currentPhase = phase;
   const writes: string[] = [], workspaceReads: string[] = [];
   await page.route('**/api/**', async route => {
     const request = route.request(), path = new URL(request.url()).pathname;
-    if (path === '/api/profiles/status') return route.fulfill({ json: { generation: String(generation), active, profiles: [a, b], phase: currentPhase, identity: active.identity, credentialsSource: 'environment', legacyAvailable: false } });
+    if (path === '/api/profiles/status') return route.fulfill({ json: { generation: String(generation), active, profiles: [a, b], phase: currentPhase, identity: active.identity, credentialsSource, legacyAvailable: false } });
     expect(request.headers()['x-hradar-workspace'] || new URL(request.url()).searchParams.get('workspace')).toBe(String(generation));
     if (path === '/api/events') return route.abort();
     if (request.method() === 'POST') {
@@ -75,6 +75,45 @@ test('bootstrap failure never mounts the previous workspace', async ({ page }) =
   await expect(page.getByRole('alert')).toContainText('Не удалось проверить аккаунт');
   await expect(page.getByRole('navigation')).toHaveCount(0);
 });
+for (const failure of ['unavailable', 'network'] as const) {
+  test(`verified workspace and drafts survive ${failure} profile polling and recover`, async ({ page }) => {
+    await page.clock.install();
+    await fixture(page, 'READY', 'saved');
+    const draft = page.getByLabel('API ID', { exact: true });
+    await draft.fill('12345');
+    await page.route('**/api/profiles/status', route => failure === 'network'
+      ? route.abort('failed') : route.fulfill({ status: 503, json: { error: 'Synthetic unavailable' } }));
+    await page.clock.runFor(1500);
+    await expect(page.getByRole('alert')).toContainText('Не удалось проверить аккаунт');
+    await expect(page.getByRole('heading', { level: 1, name: 'Аккаунты Telegram' })).toBeVisible();
+    await expect(draft).toHaveValue('12345');
+    await page.unroute('**/api/profiles/status');
+    await page.clock.runFor(1500);
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    await expect(draft).toHaveValue('12345');
+  });
+}
+test('explicit status access denial discards a previously verified workspace', async ({ page }) => {
+  await page.clock.install();
+  await fixture(page);
+  await expect(page.getByRole('navigation')).toBeVisible();
+  await page.route('**/api/profiles/status', route => route.fulfill({ status: 403, json: { error: 'Synthetic denied' } }));
+  await page.clock.runFor(1500);
+  await expect(page.getByRole('alert')).toContainText('Не удалось проверить аккаунт');
+  await expect(page.getByRole('navigation')).toHaveCount(0);
+  await expect(page.getByLabel('API ID', { exact: true })).toHaveCount(0);
+});
+for (const phase of ['AUTHORIZING', 'MISMATCH', 'CONFIRM_OWNER', 'ERROR', 'SWITCHING'] as const) {
+  test(`confirmed workspace is removed when status becomes ${phase}`, async ({ page }) => {
+    await page.clock.install();
+    const data = await fixture(page);
+    await expect(page.getByRole('navigation')).toBeVisible();
+    data.setPhase(phase);
+    await page.clock.runFor(1500);
+    await expect(page.getByRole('navigation')).toHaveCount(0);
+    await expect(page.getByLabel('API ID', { exact: true })).toHaveCount(0);
+  });
+}
 test('another tab freezes stale responses and closes the previous SSE subscription', async ({ page }) => {
   await page.addInitScript(() => {
     class FakeEvents {

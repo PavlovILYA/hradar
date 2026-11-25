@@ -1,5 +1,47 @@
 # hradar — Development status / session handoff
 
+## PR21 CI fix — 2026-11-25
+
+Same `feat/telegram-profiles-0.12` / Draft PR21, starting at verified head204f49f.
+Version remains **0.12.0**: fixes belong to the same unreleased PR, no schema/native/
+dependency/workflow changes.
+
+VERIFIED:
+- Inspected original installer run45202902588: both package jobs failed before
+  installer upload. ARM64 failed the overview stale-values test; Intel also reported
+  page.evaluate Test ended in the shared route fixture. Native jobs succeeded.
+- Reproduced original overview failure (33/34 passed in two repeats). Added explicit
+  profile503 regression: verified workspace disappeared before fix. A blocked browser
+  Telegram fetch reproduced the fixture's exact page.evaluate Test ended failure.
+- ProfileGate now retains only an already verified READY/confirmed workspace on
+  transport/5xx/429 polling failure, with a warning and automatic recovery. Initial
+  bootstrap errors, access denial/invalid replies, owner/state changes and generation
+  changes still discard workspace. Generation changes freeze before navigation.
+- Offline compatibility fixture uses explicit per-test synthetic profile state, with
+  onboarding transitions set by the test. No page.evaluate or nested network request
+  in route callbacks, no timeout increase, skipped check or ignored callback error.
+- Frontend production build and fresh JDK21 backend build/stage passed; **307 backend
+  tests**, zero failures/errors/skips. Actual SystemTray and stalled-health/browser
+  Quit smoke passed with both leases released.
+- Problematic suites plus fixture/onboarding: **66/66** across three repeats. Profile
+  security/recovery suite **16/16**. Complete offline Playwright **102/102** (CI=1).
+- Current staged production JAR/assets (not a new installer archive): Ktor/browser
+  origin/cookie/CSRF checks, synthetic A→B→A database/FTS/file isolation, saved-tab
+  restart/recovery, newer-schema refusal and graceful shutdown all passed.
+- Source app started normally with saved settings at http://127.0.0.1:1709, health200.
+  No real phone/code/logout/switch actions were exercised. Version/diff/secret checks
+  passed; no changes to SQLite14, TDLib, dependencies or workflows.
+
+NOT VERIFIED:
+- New-head hosted Fast CI/Intel/ARM64 and new DMG artifacts: per latest owner steering,
+  **finish immediately after push; do not inspect or wait new pipelines**.
+- Two real Telegram accounts/session switching/logout/avatars/Bot delivery remain
+  manual acceptance. Synthetic regression tests do not establish these behaviors.
+
+NEXT ACTION:
+- Owner checks new-head Actions and both installer artifacts, then follows the
+  TELEGRAM_PROFILES.md manual two-account guide. No new PR, merge or Release.
+
 ## Telegram profiles 0.12.0 — 2026-11-23
 
 Branch `feat/telegram-profiles-0.12`, isolated worktree `hradar-profiles`, from

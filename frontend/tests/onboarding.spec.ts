@@ -1,5 +1,7 @@
 import { test, expect } from './fixtures';
 
+test.beforeEach(({ syntheticProfile }) => { syntheticProfile.authorized = false; });
+
 test('technical diagnostics copy only approved fields and identifiers', async ({ page }) => {
   await page.clock.install();
   await page.addInitScript(() => Object.defineProperty(navigator, 'clipboard', { value: {
@@ -57,7 +59,7 @@ test('technical diagnostics copy only approved fields and identifiers', async ({
   await expect(details).not.toContainText('private clipboard');
 });
 
-test('local onboarding follows fake TDLib states and clears secret fields', async ({ page }) => {
+test('local onboarding follows fake TDLib states and clears secret fields', async ({ page, syntheticProfile }) => {
   let state = 'Credentials';
   let bad = false;
   const expected: Record<string, string> = { Credentials: 'WaitPhoneNumber', WaitPhoneNumber: 'WaitCode', WaitCode: 'WaitPassword', WaitPassword: 'WaitEmailAddress', WaitEmailAddress: 'WaitEmailCode', WaitEmailCode: 'WaitOtherDeviceConfirmation' };
@@ -95,6 +97,7 @@ test('local onboarding follows fake TDLib states and clears secret fields', asyn
   }
   await expect(page.getByRole('link', { name: 'Открыть подтверждение в Telegram' })).toHaveAttribute('href','tg://login?token=fake');
   state = 'Ready';
+  syntheticProfile.authorized = true;
   await expect(page.getByRole('status')).toHaveText('Telegram подключён');
 });
 
