@@ -1,10 +1,11 @@
+import { workspaceFetch } from './workspace';
 export interface TelegramStatus { authorizationState: string; authorized: boolean; connectionState?: string }
 export interface TelegramMessage { id: number; date: number; text: string | null; channelId: number }
 
 export async function request<T>(path: string, signal?: AbortSignal, init: RequestInit = {}, timeoutMs = 25_000): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(path, { ...init, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs) });
+    response = await workspaceFetch(path, { ...init, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs) });
   } catch (error) {
     if (signal?.aborted) throw error;
     throw new Error('Не удалось связаться с сервером. Проверьте, что hradar запущен, и повторите попытку.');

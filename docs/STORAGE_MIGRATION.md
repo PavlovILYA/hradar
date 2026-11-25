@@ -1,3 +1,8 @@
+> **0.12 update:** production startup now uses ProfileStore and isolated UUID
+> workspaces. The historical single-workspace migrator below remains compatibility
+> code; it is not the new startup import policy. External legacy sessions are
+> offered explicitly. See [Telegram profiles and recovery](TELEGRAM_PROFILES.md).
+
 # Local storage and upgrade
 
 The current layout is `~/.hradar/data/research.sqlite`, `~/.hradar/tdlib/`,

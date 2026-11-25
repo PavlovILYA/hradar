@@ -1,6 +1,9 @@
 package dev.radar.desktop
 
 import dev.radar.runApplication
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.awt.EventQueue
 import java.awt.SystemTray
 import java.awt.event.ActionEvent
@@ -50,9 +53,13 @@ object DesktopShutdownSmoke {
                     check(process.exitValue() == 0) { "$scenario failed (isolated log: $log)" }
                     check(!Files.exists(home.resolve(".hradar/desktop-instance.json")))
                     ServerSocket(port).close()
-                    checkNotNull(SessionLease.acquire(home.resolve(".hradar/tdlib"))).close()
+                    val registry = Json.parseToJsonElement(Files.readString(home.resolve(".hradar/profiles.json"))).jsonObject
+                    val profileId = registry.getValue("activeId").jsonPrimitive.content
+                    check(java.util.UUID.fromString(profileId).toString() == profileId)
+                    checkNotNull(SessionLease.acquire(home.resolve(".hradar"))).close()
+                    checkNotNull(SessionLease.acquire(home.resolve(".hradar/profiles/$profileId/tdlib"))).close()
                     completed = true
-                    println("Menu quit while $scenario stalled: JVM exited, port/lease released, marker removed")
+                    println("Menu quit while $scenario stalled: JVM exited, port/application and profile leases released, marker removed")
                 } finally { if (process.isAlive) { process.destroyForcibly(); process.waitFor() } }
             } finally { if (completed) home.toFile().deleteRecursively() }
         }

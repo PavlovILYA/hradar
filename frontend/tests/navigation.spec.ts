@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures';
 
 async function fixture(page: Page) {
   let sources = [{ id: -1001, title: 'Synthetic source', username: 'synthetic_jobs' }];

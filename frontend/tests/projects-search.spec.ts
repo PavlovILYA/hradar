@@ -1,5 +1,5 @@
 import { openSection } from './navigation-helpers';
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures';
 
 const message = { id: 1, channelId: -1001, date: 1700000000, title: 'Synthetic source', username: 'synthetic_jobs', text: 'Java Spring Boot PostgreSQL', link: 'https://t.me/synthetic_jobs/1', explanation: { matches: true, foundRequired: ['Java', 'Spring Boot', 'PostgreSQL'], foundAny: [], foundExcluded: [], missingRequired: [] } };
 const project = { id: 'p1', criteria: { name: 'Senior Java Backend', description: '', required: ['Java', 'Spring Boot', 'PostgreSQL'], desired: ['Kafka'], excluded: ['junior'], sources: [-1001], templateIds: [], status: 'ACTIVE' }, createdAt: 1700000000000, updatedAt: 1700000000000 };

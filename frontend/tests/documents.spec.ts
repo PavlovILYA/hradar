@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import { openSection } from './navigation-helpers';
 
 test('updates popover closes outside, on Escape and navigation', async ({ page }) => {
@@ -63,7 +63,7 @@ test('document discovery registers metadata and requires a separate download; lo
   expect(data.writes).toEqual(['/api/documents/discover']);
   await expect(page.getByRole('button', { name: 'Проверить следующую страницу' })).toBeVisible();
   await page.locator('.document-discovery').getByRole('button', { name: 'Скачать документ', exact: true }).click();
-  await expect(page.locator('.document-discovery').getByRole('link', { name: 'Открыть файл' })).toHaveAttribute('href', '/api/documents/doc-1/file');
+  await expect(page.locator('.document-discovery').getByRole('link', { name: 'Открыть файл' })).toHaveAttribute('href', '/api/documents/doc-1/file?workspace=synthetic-generation');
   await page.getByLabel('Поиск в локальных документах').fill('Kotlin');
   await page.getByRole('button', { name: 'Искать в документах', exact: true }).click();
   expect(data.searches).toEqual(['Kotlin']);

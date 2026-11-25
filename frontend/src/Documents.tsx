@@ -1,3 +1,4 @@
+import { workspaceUrl } from './workspace';
 import { useEffect, useRef, useState } from 'react';
 import { request, type ResearchMessage } from './api';
 import { ownerMutation } from './ownerApi';
@@ -53,7 +54,7 @@ export function DocumentControls({ item, onChange }: { item: DocumentRecord; onC
     {item.error && <p className="helper">{item.error}</p>}{retryAt && <p className="helper">Повтор возможен после {retryAt.toLocaleString('ru-RU')}</p>}
     <div className="action-row">
       {running ? <button className="secondary-button" disabled={busy} onClick={() => void action('cancel')}>Отменить загрузку</button> : !item.hasFile && item.state !== 'UNAVAILABLE' && <button className="secondary-button" disabled={busy || waiting} onClick={() => void action('download')}>{item.state === 'ERROR' ? 'Повторить загрузку' : 'Скачать документ'}</button>}
-      {item.hasFile && <a className="original-link" href={`/api/documents/${encodeURIComponent(item.id)}/file`} target="_blank" rel="noreferrer">Открыть файл ↗</a>}
+      {item.hasFile && <a className="original-link" href={workspaceUrl(`/api/documents/${encodeURIComponent(item.id)}/file`)} target="_blank" rel="noreferrer">Открыть файл ↗</a>}
       {item.hasText && <button className="secondary-button" onClick={() => setTextOpen(true)}>Читать текст</button>}
       {item.hasFile && !running && <button className="text-button" disabled={busy} onClick={() => void action('reindex')}>Извлечь текст заново</button>}
     </div>

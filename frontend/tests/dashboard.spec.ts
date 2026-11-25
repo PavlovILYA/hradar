@@ -1,5 +1,5 @@
 import { openSection } from './navigation-helpers';
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 // Live tests are explicit. Offline tests block all backend traffic and use synthetic data.
 test.beforeEach(async ({ page, request }, testInfo) => {

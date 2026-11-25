@@ -67,7 +67,7 @@ class TdlibSourceCatalog(private val request: suspend (TdApi.Function<*>) -> TdA
         }
         return TelegramSource(chatId = chatId, type = type, title = chat.title.orEmpty().take(256), username = username?.take(32),
             isPublic = type in setOf(SourceType.CHANNEL, SourceType.SUPERGROUP) && username != null,
-            access = state, isForum = isForum, protectedContent = chat.hasProtectedContent)
+            access = state, isForum = isForum, protectedContent = chat.hasProtectedContent, avatarAvailable = chat.photo?.small != null)
     }
     private suspend fun forum(chatId: Long): TelegramSource {
         val source = describe(chatId)

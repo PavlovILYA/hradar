@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures';
 import { openSection } from './navigation-helpers';
 
 const source = { key: 'synthetic-key', chatId: -1001, title: 'Synthetic hiring group', scope: { kind: 'CHAT' }, type: 'SUPERGROUP', access: 'AVAILABLE' };

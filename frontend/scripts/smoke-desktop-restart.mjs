@@ -33,7 +33,8 @@ async function start(previous) {
 async function stop(csrf) {
   const stopped = new Promise(resolve => child.once('exit', resolve));
   const response = await page.evaluate(async csrf => {
-    const result = await fetch('/api/desktop/shutdown', {method:'POST',headers:{'X-Hradar-CSRF':csrf}});
+    const profile = await (await fetch('/api/profiles/status')).json();
+    const result = await fetch('/api/desktop/shutdown', {method:'POST',headers:{'X-Hradar-CSRF':csrf,'X-Hradar-Workspace':profile.generation}});
     return { status: result.status, body: await result.json() };
   }, csrf);
   expect(response).toEqual({ status: 200, body: { ok: true } });
@@ -49,7 +50,11 @@ try {
   await page.goto(`${origin}/#launch=${code.launch}`);
   await expect(page.getByRole('heading',{name:'Подключите Telegram'})).toBeVisible();
   expect(page.url()).toBe(`${origin}/`);
-  const old = await page.evaluate(async () => (await fetch('/api/onboarding')).json());
+  const old = await page.evaluate(async () => {
+    const profile = await (await fetch('/api/profiles/status')).json();
+    const onboarding = await (await fetch('/api/onboarding', {headers:{'X-Hradar-Workspace':profile.generation}})).json();
+    return {...onboarding, generation:profile.generation};
+  });
   expect((await context.cookies()).find(c => c.name === 'hradar-desktop')).toMatchObject({httpOnly:true,sameSite:'Strict',domain:'hradar.localhost'});
   // A bare context cannot acquire a capability from the root URL or recovery route.
   const stranger = await browser.newContext();
@@ -91,9 +96,15 @@ try {
   await page.getByRole('button',{name:'Повторить подключение'}).click();
   await expect(page.getByRole('heading',{name:'Подключите Telegram'})).toBeVisible();
   expect(page.url()).toBe(`${origin}/`);
-  const current = await page.evaluate(async () => (await fetch('/api/onboarding')).json());
+  const current = await page.evaluate(async () => {
+    const profile = await (await fetch('/api/profiles/status')).json();
+    const onboarding = await (await fetch('/api/onboarding', {headers:{'X-Hradar-Workspace':profile.generation}})).json();
+    return {...onboarding, generation:profile.generation};
+  });
+  expect(current.generation).not.toBe(old.generation);
+  expect(await page.evaluate(async generation => (await fetch('/api/onboarding',{headers:{'X-Hradar-Workspace':generation}})).status,old.generation)).toBe(409);
   expect(current.csrfToken).not.toBe(old.csrfToken);
-  expect(await page.evaluate(async csrf => (await fetch('/api/desktop/shutdown',{method:'POST',headers:{'X-Hradar-CSRF':csrf}})).status,old.csrfToken)).toBe(403);
+  expect(await page.evaluate(async ({csrf,generation}) => (await fetch('/api/desktop/shutdown',{method:'POST',headers:{'X-Hradar-CSRF':csrf,'X-Hradar-Workspace':generation}})).status,{csrf:old.csrfToken,generation:current.generation})).toBe(403);
   expect(await page.evaluate(async () => (await fetch('/mcp',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status)).toBe(403);
   expect(errors).toEqual([]);
   await stop(current.csrfToken);

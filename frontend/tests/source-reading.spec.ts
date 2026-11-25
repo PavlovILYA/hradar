@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures';
 import { openSection } from './navigation-helpers';
 
 const source = { key: 'synthetic-topic', chatId: -2002, type: 'SUPERGROUP', title: 'Synthetic local forum', username: null, scope: { kind: 'FORUM_TOPIC', forumTopicId: 17 }, scopeTitle: 'Synthetic hiring topic', isPublic: false, access: 'AVAILABLE', isForum: true, protectedContent: false, legacyChannel: false, monitoringEnabled: false };

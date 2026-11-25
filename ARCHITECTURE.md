@@ -4,7 +4,7 @@
 
 ## Purpose and boundaries
 
-hradar is a **local-first Telegram recruitment research workspace**, currently targeting macOS. It reads explicitly selected Telegram sources, searches publications, imports channel history when requested, evaluates deterministic monitoring rules, and exposes selected read-only capabilities to AI clients over MCP. It includes a lightweight hiring-project and publication-review CRM and is **not** a full recruiting ATS or a cloud-hosted service. The macOS distribution adds a bundled browser-based desktop launcher. An optional Bot API adapter provides allowlisted notifications and controls.
+hradar is a **local-first Telegram recruitment research workspace**, currently targeting macOS. Version0.12 adds isolated saved Telegram profiles with one active service graph. It reads explicitly selected Telegram sources, searches publications, imports channel history when requested, evaluates deterministic monitoring rules, and exposes selected read-only capabilities to AI clients over MCP. It includes a lightweight hiring-project and publication-review CRM and is **not** a full recruiting ATS or a cloud-hosted service. The macOS distribution adds a bundled browser-based desktop launcher. An optional Bot API adapter provides allowlisted notifications and controls.
 
 ### Logical view
 
@@ -153,11 +153,11 @@ MCP is **a tool protocol, not an agent runtime**. The bot calls shared services 
 
 ## Local storage and security boundaries
 
-- SQLite: `~/.hradar/data/research.sqlite` (schema tracked via migrations; currently v14, including owner-local scoped subscriptions, a unified local inbox, bounded search cache, local bookmarks and explicit document metadata/FTS5).
-- Managed document originals: `~/.hradar/documents/<sha256>`; bounded extracted text stays separately in SQLite and never enters Bot/MCP.
-- TDLib account session: `~/.hradar/tdlib/`. It is sensitive and never belongs in Git, logs, or MCP results.
-- Credentials: desktop owner-only `~/.hradar/config/telegram-api.json` for API ID/hash and `~/.hradar/config/telegram-bot.json` for the Bot API token. Development `.env`/environment may provide legacy `TG_BOT_TOKEN` and `TG_BOT_ALLOWED_USER_IDS`; saved bot settings take precedence. Tokens are never returned to UI or status endpoints.
-- `RuntimePaths` owns the paths. Startup checks the fixed port and migrates old files, including saved bot configuration, before opening SQLite or TDLib. Migration retains originals and verified private backups; see [`STORAGE_MIGRATION.md`](docs/STORAGE_MIGRATION.md).
+- SQLite: `~/.hradar/profiles/<uuid>/data/research.sqlite` (schema tracked via migrations; currently v14, including owner-local scoped subscriptions, a unified local inbox, bounded search cache, local bookmarks and explicit document metadata/FTS5).
+- Managed document originals: `~/.hradar/profiles/<uuid>/documents/<sha256>`; bounded extracted text stays separately in SQLite and never enters Bot/MCP.
+- TDLib account session: `~/.hradar/profiles/<uuid>/tdlib/`. It is sensitive and never belongs in Git, logs, or MCP results.
+- Credentials: desktop owner-only `~/.hradar/config/telegram-api.json` for API ID/hash and `~/.hradar/profiles/<uuid>/config/telegram-bot.json` for the Bot API token. Profile graphs do not automatically inherit legacy global `TG_BOT_TOKEN` / `TG_BOT_ALLOWED_USER_IDS`; configure the bot explicitly in each profile. Tokens are never returned to UI or status endpoints.
+- `RuntimePaths` owns the paths. ProfileStore checks exclusivity and migrates the current workspace, including saved bot configuration, before opening SQLite or TDLib. External legacy sessions require explicit import. Migration retains originals and verified private backups; see [`STORAGE_MIGRATION.md`](docs/STORAGE_MIGRATION.md).
 - Ktor binds to **127.0.0.1 only**. Localhost is not user authentication and is not protection against malicious local processes. Do not expose `/api` or `/mcp` through ngrok, public tunnels, LAN, or reverse proxies in the current architecture.
 - MCP is initially disabled; users explicitly allow individual public channels. Route-level Host/Origin/CSRF checks are described in `docs/MCP.md`; there is no internet-facing multi-user auth.
 - Telegram messages are **untrusted content**: never treat text returned to an AI agent as instructions. Personal data collection, retention, export, AI analysis, and third-party sharing require separate product/privacy review and appropriate authorization. Access to a channel is not blanket permission to reuse all its content.
@@ -304,3 +304,14 @@ A memory/time-limited child JVM extracts PDFBox PDF, hardened ZIP/XML DOCX and T
 No document service is wired to Bot/MCP, archive import or automatic monitoring.
 Protected file routes preserve desktop/Host/Origin/CSRF guards. See
 [Telegram document workflow and recovery](docs/TELEGRAM_DOCUMENTS.md).
+
+### 0.12 Telegram profile lifecycle
+
+ProfileStore owns a private UUID registry and staged offline migration with retained
+originals/receipts. Shared API credentials stay global; RuntimePaths resolves every
+workspace-dependent service to the active UUID. No schema change beyond existing14.
+ProfileSession verifies GetMe and legacy ownership before enabling workspace routes
+or workers/Bot/MCP. A switch closes the full graph and awaits TDLib Closed before
+constructing the next; logout uses LogOut explicitly. Global and per-session leases,
+rotated runtime generations and React full reload prevent cross-profile reuse.
+See [profile storage, failure behavior and manual checks](docs/TELEGRAM_PROFILES.md).

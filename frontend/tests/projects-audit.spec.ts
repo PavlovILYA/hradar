@@ -1,5 +1,5 @@
 import { openSection } from './navigation-helpers';
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures';
 
 async function fixture(page: Page, options: { delayedProject?: boolean; failedColumn?: boolean; delayedWrite?: boolean; failedOriginal?: boolean } = {}) {
   let project = { id: 'p1', criteria: { name: 'Synthetic project', description: '', required: ['Java'], desired: [], excluded: [], sources: [-1001], templateIds: [] as string[], status: 'ACTIVE' }, createdAt: 1700000000000, updatedAt: 1700000000000 };

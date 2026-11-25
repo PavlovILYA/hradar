@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures';
 import { openSection } from './navigation-helpers';
 const channel = { id: -1001, username: 'synthetic_jobs', title: 'Synthetic Jobs' };
 const project = { id: 'p1', criteria: { name: 'Synthetic Kotlin', description: '', status: 'ACTIVE', sources: [-1001], required: ['Kotlin'], desired: [], excluded: [], templateIds: [] }, createdAt: 1700000000000, updatedAt: 1700000000000 };

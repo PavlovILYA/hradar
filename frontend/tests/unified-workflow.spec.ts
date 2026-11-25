@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 test('search chooses an unsaved account chat and saves a monitored template', async ({ page }) => {
   const chat = { key: '', chatId: 123, type: 'BASIC_GROUP', title: 'Synthetic QA', scope: { kind: 'CHAT' }, access: 'AVAILABLE', isForum: false };
